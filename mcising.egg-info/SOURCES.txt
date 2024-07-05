@@ -1,3 +1,4 @@
+LICENCE
 README.md
 setup.py
 mcising/__init__.py

@@ -2,7 +2,7 @@
 
 import numpy as np
 import argparse
-import montecarlo
+from . import montecarlo
 
 def main(args):
     temperature = np.arange(args.T_init, args.T_final - args.T_step, -args.T_step)
