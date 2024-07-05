@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: mcising
-Version: 0.12
+Version: 0.13
 Summary: A package for generating Ising model data using Metropolis algorithm on a square lattice for nearest neighbor and next nearest neighbor interactions.
 Home-page: https://github.com/bcivitcioglu/mcising
 Author: Burak Ç.
@@ -82,12 +82,6 @@ For temperature= 1.0, MC simulation executed in: 0.43 seconds
 11 / 11 samples saved.
 For temperature= 1.0, MC simulation executed in: 0.18 seconds
 ```
-
-Example output png files:
-
-<img src="../mcising/imgs/SQ_L_30_J1_1.000_J2_0.650_h_0.000_T_4.000_s_1149_n_0.png" width="100">
-<img src="../mcising/imgs/SQ_L_30_J1_1.000_J2_0.000_h_0.000_T_2.350_s_3985_n_0.png" width="100">
-<img src="../mcising/imgs/SQ_L_30_J1_1.000_J2_0.000_h_0.000_T_0.100_s_8394_n_1000.png" width="100">
 
 Structure of the saved pickle files:
 
