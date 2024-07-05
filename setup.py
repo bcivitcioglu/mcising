@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="mcising",
-    version="0.1",
+    version="0.12",
     packages=find_packages(),
     install_requires=[
         "numpy",
