@@ -1,3 +1,5 @@
+[![Downloads](https://static.pepy.tech/badge/mcising)](https://pepy.tech/project/mcising)
+
 # mcising
 
 mcising is a Python package for generating Ising model data using Metropolis algorithm. It works for square lattices, and for nearest neighbor and next nearest neighbor interactions. The Monte-Carlo method it uses, has the cool-down approach to avoid semi stable states.
