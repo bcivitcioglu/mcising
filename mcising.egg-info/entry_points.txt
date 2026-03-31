@@ -1,2 +1,0 @@
-[console_scripts]
-generate_ising_data = mcising.ising_data_generate:main
