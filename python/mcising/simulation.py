@@ -7,7 +7,13 @@ from typing import Final
 
 import numpy as np
 from numpy.typing import NDArray
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 from mcising._core import IsingSimulation as _RustSim
 from mcising.config import SimulationConfig
@@ -34,7 +40,7 @@ class SimulationResults:
         Magnetization per site measurements at each temperature.
     configurations : dict[float, NDArray[np.int8]]
         Spin configurations at each temperature. Shape: (n_samples, L, L).
-    correlation_function : dict[float, tuple[NDArray[np.float64], NDArray[np.float64]]] | None
+    correlation_function : dict[float, tuple[NDArray, NDArray]] | None
         (distances, correlations) at each temperature, or None if not computed.
     correlation_length : dict[float, NDArray[np.float64]] | None
         Correlation length measurements at each temperature, or None.
@@ -46,9 +52,9 @@ class SimulationResults:
     energy: dict[float, NDArray[np.float64]] = field(default_factory=dict)
     magnetization: dict[float, NDArray[np.float64]] = field(default_factory=dict)
     configurations: dict[float, NDArray[np.int8]] = field(default_factory=dict)
-    correlation_function: dict[
-        float, tuple[NDArray[np.float64], NDArray[np.float64]]
-    ] | None = None
+    correlation_function: (
+        dict[float, tuple[NDArray[np.float64], NDArray[np.float64]]] | None
+    ) = None
     correlation_length: dict[float, NDArray[np.float64]] | None = None
     metadata: dict[str, object] = field(default_factory=dict)
 
@@ -199,16 +205,14 @@ class Simulation:
     @property
     def energy(self) -> float:
         """Current energy per site."""
-        return self._core.energy()
+        return float(self._core.energy())
 
     @property
     def magnetization(self) -> float:
         """Current magnetization per site."""
-        return self._core.magnetization()
+        return float(self._core.magnetization())
 
-    def _thermalize(
-        self, from_temp: float, to_temp: float, n_steps: int
-    ) -> None:
+    def _thermalize(self, from_temp: float, to_temp: float, n_steps: int) -> None:
         """Gradually cool the system from from_temp to to_temp."""
         if n_steps <= 0:
             return

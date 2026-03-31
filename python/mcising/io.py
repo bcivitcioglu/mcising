@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import numpy as np
 
@@ -118,14 +118,18 @@ def load_hdf5(path: str | Path) -> SimulationResults:
 
         # Discover temperature groups
         temp_groups = [
-            key for key in f.keys() if key.startswith("T=")  # noqa: SIM118
+            key
+            for key in f.keys()
+            if key.startswith("T=")  # noqa: SIM118
         ]
         temperatures: list[float] = []
-        energy: dict[float, np.ndarray] = {}  # type: ignore[type-arg]
-        magnetization: dict[float, np.ndarray] = {}  # type: ignore[type-arg]
-        configurations: dict[float, np.ndarray] = {}  # type: ignore[type-arg]
-        correlation_function: dict[float, tuple[np.ndarray, np.ndarray]] = {}  # type: ignore[type-arg]
-        correlation_length: dict[float, np.ndarray] = {}  # type: ignore[type-arg]
+        energy: dict[float, np.ndarray[Any, Any]] = {}
+        magnetization: dict[float, np.ndarray[Any, Any]] = {}
+        configurations: dict[float, np.ndarray[Any, Any]] = {}
+        correlation_function: dict[
+            float, tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]
+        ] = {}
+        correlation_length: dict[float, np.ndarray[Any, Any]] = {}
 
         for group_name in sorted(temp_groups):
             grp = f[group_name]
@@ -202,15 +206,14 @@ def save_json_summary(results: SimulationResults, path: str | Path) -> None:
         json.dump(summary, f, indent=2)
 
 
-def _config_to_json(config: object) -> str:
+def _config_to_json(config: Any) -> str:
     """Convert a config object to a JSON string for HDF5 metadata."""
     if config is None:
         return "{}"
     try:
         from dataclasses import asdict
 
-        d = asdict(config)  # type: ignore[arg-type]
-        # Convert enums to their values
+        d = asdict(config)
         return json.dumps(d, default=str, indent=2)
     except (TypeError, ValueError):
         return str(config)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from mcising.config import LatticeConfig, SimulationConfig
 from mcising.exceptions import SimulationError
 from mcising.simulation import Simulation, SimulationResults
@@ -16,7 +15,9 @@ class TestSimulationRun:
         results = sim.run(show_progress=False)
         assert isinstance(results, SimulationResults)
 
-    def test_results_have_all_temperatures(self, default_config: SimulationConfig) -> None:
+    def test_results_have_all_temperatures(
+        self, default_config: SimulationConfig
+    ) -> None:
         sim = Simulation(default_config)
         results = sim.run(show_progress=False)
         # Temperatures sorted descending

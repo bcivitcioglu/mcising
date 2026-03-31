@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -44,8 +44,7 @@ def plot_lattice(
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(6, 6))
     else:
-        fig = ax.get_figure()
-        assert fig is not None
+        fig = cast(Figure, ax.get_figure())
 
     ax.imshow(spins, cmap="RdBu", vmin=-1, vmax=1, interpolation="nearest")
     ax.set_xlabel("Column")
@@ -135,7 +134,10 @@ def plot_correlation(
     Figure
         The matplotlib figure.
     """
-    if results.correlation_function is None or temperature not in results.correlation_function:
+    if (
+        results.correlation_function is None
+        or temperature not in results.correlation_function
+    ):
         msg = f"No correlation data available for T={temperature}"
         raise ValueError(msg)
 
@@ -144,8 +146,7 @@ def plot_correlation(
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(8, 5))
     else:
-        fig = ax.get_figure()
-        assert fig is not None
+        fig = cast(Figure, ax.get_figure())
 
     ax.plot(distances, correlations, "o-", markersize=4)
     ax.set_xlabel("Distance (lattice units)")

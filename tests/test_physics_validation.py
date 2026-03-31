@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from mcising._core import IsingSimulation
 from mcising.config import LatticeConfig, SimulationConfig
 from mcising.constants import TC_SQUARE_2D

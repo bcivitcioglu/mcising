@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from mcising.config import LatticeConfig, SimulationConfig
 from mcising.io import load_hdf5, save_hdf5, save_json_summary
 from mcising.simulation import Simulation
