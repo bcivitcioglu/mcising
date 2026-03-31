@@ -119,8 +119,7 @@ mod tests {
         let mut rng = create_rng(42);
         let beta_small = 0.001; // T = 1000
 
-        let result =
-            Metropolis.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, beta_small, &mut rng);
+        let result = Metropolis.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, beta_small, &mut rng);
         // At high T, acceptance rate should be very high (> 50%)
         assert!(
             result.acceptance_rate() > 0.5,
@@ -142,8 +141,7 @@ mod tests {
             Metropolis.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, beta_large, &mut rng);
         }
 
-        let mag: f64 =
-            spins.iter().map(|&s| f64::from(s)).sum::<f64>() / spins.len() as f64;
+        let mag: f64 = spins.iter().map(|&s| f64::from(s)).sum::<f64>() / spins.len() as f64;
         assert!(
             mag > 0.9,
             "All-up ground state should remain magnetized at low T, got m={mag}"

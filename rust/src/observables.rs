@@ -40,10 +40,7 @@ pub fn magnetization_per_site(spins: &[i8]) -> f64 {
 /// Returns (distances, correlations) where distances are in lattice spacing
 /// units and correlations are `<si*sj> - <m>^2` averaged over all pairs
 /// at each unique distance.
-pub fn correlation_function<L: Lattice>(
-    spins: &[i8],
-    lattice: &L,
-) -> (Vec<f64>, Vec<f64>) {
+pub fn correlation_function<L: Lattice>(spins: &[i8], lattice: &L) -> (Vec<f64>, Vec<f64>) {
     let n = lattice.num_sites();
     let mag = magnetization_per_site(spins);
     let mag_sq = mag * mag;
@@ -134,10 +131,7 @@ mod tests {
         let lattice = SquareLattice::new(4).unwrap();
         let spins = vec![1i8; 16];
         let e = energy_per_site(&spins, &lattice, 1.0, 0.5, 0.0);
-        assert!(
-            (e - (-3.0)).abs() < 1e-10,
-            "Expected energy -3.0, got {e}"
-        );
+        assert!((e - (-3.0)).abs() < 1e-10, "Expected energy -3.0, got {e}");
     }
 
     #[test]
@@ -149,10 +143,7 @@ mod tests {
         let lattice = SquareLattice::new(4).unwrap();
         let spins = vec![1i8; 16];
         let e = energy_per_site(&spins, &lattice, 1.0, 0.0, 1.0);
-        assert!(
-            (e - (-3.0)).abs() < 1e-10,
-            "Expected energy -3.0, got {e}"
-        );
+        assert!((e - (-3.0)).abs() < 1e-10, "Expected energy -3.0, got {e}");
     }
 
     #[test]

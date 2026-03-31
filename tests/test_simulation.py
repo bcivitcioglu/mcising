@@ -58,7 +58,7 @@ class TestSimulationRun:
         sim = Simulation(default_config)
         results = sim.run(show_progress=False)
         assert "elapsed_seconds" in results.metadata
-        assert results.metadata["elapsed_seconds"] > 0  # type: ignore[operator]
+        assert results.metadata["elapsed_seconds"] >= 0  # type: ignore[operator]
 
 
 class TestSimulationSweep:

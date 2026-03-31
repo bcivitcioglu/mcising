@@ -33,7 +33,7 @@ impl SquareLattice {
 
             // Nearest neighbors: up, down, left, right
             nn_table.push(vec![
-                ((row + 1) % size) * size + col,       // down
+                ((row + 1) % size) * size + col,        // down
                 ((row + size - 1) % size) * size + col, // up
                 row * size + (col + 1) % size,          // right
                 row * size + (col + size - 1) % size,   // left
@@ -41,9 +41,9 @@ impl SquareLattice {
 
             // Next-nearest neighbors: four diagonals
             nnn_table.push(vec![
-                ((row + 1) % size) * size + (col + 1) % size,          // down-right
-                ((row + 1) % size) * size + (col + size - 1) % size,   // down-left
-                ((row + size - 1) % size) * size + (col + 1) % size,   // up-right
+                ((row + 1) % size) * size + (col + 1) % size, // down-right
+                ((row + 1) % size) * size + (col + size - 1) % size, // down-left
+                ((row + size - 1) % size) * size + (col + 1) % size, // up-right
                 ((row + size - 1) % size) * size + (col + size - 1) % size, // up-left
             ]);
         }
@@ -90,19 +90,11 @@ impl Lattice for SquareLattice {
         let col_b = idx_b % self.size;
 
         let dx = {
-            let d = if col_a > col_b {
-                col_a - col_b
-            } else {
-                col_b - col_a
-            };
+            let d = col_a.abs_diff(col_b);
             d.min(self.size - d)
         };
         let dy = {
-            let d = if row_a > row_b {
-                row_a - row_b
-            } else {
-                row_b - row_a
-            };
+            let d = row_a.abs_diff(row_b);
             d.min(self.size - d)
         };
 
@@ -146,10 +138,10 @@ mod tests {
         let lattice = SquareLattice::new(4).unwrap();
         let nn = lattice.nearest_neighbors(0);
         assert_eq!(nn.len(), 4);
-        assert!(nn.contains(&4));  // down
+        assert!(nn.contains(&4)); // down
         assert!(nn.contains(&12)); // up (PBC)
-        assert!(nn.contains(&1));  // right
-        assert!(nn.contains(&3));  // left (PBC)
+        assert!(nn.contains(&1)); // right
+        assert!(nn.contains(&3)); // left (PBC)
     }
 
     #[test]
@@ -172,8 +164,8 @@ mod tests {
         let lattice = SquareLattice::new(4).unwrap();
         let nnn = lattice.next_nearest_neighbors(0);
         assert_eq!(nnn.len(), 4);
-        assert!(nnn.contains(&5));  // down-right
-        assert!(nnn.contains(&7));  // down-left (PBC)
+        assert!(nnn.contains(&5)); // down-right
+        assert!(nnn.contains(&7)); // down-left (PBC)
         assert!(nnn.contains(&13)); // up-right (PBC)
         assert!(nnn.contains(&15)); // up-left (PBC)
     }

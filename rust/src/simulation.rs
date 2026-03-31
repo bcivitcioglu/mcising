@@ -1,4 +1,6 @@
-use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2, PyUntypedArrayMethods};
+use numpy::{
+    IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2, PyUntypedArrayMethods,
+};
 use pyo3::prelude::*;
 use rand::Rng;
 use rand_xoshiro::Xoshiro256StarStar;
@@ -38,8 +40,8 @@ impl IsingSimulation {
     /// * `seed` - Random seed for reproducibility
     #[new]
     fn new(lattice_size: usize, j1: f64, j2: f64, h: f64, seed: u64) -> PyResult<Self> {
-        let lattice =
-            SquareLattice::new(lattice_size).ok_or(MCIsingError::InvalidLatticeSize(lattice_size))?;
+        let lattice = SquareLattice::new(lattice_size)
+            .ok_or(MCIsingError::InvalidLatticeSize(lattice_size))?;
 
         if !j1.is_finite() {
             return Err(MCIsingError::InvalidCoupling("j1", j1).into());
@@ -199,10 +201,7 @@ impl IsingSimulation {
     ) -> (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>) {
         let (distances, correlations) =
             observables::correlation_function(&self.spins, &self.lattice);
-        (
-            distances.into_pyarray(py),
-            correlations.into_pyarray(py),
-        )
+        (distances.into_pyarray(py), correlations.into_pyarray(py))
     }
 
     /// Compute the correlation length from the current spin configuration.
@@ -242,22 +241,17 @@ impl IsingSimulation {
         self.h
     }
 
-    /// Get the RNG internal state as 32 bytes for checkpointing.
+    /// Get the RNG internal state as bytes for checkpointing.
     fn get_rng_state(&self) -> Vec<u8> {
-        let serialized = serde_json::to_vec(&self.rng)
-            .expect("Xoshiro256StarStar serialization should not fail");
-        serialized
+        serde_json::to_vec(&self.rng).expect("Xoshiro256StarStar serialization should not fail")
     }
 
     /// Restore the RNG internal state from bytes previously obtained
     /// via `get_rng_state`.
     fn set_rng_state(&mut self, state: Vec<u8>) -> PyResult<()> {
-        let rng: Xoshiro256StarStar = serde_json::from_slice(&state)
-            .map_err(|e| {
-                MCIsingError::InvalidSpinConfiguration(format!(
-                    "Invalid RNG state: {e}"
-                ))
-            })?;
+        let rng: Xoshiro256StarStar = serde_json::from_slice(&state).map_err(|e| {
+            MCIsingError::InvalidSpinConfiguration(format!("Invalid RNG state: {e}"))
+        })?;
         self.rng = rng;
         Ok(())
     }
