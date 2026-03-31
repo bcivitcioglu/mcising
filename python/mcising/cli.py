@@ -13,7 +13,7 @@ from rich.table import Table
 
 import mcising
 from mcising.config import Algorithm, LatticeConfig, LatticeType, SimulationConfig
-from mcising.io import save_hdf5, save_json_summary
+from mcising.io import checkpoint_run, save_hdf5, save_json_summary
 from mcising.simulation import Simulation
 
 __all__: Final[list[str]] = ["app"]
@@ -82,6 +82,24 @@ def run(
         Path | None,
         typer.Option("--json", help="Output JSON summary path."),
     ] = None,
+    checkpoint: Annotated[
+        Path | None,
+        typer.Option(
+            "--checkpoint",
+            help="HDF5 checkpoint file for crash recovery.",
+        ),
+    ] = None,
+    resume: Annotated[
+        bool,
+        typer.Option("--resume", help="Resume from an existing checkpoint file."),
+    ] = False,
+    checkpoint_interval: Annotated[
+        int,
+        typer.Option(
+            "--checkpoint-interval",
+            help="Save checkpoint every N temperatures (default: every one).",
+        ),
+    ] = 1,
 ) -> None:
     """Run a Monte Carlo simulation of the 2D Ising model."""
     temps = tuple(temperatures) if temperatures else (3.0, 2.269, 1.5)
@@ -104,19 +122,32 @@ def run(
     _print_config(config)
 
     sim = Simulation(config)
-    results = sim.run(show_progress=True)
+
+    if checkpoint is not None:
+        results = checkpoint_run(
+            sim,
+            checkpoint,
+            show_progress=True,
+            resume=resume,
+            checkpoint_interval=checkpoint_interval,
+        )
+        console.print(f"\n[green]Checkpoint:[/green] {checkpoint}")
+    else:
+        results = sim.run(show_progress=True)
 
     _print_results_summary(results)
 
     if output is not None:
-        save_hdf5(results, output)
-        console.print(f"\n[green]Saved HDF5:[/green] {output}")
+        # Skip redundant save if output is the same as checkpoint
+        if checkpoint is None or output.resolve() != checkpoint.resolve():
+            save_hdf5(results, output)
+            console.print(f"\n[green]Saved HDF5:[/green] {output}")
 
     if json_summary is not None:
         save_json_summary(results, json_summary)
         console.print(f"[green]Saved JSON:[/green] {json_summary}")
 
-    if output is None and json_summary is None:
+    if output is None and json_summary is None and checkpoint is None:
         console.print(
             "\n[dim]Tip: use -o results.h5 or --json summary.json to save output.[/dim]"
         )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -89,7 +90,15 @@ class Simulation:
             seed=config.seed,
         )
 
-    def run(self, *, show_progress: bool = True) -> SimulationResults:
+    def run(
+        self,
+        *,
+        show_progress: bool = True,
+        on_temperature_complete: (
+            Callable[[float, SimulationResults], None] | None
+        ) = None,
+        skip_temperatures: frozenset[float] | None = None,
+    ) -> SimulationResults:
         """Execute the full simulation across all temperatures.
 
         Temperatures are processed in descending order using a cool-down
@@ -100,6 +109,12 @@ class Simulation:
         ----------
         show_progress : bool
             Whether to display a Rich progress bar.
+        on_temperature_complete : callable, optional
+            Called with ``(temperature, results)`` after each temperature
+            finishes data collection. Useful for checkpointing.
+        skip_temperatures : frozenset[float], optional
+            Temperatures to skip (e.g. already checkpointed). Skipped
+            temperatures are excluded from the thermalization schedule.
 
         Returns
         -------
@@ -113,8 +128,13 @@ class Simulation:
         # Sort temperatures descending for cool-down
         sorted_temps = sorted(self.config.temperatures, reverse=True)
 
+        # Build effective schedule excluding skipped temperatures
+        effective_temps = [
+            t for t in sorted_temps if t not in (skip_temperatures or frozenset())
+        ]
+
         results = SimulationResults(
-            temperatures=sorted_temps,
+            temperatures=list(effective_temps),
             metadata={
                 "config": self.config,
                 "version": "0.2.0",
@@ -125,7 +145,7 @@ class Simulation:
             results.correlation_length = {}
 
         # Prepend high temperature for initial thermalization
-        temp_schedule = [INF_TEMP, *sorted_temps]
+        temp_schedule = [INF_TEMP, *effective_temps]
 
         progress_columns = [
             SpinnerColumn(),
@@ -135,10 +155,16 @@ class Simulation:
             TimeElapsedColumn(),
         ]
 
+        n_skipped = len(sorted_temps) - len(effective_temps)
+
         with Progress(*progress_columns, disable=not show_progress) as progress:
             task = progress.add_task("Temperature scan", total=len(sorted_temps))
 
-            for i in range(len(sorted_temps)):
+            # Pre-advance for skipped temperatures
+            if n_skipped > 0:
+                progress.advance(task, advance=n_skipped)
+
+            for i in range(len(effective_temps)):
                 from_temp = temp_schedule[i]
                 to_temp = temp_schedule[i + 1]
 
@@ -157,6 +183,9 @@ class Simulation:
 
                 # Collect measurements
                 self._collect_at_temperature(to_temp, results)
+
+                if on_temperature_complete is not None:
+                    on_temperature_complete(to_temp, results)
 
                 progress.advance(task)
 

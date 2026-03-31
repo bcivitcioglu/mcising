@@ -242,6 +242,26 @@ impl IsingSimulation {
         self.h
     }
 
+    /// Get the RNG internal state as 32 bytes for checkpointing.
+    fn get_rng_state(&self) -> Vec<u8> {
+        let serialized = serde_json::to_vec(&self.rng)
+            .expect("Xoshiro256StarStar serialization should not fail");
+        serialized
+    }
+
+    /// Restore the RNG internal state from bytes previously obtained
+    /// via `get_rng_state`.
+    fn set_rng_state(&mut self, state: Vec<u8>) -> PyResult<()> {
+        let rng: Xoshiro256StarStar = serde_json::from_slice(&state)
+            .map_err(|e| {
+                MCIsingError::InvalidSpinConfiguration(format!(
+                    "Invalid RNG state: {e}"
+                ))
+            })?;
+        self.rng = rng;
+        Ok(())
+    }
+
     /// String representation.
     fn __repr__(&self) -> String {
         format!(
