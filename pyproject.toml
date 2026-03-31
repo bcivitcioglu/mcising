@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "mcising"
-version = "0.2.0"
+version = "0.2.4"
 description = "High-performance Ising model Monte Carlo simulation with Rust core"
 readme = "README.md"
 license = { text = "MIT" }
@@ -79,5 +79,5 @@ python_version = "3.10"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["mcising._core", "h5py"]
+module = ["h5py"]
 ignore_missing_imports = true
