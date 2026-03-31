@@ -232,6 +232,7 @@ Step 3: **Maturin + PyO3 setup**
 | Performance backend | Rust via PyO3/maturin | Maximum performance, comparable to peapods |
 | Python API | Clean break (v1.0), class-based | Old API was function-oriented with 6 commits and limited users |
 | Data output | HDF5 primary (h5py) | Standard in computational physics, self-describing, efficient |
+| Crash safety | Incremental HDF5 writes | Each temperature is flushed to disk immediately after measurement; completed data survives crashes |
 | RNG | Xoshiro256** (rand_xoshiro) | Fast, high-quality, reproducible |
 | Spin representation | i8 (+1/-1) flat Vec | Cache-friendly, minimal memory |
 | CLI | Typer + Rich | Modern, type-safe, beautiful output |
