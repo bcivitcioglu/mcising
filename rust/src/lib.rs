@@ -11,6 +11,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod algorithm;
+pub mod autocorrelation;
 pub mod error;
 pub mod lattice;
 pub mod observables;

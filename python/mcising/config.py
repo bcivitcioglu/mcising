@@ -7,6 +7,12 @@ from enum import Enum
 from typing import Final
 
 from mcising.constants import (
+    DEFAULT_ADAPTIVE_C_WINDOW,
+    DEFAULT_ADAPTIVE_MAX_THERMALIZATION,
+    DEFAULT_ADAPTIVE_MAX_TOTAL_SWEEPS,
+    DEFAULT_ADAPTIVE_MIN_INDEPENDENT_SAMPLES,
+    DEFAULT_ADAPTIVE_MIN_THERMALIZATION,
+    DEFAULT_ADAPTIVE_TAU_MULTIPLIER,
     DEFAULT_H,
     DEFAULT_J1,
     DEFAULT_J2,
@@ -21,6 +27,7 @@ __all__: Final[list[str]] = [
     "LatticeType",
     "Algorithm",
     "LatticeConfig",
+    "AdaptiveConfig",
     "SimulationConfig",
 ]
 
@@ -88,6 +95,71 @@ class LatticeConfig:
 
 
 @dataclass(frozen=True)
+class AdaptiveConfig:
+    """Configuration for adaptive thermalization and measurement spacing.
+
+    When enabled, the simulation records energy during thermalization sweeps,
+    uses MSER to verify equilibration, estimates the integrated autocorrelation
+    time (tau_int) via Sokal's windowing method, and sets the measurement
+    interval to ``tau_multiplier * tau_int`` for independent samples.
+
+    Parameters
+    ----------
+    enabled : bool
+        Whether to use adaptive mode. When False (default), the simulation
+        uses fixed n_sweeps / measurement_interval / n_thermalization.
+    min_thermalization_sweeps : int
+        Minimum thermalization sweeps per temperature (including cool-down).
+    max_thermalization_sweeps : int
+        Maximum thermalization sweeps (cap to prevent runaway near T_c).
+    c_window : float
+        Sokal windowing constant for tau_int estimation.
+    min_independent_samples : int
+        Target number of effectively independent samples per temperature.
+    max_total_sweeps : int
+        Hard cap on total sweeps per temperature (thermalization + production).
+    tau_multiplier : float
+        Measurement interval = tau_multiplier * tau_int.
+        Using 2*tau gives ~86% independence between consecutive samples.
+    """
+
+    enabled: bool = False
+    min_thermalization_sweeps: int = DEFAULT_ADAPTIVE_MIN_THERMALIZATION
+    max_thermalization_sweeps: int = DEFAULT_ADAPTIVE_MAX_THERMALIZATION
+    c_window: float = DEFAULT_ADAPTIVE_C_WINDOW
+    min_independent_samples: int = DEFAULT_ADAPTIVE_MIN_INDEPENDENT_SAMPLES
+    max_total_sweeps: int = DEFAULT_ADAPTIVE_MAX_TOTAL_SWEEPS
+    tau_multiplier: float = DEFAULT_ADAPTIVE_TAU_MULTIPLIER
+
+    def __post_init__(self) -> None:
+        if self.min_thermalization_sweeps < 1:
+            msg = (
+                "min_thermalization_sweeps must be >= 1, "
+                f"got {self.min_thermalization_sweeps}"
+            )
+            raise ValueError(msg)
+        if self.max_thermalization_sweeps < self.min_thermalization_sweeps:
+            msg = (
+                f"max_thermalization_sweeps "
+                f"({self.max_thermalization_sweeps}) must be >= "
+                f"min ({self.min_thermalization_sweeps})"
+            )
+            raise ValueError(msg)
+        if self.c_window <= 0:
+            msg = f"c_window must be > 0, got {self.c_window}"
+            raise ValueError(msg)
+        if self.min_independent_samples < 1:
+            msg = (
+                "min_independent_samples must be >= 1, "
+                f"got {self.min_independent_samples}"
+            )
+            raise ValueError(msg)
+        if self.tau_multiplier <= 0:
+            msg = f"tau_multiplier must be > 0, got {self.tau_multiplier}"
+            raise ValueError(msg)
+
+
+@dataclass(frozen=True)
 class SimulationConfig:
     """Configuration for a Monte Carlo simulation run.
 
@@ -119,6 +191,7 @@ class SimulationConfig:
     n_thermalization: int = DEFAULT_N_THERMALIZATION
     measurement_interval: int = DEFAULT_MEASUREMENT_INTERVAL
     compute_correlation: bool = False
+    adaptive: AdaptiveConfig = field(default_factory=AdaptiveConfig)
 
     def __post_init__(self) -> None:
         if self.n_sweeps < 1:

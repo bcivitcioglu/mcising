@@ -163,20 +163,55 @@ Step 3: **Maturin + PyO3 setup**
 
 ---
 
-### Phase 3: Cluster Algorithms (Weeks 6-8)
+### Phase 3: Adaptive Measurement + Cluster Algorithms (Weeks 6-8)
 
-**Goal:** Eliminate critical slowing down near phase transitions.
+**Goal:** Eliminate wasted sweeps via adaptive thermalization/measurement, then eliminate critical slowing down via cluster algorithms.
 
+**Sprint 3.1 - Rust: Autocorrelation & Adaptive Analysis (Week 6):**
+- New `rust/src/autocorrelation.rs` — pure Rust, no PyO3 awareness:
+  - **MSER thermalization detection** (`detect_thermalization`): find truncation point d minimizing variance/(N-d) over the energy time series. O(N), no tuning parameters.
+  - **Sokal automatic windowing** (`integrated_autocorrelation_time`): compute `tau_int = 0.5 + sum C(t)` with self-consistent cutoff `t >= c * tau_int(t)`, c=6.0 default.
+  - **Combined analysis** (`analyze_thermalization`): run MSER on full series, then Sokal on stationary tail (series[d:]). Returns truncation point, tau_int, and recommended measurement interval.
+- New PyO3 methods on `IsingSimulation` in `rust/src/simulation.rs`:
+  - `thermalize_with_diagnostics(temp_schedule: Vec<f64>) -> PyArray1<f64>` — runs cool-down sweeps, records energy after each sweep, returns the energy time series
+  - `extend_thermalization(n_sweeps: usize, beta: f64) -> PyArray1<f64>` — additional sweeps at fixed T, returns energy series
+  - `analyze_thermalization_series(series: PyArray1<f64>, c_window: f64) -> dict` — static method wrapping MSER + Sokal
+  - `production_sweeps(n_measurements, interval, beta, store_configs) -> (energies, mags, configs)` — batched measurement collection in a single Rust call (also benefits fixed mode)
+- **Checkpoint:** `cargo test` passes for known analytical cases (white noise tau~0.5, AR(1) with known tau, step function for MSER)
+
+**Sprint 3.2 - Python: Adaptive Integration (Week 7):**
+- `python/mcising/config.py`: Add `AdaptiveConfig` frozen dataclass:
+  - `enabled: bool = False` (opt-in; fixed mode stays default for beginners)
+  - `min_thermalization_sweeps`, `max_thermalization_sweeps`, `c_window`, `min_independent_samples`, `max_total_sweeps`, `tau_multiplier`
+- `python/mcising/simulation.py`:
+  - `_thermalize_adaptive()`: calls `thermalize_with_diagnostics`, checks MSER, extends via `extend_thermalization` if not stationary
+  - `_collect_at_temperature_adaptive()`: uses tau_int from thermalization analysis to set measurement_interval = `max(1, round(tau_multiplier * tau_int))`
+  - `AdaptiveDiagnostics` dataclass: tau_int, truncation_point, interval_used, sweeps_used per temperature
+  - Dispatch in `run()`: adaptive vs fixed based on `config.adaptive.enabled`
+- Update `_core.pyi` type stubs, `io.py` (HDF5 adaptive diagnostics), `cli.py` (`--adaptive`, `--min-samples`, `--max-sweeps`)
+- **Checkpoint:** `uv run pytest` — adaptive mode on 16x16 produces independent samples; fixed mode unchanged
+- **Checkpoint:** `uv run mcising run --adaptive -L 32 --seed 42` runs with Rich progress and reports tau_int per temperature
+
+**Sprint 3.3 - Cluster Algorithms (Week 8):**
 - **Wolff cluster algorithm** (`rust/src/algorithm/wolff.rs`):
   - BFS-based cluster growth, bond probability p = 1 - exp(-2*beta*J)
-  - Constraint: works for J2=0, h=0 (documented)
+  - Constraint: works only for J2=0, h=0 (bond probability derivation assumes nearest-neighbor-only Hamiltonian)
+- **Constraint enforcement** (validate early at Python boundary):
+  - In `simulation.py`, raise `ConfigurationError` if algorithm is `wolff` or `swendsen_wang` and (`j2 != 0.0` or `h != 0.0`)
+  - Clear error message: "Cluster algorithms require J2=0 and h=0. Use algorithm='metropolis' for J1-J2 or external field simulations."
+  - Rust-side safety assert as a secondary guard (panic if invariant violated — should never be reached)
 - **Checkpoint:** `cargo test` passes Wolff-specific Rust tests (cluster sizes, energy conservation)
 - **Checkpoint:** `uv run pytest tests/test_wolff.py` passes (statistics agree with Metropolis)
+- **Checkpoint:** Wolff with J2!=0 raises `ConfigurationError` at Python level
 - **Swendsen-Wang** (`rust/src/algorithm/swendsen_wang.rs`):
   - Union-Find with path compression, flip each cluster with p=1/2
+  - Same constraint enforcement as Wolff (J2=0, h=0)
 - **Checkpoint:** `cargo test` passes SW Rust tests
 - **Checkpoint:** `uv run pytest tests/test_swendsen_wang.py` passes
-- Benchmark autocorrelation times: Metropolis (~L^2.17) vs Wolff (~L^0.25)
+- **Benchmark autocorrelation times** using the adaptive infrastructure:
+  - Metropolis at T_c on 32x32, 64x64: expect tau ~ L^2.17
+  - Wolff at T_c on same lattices: expect tau ~ L^0.25
+  - Include benchmark results in documentation
 - **Checkpoint:** `uv run mcising run --algorithm wolff -L 32 --seed 42` works
 - Add `--algorithm wolff|swendsen_wang|metropolis` to CLI
 
@@ -193,6 +228,11 @@ Step 3: **Maturin + PyO3 setup**
 - **Kagome** (coordination 4, no finite-T transition for AFM)
 - **3D Cubic** (coordination 6, T_c ~ 4.5115)
 - **1D Chain** (coordination 2, T_c = 0 - pedagogical)
+- **J3 coupling** — third-nearest-neighbor interaction support (J1-J2-J3, J1-J3, J2-J3 combinations)
+  - Extend `Lattice` trait with `third_nearest_neighbors()`
+  - Add `j3` parameter to `LatticeConfig`, `SimulationConfig`, `IsingSimulation`
+  - Add J3 term to Metropolis local field computation
+  - **Checkpoint:** J1=0, J2=0, J3=1 simulation produces correct ground state energy
 - Refactor `IsingSimulation::new()` to accept lattice_type + shape
 - **Checkpoint:** `uv run mcising run --lattice triangular -L 32` works for each new lattice type
 - **Checkpoint:** `uv run pytest tests/test_physics_validation.py` passes for all lattices

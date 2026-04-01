@@ -12,7 +12,13 @@ from rich.panel import Panel
 from rich.table import Table
 
 import mcising
-from mcising.config import Algorithm, LatticeConfig, LatticeType, SimulationConfig
+from mcising.config import (
+    AdaptiveConfig,
+    Algorithm,
+    LatticeConfig,
+    LatticeType,
+    SimulationConfig,
+)
 from mcising.io import checkpoint_run, save_hdf5, save_json_summary
 from mcising.simulation import Simulation
 
@@ -100,9 +106,36 @@ def run(
             help="Save checkpoint every N temperatures (default: every one).",
         ),
     ] = 1,
+    adaptive: Annotated[
+        bool,
+        typer.Option(
+            "--adaptive",
+            help="Enable adaptive thermalization and measurement spacing.",
+        ),
+    ] = False,
+    min_samples: Annotated[
+        int,
+        typer.Option(
+            "--min-samples",
+            help="Target independent samples per temperature (adaptive mode).",
+        ),
+    ] = 100,
+    max_sweeps: Annotated[
+        int,
+        typer.Option(
+            "--max-sweeps",
+            help="Max total sweeps per temperature (adaptive mode).",
+        ),
+    ] = 100_000,
 ) -> None:
     """Run a Monte Carlo simulation of the 2D Ising model."""
     temps = tuple(temperatures) if temperatures else (3.0, 2.269, 1.5)
+
+    adaptive_config = AdaptiveConfig(
+        enabled=adaptive,
+        min_independent_samples=min_samples,
+        max_total_sweeps=max_sweeps,
+    )
 
     config = SimulationConfig(
         lattice=LatticeConfig(
@@ -117,6 +150,7 @@ def run(
         measurement_interval=measurement_interval,
         seed=seed,
         compute_correlation=correlation,
+        adaptive=adaptive_config,
     )
 
     _print_config(config)
@@ -218,6 +252,10 @@ def _print_config(config: SimulationConfig) -> None:
     table.add_row("Measurement interval", str(config.measurement_interval))
     table.add_row("Seed", str(config.seed))
     table.add_row("Correlation", str(config.compute_correlation))
+    if config.adaptive.enabled:
+        table.add_row("Adaptive", "enabled")
+        table.add_row("  Min samples", str(config.adaptive.min_independent_samples))
+        table.add_row("  Max sweeps", str(config.adaptive.max_total_sweeps))
 
     console.print(Panel(table, title="[bold]Configuration[/bold]", border_style="blue"))
 
@@ -232,6 +270,9 @@ def _print_results_summary(results: mcising.SimulationResults) -> None:
     table.add_column("<|M|>/site", justify="right")
     if results.correlation_length is not None:
         table.add_column("xi", justify="right")
+    if results.adaptive_diagnostics is not None:
+        table.add_column("tau_int", justify="right")
+        table.add_column("interval", justify="right")
 
     for temp in results.temperatures:
         row: list[str] = [f"{temp:.3f}"]
@@ -248,6 +289,13 @@ def _print_results_summary(results: mcising.SimulationResults) -> None:
             and temp in results.correlation_length
         ):
             row.append(f"{float(np.mean(results.correlation_length[temp])):.2f}")
+        if (
+            results.adaptive_diagnostics is not None
+            and temp in results.adaptive_diagnostics
+        ):
+            diag = results.adaptive_diagnostics[temp]
+            row.append(f"{diag.tau_int:.1f}")
+            row.append(str(diag.measurement_interval))
         table.add_row(*row)
 
     elapsed = results.metadata.get("elapsed_seconds", 0)

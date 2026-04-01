@@ -1,124 +1,147 @@
-[![Downloads](https://static.pepy.tech/badge/mcising)](https://pepy.tech/project/mcising)
+<p align="center">
+  <img src="assets/logo.svg" alt="mcising logo" width="300">
+</p>
 
-# mcising
+<h1 align="center">mcising</h1>
 
-mcising is a Python package for generating Ising model data using Metropolis algorithm. It works for square lattices, and for nearest neighbor and next nearest neighbor interactions. The Monte-Carlo method it uses, has the cool-down approach to avoid semi stable states.
+<p align="center">
+  High-performance Ising model Monte Carlo simulation with a Rust core.
+</p>
+
+<p align="center">
+  <a href="https://pepy.tech/project/mcising"><img src="https://static.pepy.tech/badge/mcising" alt="Downloads"></a>
+</p>
+
+---
+
+**mcising** is a Python library for Monte Carlo simulation of Ising spin systems on square lattices. It supports nearest-neighbor (J1) and next-nearest-neighbor (J2) interactions, external magnetic fields, correlation functions, and adaptive thermalization. The performance-critical simulation loop is written in Rust via PyO3.
+
+## Features
+
+- **Rust-accelerated Metropolis algorithm** via PyO3/maturin
+- **J1-J2 frustrated magnetism** -- nearest and next-nearest-neighbor couplings
+- **Adaptive thermalization** -- MSER equilibration detection + Sokal autocorrelation estimation
+- **Cool-down approach** -- temperatures processed in descending order to avoid metastable states
+- **Correlation functions** -- spin-spin correlation and correlation length
+- **HDF5 output** with crash-safe incremental checkpointing
+- **Rich CLI** with progress bars, benchmarking, and structured output
+- **Fully reproducible** -- deterministic RNG (Xoshiro256**), same seed = same results
 
 ## Installation
 
-You can install the package using pip:
-
-`pip install mcising`
-
-## Usage
-
-You can generate Ising model data from the command line:
-
-`generate_ising_data <seed> <lattice_size> <num_configs> <j1> <j2> [--T_init <T_init>] [--T_final <T_final>] [--T_step <T_step>] [--sweep_steps <sweep_steps>] [--thermalization_scans <thermalization_scans>] [--calculate_correlation]`
-
-`seed`: the random seed for reproducibility
-
-`lattice_size`: the system size L of the square lattice LxL
-
-`num_configs`: number of configurations to be saved per temperature
-
-`j1` and `j2`: the interaction strengths, `j1` for nearest neighbor and `j2` for next nearest neighbor
-
-`T_init` and `T_final`: initial and final temperatures, initial being higher
-
-`T_step`: the step in between each temperature point
-
-`sweep_steps`: number of Monte-Carlo sweeps per step
-
-`thermalization_scans`: number of sweeps on each temperature step to ensure thermalization
-
-`calculate_correlation`: option to select if correlation function and correlation length should be calculated, since they are time consuming.
-
-An example usage:
-
-```console
-generate_ising_data 42 10 100 1.0 0.5 --T_init 4.0 --T_final 0.1 --T_step 0.05 --sweep_steps 10 --thermalization_scans 5 --calculate_correlation
+```bash
+pip install mcising
 ```
 
-An example of the output console:
+For development (requires Rust toolchain):
 
-```
-..1 / 11 samples saved.
-2 / 11 samples saved.
-3 / 11 samples saved.
-4 / 11 samples saved.
-5 / 11 samples saved.
-6 / 11 samples saved.
-7 / 11 samples saved.
-8 / 11 samples saved.
-9 / 11 samples saved.
-10 / 11 samples saved.
-11 / 11 samples saved.
-For temperature= 1.0, MC simulation executed in: 0.43 seconds
-.1 / 11 samples saved.
-2 / 11 samples saved.
-3 / 11 samples saved.
-4 / 11 samples saved.
-5 / 11 samples saved.
-6 / 11 samples saved.
-7 / 11 samples saved.
-8 / 11 samples saved.
-9 / 11 samples saved.
-10 / 11 samples saved.
-11 / 11 samples saved.
-For temperature= 1.0, MC simulation executed in: 0.18 seconds
+```bash
+git clone https://github.com/burakericok/mcising.git
+cd mcising
+uv sync
+uv run maturin develop
 ```
 
-Example output png files:
+## Quick Start
 
-<img src="mcising/imgs/SQ_L_30_J1_1.000_J2_0.650_h_0.000_T_4.000_s_1149_n_0.png" width="100">
-<img src="mcising/imgs/SQ_L_30_J1_1.000_J2_0.000_h_0.000_T_2.350_s_3985_n_0.png" width="100">
-<img src="mcising/imgs/SQ_L_30_J1_1.000_J2_0.000_h_0.000_T_0.100_s_8394_n_1000.png" width="100">
+### Python API
 
-Structure of the saved pickle files:
+```python
+from mcising import Simulation, SimulationConfig, LatticeConfig
+
+config = SimulationConfig(
+    lattice=LatticeConfig(size=32, j1=1.0, j2=0.0),
+    temperatures=(3.0, 2.269, 1.5),
+    n_sweeps=1000,
+    seed=42,
+)
+
+sim = Simulation(config)
+results = sim.run()
+
+# Access results per temperature
+for T in results.temperatures:
+    print(f"T={T:.3f}: <E>={results.energy[T].mean():.4f}, "
+          f"<|M|>={abs(results.magnetization[T]).mean():.4f}")
+```
+
+### Adaptive Mode
+
+For large lattices near the critical temperature, enable adaptive measurement to automatically determine thermalization length and measurement spacing:
+
+```python
+from mcising import AdaptiveConfig
+
+config = SimulationConfig(
+    lattice=LatticeConfig(size=64),
+    temperatures=(3.0, 2.269, 1.5),
+    adaptive=AdaptiveConfig(enabled=True, min_independent_samples=200),
+    seed=42,
+)
+
+results = Simulation(config).run()
+
+# Inspect diagnostics
+for T in results.temperatures:
+    diag = results.adaptive_diagnostics[T]
+    print(f"T={T:.3f}: tau_int={diag.tau_int:.1f}, "
+          f"interval={diag.measurement_interval}")
+```
+
+### CLI
+
+```bash
+# Basic run
+mcising run -L 32 --seed 42 -o results.h5
+
+# Adaptive mode
+mcising run -L 64 --adaptive --min-samples 200 --seed 42
+
+# With checkpointing (crash-safe)
+mcising run -L 32 --checkpoint sim.h5
+
+# Resume interrupted run
+mcising run -L 32 --checkpoint sim.h5 --resume
+
+# Benchmark performance
+mcising benchmark -L 64 --sweeps 10000
+
+# Show info
+mcising info
+```
+
+### Saving Results
+
+```python
+from mcising import save_hdf5, load_hdf5, save_json_summary
+
+# HDF5 (full data)
+save_hdf5(results, "results.h5")
+loaded = load_hdf5("results.h5")
+
+# JSON summary (statistics only)
+save_json_summary(results, "summary.json")
+```
+
+## Architecture
 
 ```
-data_sample = {
-    'configuration': np.ndarray,  # The lattice configuration (2D array of spins)
-    'energy': float,              # The energy of the configuration
-    'magnetization': float,       # The magnetization of the configuration
-    'correlation_length': float,  # The correlation length (if calculated)
-    'correlation_function': np.ndarray,  # The correlation function values (if calculated)
-    'distances': np.ndarray       # The distances corresponding to the correlation function values (if calculated)
-}
+mcising/
+├── rust/src/              # Rust core (compiled to mcising._core)
+│   ├── algorithm/         # MC algorithms (Metropolis)
+│   ├── autocorrelation.rs # MSER + Sokal windowing
+│   ├── lattice/           # Lattice geometries (square)
+│   ├── observables.rs     # Energy, magnetization, correlation
+│   └── simulation.rs      # PyO3 boundary (IsingSimulation)
+├── python/mcising/        # Python package
+│   ├── simulation.py      # High-level Simulation class
+│   ├── config.py          # Frozen dataclass configs
+│   ├── io.py              # HDF5/JSON I/O
+│   ├── plotting.py        # Matplotlib visualization
+│   └── cli.py             # Typer CLI
+└── tests/                 # pytest suite (94 tests)
 ```
 
-### Detailed Description of Each Key
-
-- **configuration**: A 2D NumPy array representing the lattice configuration, where each element is a spin (-1 or 1).
-
-  - Type: `np.ndarray`
-  - Shape: `(lattice_size, lattice_size)`
-
-- **energy**: A float representing the energy of the current lattice configuration.
-
-  - Type: `float`
-
-- **magnetization**: A float representing the net magnetization of the current lattice configuration.
-
-  - Type: `float`
-
-- **correlation_length**: A float representing the correlation length of the lattice. This is only present if correlation calculations are enabled.
-
-  - Type: `float`
-  - Note: This key is `None` if correlation calculations are not performed.
-
-- **correlation_function**: A 1D NumPy array representing the values of the correlation function. This is only present if correlation calculations are enabled.
-
-  - Type: `np.ndarray`
-  - Shape: `(num_distances,)`
-  - Note: This key is `None` if correlation calculations are not performed.
-
-- **distances**: A 1D NumPy array representing the distances corresponding to the correlation function values. This is only present if correlation calculations are enabled.
-  - Type: `np.ndarray`
-  - Shape: `(num_distances,)`
-  - Note: This key is `None` if correlation calculations are not performed.
-
-## Licence
+## License
 
 This project is licensed under the MIT License.

@@ -1,5 +1,7 @@
 """Type stubs for the Rust _core extension module."""
 
+from typing import Any
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -33,6 +35,29 @@ class IsingSimulation:
         self,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]: ...
     def correlation_length(self) -> float: ...
+    def thermalize_with_diagnostics(
+        self, temp_schedule: list[float]
+    ) -> NDArray[np.float64]: ...
+    def extend_thermalization(
+        self, n_sweeps: int, beta: float
+    ) -> NDArray[np.float64]: ...
+    @staticmethod
+    def analyze_thermalization_series(
+        series: NDArray[np.float64],
+        c_window: float,
+        tau_multiplier: float,
+    ) -> dict[str, Any]: ...
+    def production_sweeps(
+        self,
+        n_measurements: int,
+        interval: int,
+        beta: float,
+        store_configs: bool,
+    ) -> tuple[
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.int8] | None,
+    ]: ...
     def get_rng_state(self) -> list[int]: ...
     def set_rng_state(self, state: list[int]) -> None: ...
     def __repr__(self) -> str: ...

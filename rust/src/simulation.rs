@@ -1,12 +1,15 @@
 use numpy::{
-    IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2, PyUntypedArrayMethods,
+    IntoPyArray, PyArray1, PyArray2, PyArray3, PyArrayMethods, PyReadonlyArray1,
+    PyReadonlyArray2, PyUntypedArrayMethods,
 };
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use rand::Rng;
 use rand_xoshiro::Xoshiro256StarStar;
 
 use crate::algorithm::metropolis::Metropolis;
 use crate::algorithm::McAlgorithm;
+use crate::autocorrelation;
 use crate::error::MCIsingError;
 use crate::lattice::square::SquareLattice;
 use crate::lattice::Lattice;
@@ -254,6 +257,194 @@ impl IsingSimulation {
         })?;
         self.rng = rng;
         Ok(())
+    }
+
+    /// Run thermalization sweeps following a temperature schedule, recording
+    /// energy after each sweep.
+    ///
+    /// This replaces the Python-side loop that called `metropolis_sweep(1, beta)`
+    /// repeatedly, avoiding N Python-Rust boundary crossings.
+    ///
+    /// # Arguments
+    /// * `temp_schedule` - List of temperatures to sweep through (one sweep per temperature)
+    ///
+    /// # Returns
+    /// 1D NumPy array of energy-per-site values, one per sweep.
+    fn thermalize_with_diagnostics<'py>(
+        &mut self,
+        py: Python<'py>,
+        temp_schedule: Vec<f64>,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let mut energies = Vec::with_capacity(temp_schedule.len());
+
+        for temp in &temp_schedule {
+            if *temp <= 0.0 {
+                continue;
+            }
+            let beta = 1.0 / temp;
+            Metropolis.sweep(
+                &mut self.spins,
+                &self.lattice,
+                self.j1,
+                self.j2,
+                self.h,
+                beta,
+                &mut self.rng,
+            );
+            energies.push(observables::energy_per_site(
+                &self.spins,
+                &self.lattice,
+                self.j1,
+                self.j2,
+                self.h,
+            ));
+        }
+
+        Ok(energies.into_pyarray(py))
+    }
+
+    /// Run additional thermalization sweeps at a fixed temperature,
+    /// recording energy after each sweep.
+    ///
+    /// Used when MSER detects the initial cool-down was insufficient.
+    fn extend_thermalization<'py>(
+        &mut self,
+        py: Python<'py>,
+        n_sweeps: usize,
+        beta: f64,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        if !beta.is_finite() || beta <= 0.0 {
+            return Err(MCIsingError::InvalidTemperature(if beta == 0.0 {
+                0.0
+            } else {
+                1.0 / beta
+            })
+            .into());
+        }
+
+        let mut energies = Vec::with_capacity(n_sweeps);
+
+        for _ in 0..n_sweeps {
+            Metropolis.sweep(
+                &mut self.spins,
+                &self.lattice,
+                self.j1,
+                self.j2,
+                self.h,
+                beta,
+                &mut self.rng,
+            );
+            energies.push(observables::energy_per_site(
+                &self.spins,
+                &self.lattice,
+                self.j1,
+                self.j2,
+                self.h,
+            ));
+        }
+
+        Ok(energies.into_pyarray(py))
+    }
+
+    /// Analyze a thermalization energy series for equilibration and autocorrelation.
+    ///
+    /// Returns a dict with keys: truncation_point, is_thermalized, tau_int,
+    /// window, recommended_interval.
+    #[staticmethod]
+    fn analyze_thermalization_series<'py>(
+        py: Python<'py>,
+        series: PyReadonlyArray1<'py, f64>,
+        c_window: f64,
+        tau_multiplier: f64,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let data = series.as_slice().map_err(|e| {
+            MCIsingError::InvalidSpinConfiguration(format!("Cannot read array: {e}"))
+        })?;
+
+        let analysis = autocorrelation::analyze_thermalization(data, c_window, tau_multiplier);
+
+        let dict = PyDict::new(py);
+        dict.set_item("truncation_point", analysis.thermalization.truncation_point)?;
+        dict.set_item("is_thermalized", analysis.thermalization.is_thermalized)?;
+        dict.set_item("tau_int", analysis.autocorrelation.tau_int)?;
+        dict.set_item("window", analysis.autocorrelation.window)?;
+        dict.set_item("recommended_interval", analysis.recommended_interval)?;
+        Ok(dict)
+    }
+
+    /// Run production measurement sweeps, collecting observables at each interval.
+    ///
+    /// Performs n_measurements * interval total sweeps, recording energy,
+    /// magnetization, and optionally spin configurations every `interval` sweeps.
+    ///
+    /// # Returns
+    /// Tuple of (energies, magnetizations, configs_or_none).
+    fn production_sweeps<'py>(
+        &mut self,
+        py: Python<'py>,
+        n_measurements: usize,
+        interval: usize,
+        beta: f64,
+        store_configs: bool,
+    ) -> PyResult<(
+        Bound<'py, PyArray1<f64>>,
+        Bound<'py, PyArray1<f64>>,
+        Option<Bound<'py, PyArray3<i8>>>,
+    )> {
+        if !beta.is_finite() || beta <= 0.0 {
+            return Err(MCIsingError::InvalidTemperature(if beta == 0.0 {
+                0.0
+            } else {
+                1.0 / beta
+            })
+            .into());
+        }
+
+        let mut energies = Vec::with_capacity(n_measurements);
+        let mut magnetizations = Vec::with_capacity(n_measurements);
+        let mut configs: Option<Vec<i8>> = if store_configs {
+            Some(Vec::with_capacity(n_measurements * self.spins.len()))
+        } else {
+            None
+        };
+
+        for _ in 0..n_measurements {
+            // Run `interval` sweeps between measurements
+            for _ in 0..interval {
+                Metropolis.sweep(
+                    &mut self.spins,
+                    &self.lattice,
+                    self.j1,
+                    self.j2,
+                    self.h,
+                    beta,
+                    &mut self.rng,
+                );
+            }
+
+            energies.push(observables::energy_per_site(
+                &self.spins,
+                &self.lattice,
+                self.j1,
+                self.j2,
+                self.h,
+            ));
+            magnetizations.push(observables::magnetization_per_site(&self.spins));
+
+            if let Some(ref mut c) = configs {
+                c.extend_from_slice(&self.spins);
+            }
+        }
+
+        let py_energies = energies.into_pyarray(py);
+        let py_mags = magnetizations.into_pyarray(py);
+        let py_configs = configs.map(|c| {
+            let flat = numpy::PyArray1::from_vec(py, c);
+            flat.reshape([n_measurements, self.lattice_size, self.lattice_size])
+                .expect("reshape should not fail for correct dimensions")
+        });
+
+        Ok((py_energies, py_mags, py_configs))
     }
 
     /// String representation.

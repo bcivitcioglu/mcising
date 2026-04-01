@@ -24,7 +24,39 @@ from mcising.exceptions import SimulationError
 __all__: Final[list[str]] = [
     "Simulation",
     "SimulationResults",
+    "AdaptiveDiagnostics",
 ]
+
+
+@dataclass
+class AdaptiveDiagnostics:
+    """Per-temperature diagnostics from the adaptive measurement scheme.
+
+    Attributes
+    ----------
+    thermalization_sweeps : int
+        Total thermalization sweeps used (cool-down + extension).
+    truncation_point : int
+        MSER truncation point in the thermalization energy series.
+    is_thermalized : bool
+        Whether the series was detected as stationary.
+    tau_int : float
+        Estimated integrated autocorrelation time.
+    measurement_interval : int
+        Measurement interval used for production (tau_multiplier * tau_int).
+    production_sweeps : int
+        Total production sweeps used.
+    n_samples : int
+        Number of measurement samples collected.
+    """
+
+    thermalization_sweeps: int = 0
+    truncation_point: int = 0
+    is_thermalized: bool = True
+    tau_int: float = 0.5
+    measurement_interval: int = 1
+    production_sweeps: int = 0
+    n_samples: int = 0
 
 
 @dataclass
@@ -57,6 +89,7 @@ class SimulationResults:
         dict[float, tuple[NDArray[np.float64], NDArray[np.float64]]] | None
     ) = None
     correlation_length: dict[float, NDArray[np.float64]] | None = None
+    adaptive_diagnostics: dict[float, AdaptiveDiagnostics] | None = None
     metadata: dict[str, object] = field(default_factory=dict)
 
 
@@ -144,6 +177,10 @@ class Simulation:
             results.correlation_function = {}
             results.correlation_length = {}
 
+        adaptive = self.config.adaptive.enabled
+        if adaptive:
+            results.adaptive_diagnostics = {}
+
         # Prepend high temperature for initial thermalization
         temp_schedule = [INF_TEMP, *effective_temps]
 
@@ -173,16 +210,26 @@ class Simulation:
                     description=f"T={to_temp:.3f} (thermalizing)",
                 )
 
-                # Thermalize
-                self._thermalize(from_temp, to_temp, self.config.n_thermalization)
+                if adaptive:
+                    # Adaptive: thermalize with diagnostics, then adaptive collection
+                    self._thermalize_adaptive(from_temp, to_temp, results)
 
-                progress.update(
-                    task,
-                    description=f"T={to_temp:.3f} (measuring)",
-                )
+                    progress.update(
+                        task,
+                        description=f"T={to_temp:.3f} (measuring)",
+                    )
 
-                # Collect measurements
-                self._collect_at_temperature(to_temp, results)
+                    self._collect_at_temperature_adaptive(to_temp, results)
+                else:
+                    # Fixed: original behavior
+                    self._thermalize(from_temp, to_temp, self.config.n_thermalization)
+
+                    progress.update(
+                        task,
+                        description=f"T={to_temp:.3f} (measuring)",
+                    )
+
+                    self._collect_at_temperature(to_temp, results)
 
                 if on_temperature_complete is not None:
                     on_temperature_complete(to_temp, results)
@@ -304,3 +351,107 @@ class Simulation:
             results.correlation_length[temperature] = np.array(
                 corr_lengths, dtype=np.float64
             )
+
+    def _thermalize_adaptive(
+        self,
+        from_temp: float,
+        to_temp: float,
+        results: SimulationResults,
+    ) -> None:
+        """Adaptive thermalization: cool-down with energy recording + MSER check."""
+        ac = self.config.adaptive
+        n_therm = max(self.config.n_thermalization, ac.min_thermalization_sweeps)
+
+        # Cool-down phase: linspace from from_temp to to_temp, record energy
+        temp_schedule = np.linspace(from_temp, to_temp, num=n_therm).tolist()
+        energy_series = np.asarray(
+            self._core.thermalize_with_diagnostics(temp_schedule)
+        )
+        total_therm = len(energy_series)
+
+        # Analyze: MSER + Sokal on the cool-down energy series
+        analysis = _RustSim.analyze_thermalization_series(
+            energy_series, ac.c_window, ac.tau_multiplier
+        )
+
+        # If not thermalized, extend with sweeps at target temperature
+        beta = 1.0 / to_temp
+        while (
+            not analysis["is_thermalized"]
+            and total_therm < ac.max_thermalization_sweeps
+        ):
+            extra_n = min(
+                n_therm,
+                ac.max_thermalization_sweeps - total_therm,
+            )
+            extra_energies = np.asarray(
+                self._core.extend_thermalization(extra_n, beta)
+            )
+            energy_series = np.concatenate([energy_series, extra_energies])
+            total_therm += extra_n
+
+            analysis = _RustSim.analyze_thermalization_series(
+                energy_series, ac.c_window, ac.tau_multiplier
+            )
+
+        # Store diagnostics (production filled by _collect_adaptive)
+        if results.adaptive_diagnostics is not None:
+            results.adaptive_diagnostics[to_temp] = AdaptiveDiagnostics(
+                thermalization_sweeps=total_therm,
+                truncation_point=int(analysis["truncation_point"]),
+                is_thermalized=bool(analysis["is_thermalized"]),
+                tau_int=float(analysis["tau_int"]),
+                measurement_interval=int(analysis["recommended_interval"]),
+            )
+
+    def _collect_at_temperature_adaptive(
+        self, temperature: float, results: SimulationResults
+    ) -> None:
+        """Adaptive production: use tau_int to set measurement spacing."""
+        ac = self.config.adaptive
+        beta = 1.0 / temperature
+
+        # Get the interval from diagnostics
+        diag = (
+            results.adaptive_diagnostics.get(temperature)
+            if results.adaptive_diagnostics is not None
+            else None
+        )
+        interval = diag.measurement_interval if diag else 1
+        interval = max(1, interval)
+
+        # Calculate number of production measurements
+        n_measurements = ac.min_independent_samples
+
+        # Enforce total sweep budget
+        therm_used = diag.thermalization_sweeps if diag else 0
+        remaining_budget = ac.max_total_sweeps - therm_used
+        max_measurements = max(1, remaining_budget // interval)
+        n_measurements = min(n_measurements, max_measurements)
+
+        # Single Rust call for all production measurements
+        energies, magnetizations, configs = self._core.production_sweeps(
+            n_measurements, interval, beta, True
+        )
+
+        results.energy[temperature] = np.asarray(energies)
+        results.magnetization[temperature] = np.asarray(magnetizations)
+        results.configurations[temperature] = np.asarray(configs)
+
+        # Update diagnostics with production info
+        if diag is not None:
+            diag.production_sweeps = n_measurements * interval
+            diag.n_samples = n_measurements
+
+        # Correlation function (computed after production, using final config)
+        if self.config.compute_correlation:
+            distances, correlations = self._core.correlation_function()
+            if results.correlation_function is not None:
+                results.correlation_function[temperature] = (
+                    np.asarray(distances),
+                    np.asarray(correlations),
+                )
+            if results.correlation_length is not None:
+                results.correlation_length[temperature] = np.array(
+                    [self._core.correlation_length()], dtype=np.float64
+                )

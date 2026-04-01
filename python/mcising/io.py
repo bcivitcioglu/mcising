@@ -8,7 +8,7 @@ from typing import Any, Final, cast
 
 import numpy as np
 
-from mcising.simulation import Simulation, SimulationResults
+from mcising.simulation import AdaptiveDiagnostics, Simulation, SimulationResults
 
 __all__: Final[list[str]] = [
     "save_hdf5",
@@ -292,6 +292,7 @@ def load_hdf5(path: str | Path) -> SimulationResults:
             float, tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]
         ] = {}
         correlation_length: dict[float, np.ndarray[Any, Any]] = {}
+        adaptive_diagnostics: dict[float, AdaptiveDiagnostics] = {}
 
         for group_name in sorted(temp_groups):
             grp = f[group_name]
@@ -311,6 +312,17 @@ def load_hdf5(path: str | Path) -> SimulationResults:
                 )
             if "correlation_length" in grp:
                 correlation_length[temp] = np.array(grp["correlation_length"])
+            if "adaptive_diagnostics" in grp:
+                ad = grp["adaptive_diagnostics"]
+                adaptive_diagnostics[temp] = AdaptiveDiagnostics(
+                    thermalization_sweeps=int(ad.attrs["thermalization_sweeps"]),
+                    truncation_point=int(ad.attrs["truncation_point"]),
+                    is_thermalized=bool(ad.attrs["is_thermalized"]),
+                    tau_int=float(ad.attrs["tau_int"]),
+                    measurement_interval=int(ad.attrs["measurement_interval"]),
+                    production_sweeps=int(ad.attrs["production_sweeps"]),
+                    n_samples=int(ad.attrs["n_samples"]),
+                )
 
         return SimulationResults(
             temperatures=temperatures,
@@ -319,6 +331,7 @@ def load_hdf5(path: str | Path) -> SimulationResults:
             configurations=configurations,
             correlation_function=correlation_function if correlation_function else None,
             correlation_length=correlation_length if correlation_length else None,
+            adaptive_diagnostics=adaptive_diagnostics if adaptive_diagnostics else None,
             metadata=metadata,
         )
 
@@ -442,6 +455,20 @@ def _write_temperature_group(
         grp.create_dataset(
             "correlation_length", data=results.correlation_length[temp]
         )
+
+    if (
+        results.adaptive_diagnostics is not None
+        and temp in results.adaptive_diagnostics
+    ):
+        diag = results.adaptive_diagnostics[temp]
+        ad_grp = grp.create_group("adaptive_diagnostics")
+        ad_grp.attrs["thermalization_sweeps"] = diag.thermalization_sweeps
+        ad_grp.attrs["truncation_point"] = diag.truncation_point
+        ad_grp.attrs["is_thermalized"] = diag.is_thermalized
+        ad_grp.attrs["tau_int"] = diag.tau_int
+        ad_grp.attrs["measurement_interval"] = diag.measurement_interval
+        ad_grp.attrs["production_sweeps"] = diag.production_sweeps
+        ad_grp.attrs["n_samples"] = diag.n_samples
 
 
 def _config_to_json(config: Any) -> str:
