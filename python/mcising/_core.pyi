@@ -14,6 +14,8 @@ class IsingSimulation:
     j2: float
     h: float
 
+    algorithm_name: str
+
     def __init__(
         self,
         lattice_size: int,
@@ -21,10 +23,9 @@ class IsingSimulation:
         j2: float,
         h: float,
         seed: int,
+        algorithm: str = "metropolis",
     ) -> None: ...
-    def metropolis_sweep(
-        self, n_sweeps: int, beta: float
-    ) -> tuple[int, int]: ...
+    def sweep(self, n_sweeps: int, beta: float) -> tuple[int, int]: ...
     def energy(self) -> float: ...
     def magnetization(self) -> float: ...
     def get_spins(self) -> NDArray[np.int8]: ...

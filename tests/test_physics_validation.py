@@ -77,7 +77,7 @@ class TestEnergyBounds:
 
     def test_energy_within_bounds(self) -> None:
         sim = IsingSimulation(8, 1.0, 0.0, 0.0, 42)
-        sim.metropolis_sweep(100, 0.5)
+        sim.sweep(100, 0.5)
         e = sim.energy()
         assert -2.0 <= e <= 2.0
 
@@ -97,12 +97,12 @@ class TestDetailedBalance:
         """After thermalization, energy should fluctuate around a mean."""
         sim = IsingSimulation(8, 1.0, 0.0, 0.0, 42)
         # Thermalize
-        sim.metropolis_sweep(200, 0.5)
+        sim.sweep(200, 0.5)
 
         # Collect energy measurements
         energies = []
         for _ in range(50):
-            sim.metropolis_sweep(5, 0.5)
+            sim.sweep(5, 0.5)
             energies.append(sim.energy())
 
         energies_arr = np.array(energies)
@@ -117,12 +117,12 @@ class TestFieldEffect:
 
     def test_positive_field_positive_magnetization(self) -> None:
         sim = IsingSimulation(8, 1.0, 0.0, 2.0, 42)  # h = 2.0
-        sim.metropolis_sweep(500, 1.0)
+        sim.sweep(500, 1.0)
         m = sim.magnetization()
         assert m > 0.5  # Strong field should align spins
 
     def test_negative_field_negative_magnetization(self) -> None:
         sim = IsingSimulation(8, 1.0, 0.0, -2.0, 42)  # h = -2.0
-        sim.metropolis_sweep(500, 1.0)
+        sim.sweep(500, 1.0)
         m = sim.magnetization()
         assert m < -0.5

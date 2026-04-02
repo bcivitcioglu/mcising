@@ -9,6 +9,8 @@ pub enum MCIsingError {
     InvalidTemperature(f64),
     InvalidCoupling(&'static str, f64),
     InvalidSpinConfiguration(String),
+    InvalidAlgorithm(String),
+    ClusterAlgorithmConstraint(String),
 }
 
 impl fmt::Display for MCIsingError {
@@ -25,6 +27,19 @@ impl fmt::Display for MCIsingError {
             }
             Self::InvalidSpinConfiguration(msg) => {
                 write!(f, "Invalid spin configuration: {msg}")
+            }
+            Self::InvalidAlgorithm(name) => {
+                write!(
+                    f,
+                    "Unknown algorithm '{name}'. Valid options: metropolis, wolff, swendsen_wang"
+                )
+            }
+            Self::ClusterAlgorithmConstraint(alg) => {
+                write!(
+                    f,
+                    "Cluster algorithm '{alg}' requires J2=0 and h=0. \
+                     Use algorithm='metropolis' for J1-J2 or external field simulations."
+                )
             }
         }
     }

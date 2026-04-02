@@ -13,7 +13,7 @@ pub struct Metropolis;
 
 impl McAlgorithm for Metropolis {
     fn sweep<L: Lattice, R: Rng>(
-        &self,
+        &mut self,
         spins: &mut [i8],
         lattice: &L,
         j1: f64,

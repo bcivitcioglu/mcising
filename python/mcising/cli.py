@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from typing import Annotated, Final
 
@@ -12,6 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 import mcising
+from mcising.benchmarks import BenchmarkResult
 from mcising.config import (
     AdaptiveConfig,
     Algorithm,
@@ -127,6 +127,13 @@ def run(
             help="Max total sweeps per temperature (adaptive mode).",
         ),
     ] = 100_000,
+    algorithm: Annotated[
+        str,
+        typer.Option(
+            "--algorithm",
+            help="MC algorithm: metropolis, wolff, swendsen_wang.",
+        ),
+    ] = "metropolis",
 ) -> None:
     """Run a Monte Carlo simulation of the 2D Ising model."""
     temps = tuple(temperatures) if temperatures else (3.0, 2.269, 1.5)
@@ -144,6 +151,7 @@ def run(
             j2=j2,
             h=h,
         ),
+        algorithm=Algorithm(algorithm),
         temperatures=temps,
         n_sweeps=n_sweeps,
         n_thermalization=n_therm,
@@ -196,45 +204,258 @@ def benchmark(
         int, typer.Option("--sweeps", help="Sweeps to benchmark.")
     ] = 10000,
     seed: Annotated[int, typer.Option(help="Random seed.")] = 42,
+    compare: Annotated[
+        bool,
+        typer.Option(
+            "--compare",
+            help="Compare mcising against Pure Python and NumPy baselines.",
+        ),
+    ] = False,
+    scaling: Annotated[
+        bool,
+        typer.Option(
+            "--scaling",
+            help="Run scaling benchmark across multiple lattice sizes.",
+        ),
+    ] = False,
 ) -> None:
-    """Benchmark Metropolis sweep performance."""
-    from mcising._core import IsingSimulation
+    """Benchmark sweep performance.
+
+    By default, benchmarks the mcising Rust core only.
+    Use --compare to include Pure Python and NumPy baselines.
+    Use --scaling to run across L=8,16,32,64,128,256.
+    """
+    from mcising.benchmarks import bench_mcising, bench_numpy, bench_pure_python
+
+    if scaling:
+        _run_scaling_benchmark(seed, compare)
+        return
 
     console.print(
         Panel(
             f"[bold]Benchmark:[/bold] {lattice_size}x{lattice_size} lattice, "
-            f"{n_sweeps} sweeps",
+            f"{n_sweeps:,} sweeps, T=T_c=2.269",
             border_style="blue",
         )
     )
 
-    sim = IsingSimulation(lattice_size, 1.0, 0.0, 0.0, seed)
-    beta = 1.0 / 2.269  # Critical temperature
+    results: list[BenchmarkResult] = []
 
-    # Warmup
-    sim.metropolis_sweep(100, beta)
+    if compare:
+        with console.status("[bold blue]Running Pure Python baseline..."):
+            results.append(
+                bench_pure_python(lattice_size, n_sweeps, seed)
+            )
 
-    # Timed run
-    start = time.perf_counter()
-    sim.metropolis_sweep(n_sweeps, beta)
-    elapsed = time.perf_counter() - start
+        with console.status("[bold blue]Running NumPy baseline..."):
+            results.append(bench_numpy(lattice_size, n_sweeps, seed))
 
-    n_sites = lattice_size * lattice_size
-    total_updates = n_sweeps * n_sites
-    updates_per_sec = total_updates / elapsed
+    with console.status("[bold blue]Running mcising (Rust)..."):
+        results.append(bench_mcising(lattice_size, n_sweeps, seed))
 
-    table = Table(title="Results", show_header=False, border_style="green")
-    table.add_column("Metric", style="bold")
-    table.add_column("Value", justify="right")
+    if compare:
+        peapods_result = _try_bench_peapods(lattice_size, n_sweeps, seed)
+        if peapods_result is not None:
+            results.append(peapods_result)
 
-    table.add_row("Time", f"{elapsed:.3f} s")
-    table.add_row("Total spin updates", f"{total_updates:,}")
-    table.add_row("Updates/sec", f"{updates_per_sec:,.0f}")
-    table.add_row("Sweeps/sec", f"{n_sweeps / elapsed:,.0f}")
-    table.add_row("Final energy/site", f"{sim.energy():.4f}")
-    table.add_row("Final |m|/site", f"{abs(sim.magnetization()):.4f}")
+    _print_benchmark_results(results, compare)
+
+
+def _try_bench_peapods(
+    lattice_size: int, n_sweeps: int, seed: int
+) -> BenchmarkResult | None:
+    """Try to run peapods benchmark; return None if not installed."""
+    try:
+        from mcising.benchmarks import bench_peapods
+    except ImportError:
+        console.print(
+            "[dim]peapods not installed. "
+            "Install with: uv sync --group benchmark[/dim]"
+        )
+        return None
+
+    try:
+        with console.status("[bold blue]Running peapods (Rust)..."):
+            return bench_peapods(lattice_size, n_sweeps, seed)
+    except ImportError:
+        console.print(
+            "[dim]peapods not installed. "
+            "Install with: uv sync --group benchmark[/dim]"
+        )
+        return None
+
+
+def _run_scaling_benchmark(seed: int, compare: bool) -> None:
+    """Run benchmarks across multiple lattice sizes."""
+    from mcising.benchmarks import (
+        bench_mcising,
+        bench_numpy,
+        bench_pure_python,
+    )
+
+    has_peapods = False
+    bench_peapods_fn = None
+    if compare:
+        try:
+            from mcising.benchmarks import bench_peapods
+
+            bench_peapods_fn = bench_peapods
+            has_peapods = True
+        except ImportError:
+            pass
+
+    sizes = [8, 16, 32, 64, 128, 256]
+    # Same sweeps for all implementations per lattice size.
+    # Scale down for larger lattices to keep pure Python bearable.
+    sweep_schedule = {
+        8: 5000,
+        16: 2000,
+        32: 500,
+        64: 200,
+        128: 50,
+        256: 10,
+    }
+
+    console.print(
+        Panel(
+            "[bold]Scaling Benchmark[/bold]: L = "
+            + ", ".join(str(s) for s in sizes)
+            + "\nT=T_c=2.269, Metropolis algorithm"
+            + "\n[dim]Same sweep count per L for fair comparison[/dim]",
+            border_style="blue",
+        )
+    )
+
+    # Build the table
+    table = Table(
+        title="Spin Updates / Second (higher is better)",
+        border_style="green",
+    )
+    table.add_column("L", justify="right", style="bold")
+    table.add_column("Sweeps", justify="right")
+
+    runners: list[tuple[str, object]] = []
+    if compare:
+        runners.append(("Pure Python", bench_pure_python))
+        runners.append(("NumPy", bench_numpy))
+    runners.append(("mcising (Rust)", bench_mcising))
+    if has_peapods and bench_peapods_fn is not None:
+        runners.append(("peapods", bench_peapods_fn))
+
+    for name, _ in runners:
+        table.add_column(name, justify="right")
+
+    if compare:
+        table.add_column(
+            "mcising / Python",
+            justify="right",
+            style="bold green",
+        )
+        if has_peapods:
+            table.add_column(
+                "peapods / mcising",
+                justify="right",
+                style="bold cyan",
+            )
+
+    with console.status("[bold blue]Running scaling benchmark..."):
+        for l_size in sizes:
+            sweeps = sweep_schedule[l_size]
+            row: list[str] = [str(l_size), f"{sweeps:,}"]
+
+            row_results: dict[str, BenchmarkResult] = {}
+
+            for name, bench_fn in runners:
+                result = bench_fn(l_size, sweeps, seed)  # type: ignore[operator]
+                row_results[name] = result
+                row.append(f"{result.updates_per_sec:,.0f}")
+
+            if compare:
+                rust_ups = row_results["mcising (Rust)"].updates_per_sec
+                python_ups = row_results.get("Pure Python")
+                if python_ups and python_ups.updates_per_sec > 0:
+                    row.append(
+                        f"{rust_ups / python_ups.updates_per_sec:,.0f}x"
+                    )
+                else:
+                    row.append("-")
+                if has_peapods:
+                    peapods_r = row_results.get("peapods")
+                    if peapods_r and rust_ups > 0:
+                        ratio = peapods_r.updates_per_sec / rust_ups
+                        row.append(f"{ratio:,.1f}x")
+                    else:
+                        row.append("-")
+
+            table.add_row(*row)
 
     console.print(table)
+    if has_peapods:
+        console.print(
+            "\n[dim]Note: peapods/mcising ratio >1 means peapods"
+            " is faster per update.[/dim]"
+        )
+
+
+def _print_benchmark_results(
+    results: list[BenchmarkResult], compare: bool
+) -> None:
+    """Print benchmark results as a Rich table."""
+
+    table = Table(title="Benchmark Results", border_style="green")
+    table.add_column("Implementation", style="bold")
+    table.add_column("Time", justify="right")
+    table.add_column("Sweeps", justify="right")
+    table.add_column("Updates/sec", justify="right")
+    table.add_column("Sweeps/sec", justify="right")
+    table.add_column("E/site", justify="right")
+    table.add_column("|M|/site", justify="right")
+    if compare:
+        table.add_column(
+            "vs mcising", justify="right", style="bold green"
+        )
+
+    rust_ups: float | None = None
+    for r in results:
+        if "mcising" in r.name:
+            rust_ups = r.updates_per_sec
+
+    for r in results:
+        vs_mcising = ""
+        if compare and rust_ups is not None and r.updates_per_sec > 0:
+            if "mcising" in r.name:
+                vs_mcising = "1.0x"
+            elif r.updates_per_sec > rust_ups:
+                ratio = r.updates_per_sec / rust_ups
+                vs_mcising = f"[yellow]{ratio:,.1f}x faster[/yellow]"
+            else:
+                ratio = rust_ups / r.updates_per_sec
+                vs_mcising = f"{ratio:,.1f}x slower"
+
+        table.add_row(
+            r.name,
+            f"{r.elapsed:.3f} s",
+            f"{r.n_sweeps:,}",
+            f"{r.updates_per_sec:,.0f}",
+            f"{r.sweeps_per_sec:,.0f}",
+            f"{r.energy:.4f}",
+            f"{abs(r.magnetization):.4f}",
+            *([vs_mcising] if compare else []),
+        )
+
+    console.print(table)
+
+    if compare and len(results) >= 2:
+        console.print()
+        # Summary line
+        slowest = min(r.updates_per_sec for r in results if r.updates_per_sec > 0)
+        fastest = max(r.updates_per_sec for r in results)
+        if slowest > 0:
+            console.print(
+                f"  [bold]Overall speedup:[/bold] mcising is "
+                f"[bold green]{fastest / slowest:,.0f}x[/bold green] faster "
+                f"than the slowest baseline"
+            )
 
 
 def _print_config(config: SimulationConfig) -> None:
@@ -243,6 +464,7 @@ def _print_config(config: SimulationConfig) -> None:
     table.add_column("Param", style="bold")
     table.add_column("Value")
 
+    table.add_row("Algorithm", config.algorithm.value)
     table.add_row("Lattice", f"{config.lattice.size}x{config.lattice.size} square")
     lc = config.lattice
     table.add_row("J1 / J2 / h", f"{lc.j1} / {lc.j2} / {lc.h}")

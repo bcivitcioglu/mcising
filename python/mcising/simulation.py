@@ -121,6 +121,7 @@ class Simulation:
             j2=config.lattice.j2,
             h=config.lattice.h,
             seed=config.seed,
+            algorithm=config.algorithm.value,
         )
 
     def run(
@@ -261,7 +262,7 @@ class Simulation:
             raise SimulationError(msg)
 
         beta = 1.0 / temperature
-        accepted, attempted = self._core.metropolis_sweep(n_sweeps, beta)
+        accepted, attempted = self._core.sweep(n_sweeps, beta)
 
         return {
             "energy": self._core.energy(),
@@ -298,7 +299,7 @@ class Simulation:
             if temp <= 0:
                 continue
             beta = 1.0 / float(temp)
-            self._core.metropolis_sweep(1, beta)
+            self._core.sweep(1, beta)
 
     def _collect_at_temperature(
         self, temperature: float, results: SimulationResults
@@ -321,7 +322,7 @@ class Simulation:
         last_correlations: NDArray[np.float64] | None = None
 
         for m in range(n_measurements):
-            self._core.metropolis_sweep(self.config.measurement_interval, beta)
+            self._core.sweep(self.config.measurement_interval, beta)
 
             energies[m] = self._core.energy()
             magnetizations[m] = self._core.magnetization()

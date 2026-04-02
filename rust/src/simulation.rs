@@ -8,7 +8,9 @@ use rand::Rng;
 use rand_xoshiro::Xoshiro256StarStar;
 
 use crate::algorithm::metropolis::Metropolis;
-use crate::algorithm::McAlgorithm;
+use crate::algorithm::swendsen_wang::SwendsenWang;
+use crate::algorithm::wolff::Wolff;
+use crate::algorithm::{AlgorithmKind, McAlgorithm, SweepResult};
 use crate::autocorrelation;
 use crate::error::MCIsingError;
 use crate::lattice::square::SquareLattice;
@@ -29,6 +31,10 @@ pub struct IsingSimulation {
     h: f64,
     rng: Xoshiro256StarStar,
     lattice_size: usize,
+    algorithm: AlgorithmKind,
+    metropolis: Metropolis,
+    wolff: Option<Wolff>,
+    swendsen_wang: Option<SwendsenWang>,
 }
 
 #[pymethods]
@@ -41,8 +47,17 @@ impl IsingSimulation {
     /// * `j2` - Next-nearest-neighbor coupling strength
     /// * `h` - External magnetic field
     /// * `seed` - Random seed for reproducibility
+    /// * `algorithm` - Algorithm name: "metropolis", "wolff", or "swendsen_wang"
     #[new]
-    fn new(lattice_size: usize, j1: f64, j2: f64, h: f64, seed: u64) -> PyResult<Self> {
+    #[pyo3(signature = (lattice_size, j1, j2, h, seed, algorithm = "metropolis"))]
+    fn new(
+        lattice_size: usize,
+        j1: f64,
+        j2: f64,
+        h: f64,
+        seed: u64,
+        algorithm: &str,
+    ) -> PyResult<Self> {
         let lattice = SquareLattice::new(lattice_size)
             .ok_or(MCIsingError::InvalidLatticeSize(lattice_size))?;
 
@@ -56,10 +71,32 @@ impl IsingSimulation {
             return Err(MCIsingError::InvalidCoupling("h", h).into());
         }
 
+        let algo_kind = AlgorithmKind::from_str(algorithm)?;
+
+        // Cluster algorithms require J2=0 and h=0
+        if algo_kind.requires_no_frustration() && (j2 != 0.0 || h != 0.0) {
+            return Err(MCIsingError::ClusterAlgorithmConstraint(
+                algo_kind.name().to_string(),
+            )
+            .into());
+        }
+
+        let num_sites = lattice.num_sites();
         let mut rng = create_rng(seed);
-        let spins: Vec<i8> = (0..lattice.num_sites())
+        let spins: Vec<i8> = (0..num_sites)
             .map(|_| if rng.gen::<bool>() { 1 } else { -1 })
             .collect();
+
+        let wolff = if algo_kind == AlgorithmKind::Wolff {
+            Some(Wolff::new(num_sites))
+        } else {
+            None
+        };
+        let swendsen_wang = if algo_kind == AlgorithmKind::SwendsenWang {
+            Some(SwendsenWang::new(num_sites))
+        } else {
+            None
+        };
 
         Ok(Self {
             spins,
@@ -69,13 +106,18 @@ impl IsingSimulation {
             h,
             rng,
             lattice_size,
+            algorithm: algo_kind,
+            metropolis: Metropolis,
+            wolff,
+            swendsen_wang,
         })
     }
 
-    /// Perform Metropolis sweeps at the given inverse temperature.
+    /// Perform MC sweeps at the given inverse temperature using the
+    /// configured algorithm.
     ///
     /// Returns (accepted, attempted) as a tuple.
-    fn metropolis_sweep(&mut self, n_sweeps: usize, beta: f64) -> PyResult<(usize, usize)> {
+    fn sweep(&mut self, n_sweeps: usize, beta: f64) -> PyResult<(usize, usize)> {
         if !beta.is_finite() || beta < 0.0 {
             return Err(MCIsingError::InvalidTemperature(if beta == 0.0 {
                 0.0
@@ -89,20 +131,18 @@ impl IsingSimulation {
         let mut total_attempted = 0;
 
         for _ in 0..n_sweeps {
-            let result = Metropolis.sweep(
-                &mut self.spins,
-                &self.lattice,
-                self.j1,
-                self.j2,
-                self.h,
-                beta,
-                &mut self.rng,
-            );
+            let result = self.dispatch_sweep(beta);
             total_accepted += result.accepted;
             total_attempted += result.attempted;
         }
 
         Ok((total_accepted, total_attempted))
+    }
+
+    /// Get the algorithm name.
+    #[getter]
+    fn algorithm_name(&self) -> &str {
+        self.algorithm.name()
     }
 
     /// Compute the total energy per site.
@@ -282,15 +322,7 @@ impl IsingSimulation {
                 continue;
             }
             let beta = 1.0 / temp;
-            Metropolis.sweep(
-                &mut self.spins,
-                &self.lattice,
-                self.j1,
-                self.j2,
-                self.h,
-                beta,
-                &mut self.rng,
-            );
+            self.dispatch_sweep(beta);
             energies.push(observables::energy_per_site(
                 &self.spins,
                 &self.lattice,
@@ -325,15 +357,7 @@ impl IsingSimulation {
         let mut energies = Vec::with_capacity(n_sweeps);
 
         for _ in 0..n_sweeps {
-            Metropolis.sweep(
-                &mut self.spins,
-                &self.lattice,
-                self.j1,
-                self.j2,
-                self.h,
-                beta,
-                &mut self.rng,
-            );
+            self.dispatch_sweep(beta);
             energies.push(observables::energy_per_site(
                 &self.spins,
                 &self.lattice,
@@ -411,15 +435,7 @@ impl IsingSimulation {
         for _ in 0..n_measurements {
             // Run `interval` sweeps between measurements
             for _ in 0..interval {
-                Metropolis.sweep(
-                    &mut self.spins,
-                    &self.lattice,
-                    self.j1,
-                    self.j2,
-                    self.h,
-                    beta,
-                    &mut self.rng,
-                );
+                self.dispatch_sweep(beta);
             }
 
             energies.push(observables::energy_per_site(
@@ -450,13 +466,60 @@ impl IsingSimulation {
     /// String representation.
     fn __repr__(&self) -> String {
         format!(
-            "IsingSimulation(lattice_size={}, j1={}, j2={}, h={}, energy={:.4}, mag={:.4})",
+            "IsingSimulation(lattice_size={}, algorithm={}, j1={}, j2={}, h={}, energy={:.4}, mag={:.4})",
             self.lattice_size,
+            self.algorithm.name(),
             self.j1,
             self.j2,
             self.h,
             self.energy(),
             self.magnetization()
         )
+    }
+}
+
+impl IsingSimulation {
+    /// Dispatch a single sweep to the configured algorithm.
+    ///
+    /// Monomorphized per-algorithm via match arms — each arm calls the
+    /// concrete algorithm type directly, so the hot path is fully specialized.
+    fn dispatch_sweep(&mut self, beta: f64) -> SweepResult {
+        match self.algorithm {
+            AlgorithmKind::Metropolis => self.metropolis.sweep(
+                &mut self.spins,
+                &self.lattice,
+                self.j1,
+                self.j2,
+                self.h,
+                beta,
+                &mut self.rng,
+            ),
+            AlgorithmKind::Wolff => self
+                .wolff
+                .as_mut()
+                .expect("Wolff algorithm not initialized")
+                .sweep(
+                    &mut self.spins,
+                    &self.lattice,
+                    self.j1,
+                    self.j2,
+                    self.h,
+                    beta,
+                    &mut self.rng,
+                ),
+            AlgorithmKind::SwendsenWang => self
+                .swendsen_wang
+                .as_mut()
+                .expect("Swendsen-Wang algorithm not initialized")
+                .sweep(
+                    &mut self.spins,
+                    &self.lattice,
+                    self.j1,
+                    self.j2,
+                    self.h,
+                    beta,
+                    &mut self.rng,
+                ),
+        }
     }
 }

@@ -22,6 +22,7 @@ from mcising.constants import (
     DEFAULT_N_THERMALIZATION,
     DEFAULT_SEED,
 )
+from mcising.exceptions import ConfigurationError
 
 __all__: Final[list[str]] = [
     "LatticeType",
@@ -48,9 +49,9 @@ class Algorithm(str, Enum):
     """Available Monte Carlo update algorithms."""
 
     METROPOLIS = "metropolis"
+    WOLFF = "wolff"
+    SWENDSEN_WANG = "swendsen_wang"
     # Future algorithms:
-    # WOLFF = "wolff"
-    # SWENDSEN_WANG = "swendsen_wang"
     # WANG_LANDAU = "wang_landau"
     # PARALLEL_TEMPERING = "parallel_tempering"
 
@@ -210,6 +211,13 @@ class SimulationConfig:
         if len(self.temperatures) == 0:
             msg = "At least one temperature must be specified"
             raise ValueError(msg)
+        if self.algorithm in (Algorithm.WOLFF, Algorithm.SWENDSEN_WANG):
+            if self.lattice.j2 != 0.0 or self.lattice.h != 0.0:
+                raise ConfigurationError(
+                    "Cluster algorithms require J2=0 and h=0. "
+                    "Use algorithm='metropolis' for J1-J2 or "
+                    "external field simulations."
+                )
 
 
 def _is_finite(value: float) -> bool:
