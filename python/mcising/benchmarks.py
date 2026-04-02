@@ -252,9 +252,9 @@ def bench_mcising(
     # Warmup
     sim.sweep(100, beta)
 
-    # Timed run
+    # Timed run with sweep-averaged observables
     start = time.perf_counter()
-    sim.sweep(n_sweeps, beta)
+    avg_energy, avg_mag, _, _ = sim.sweep_measured(n_sweeps, beta)
     elapsed = time.perf_counter() - start
 
     return BenchmarkResult(
@@ -262,8 +262,8 @@ def bench_mcising(
         lattice_size=lattice_size,
         n_sweeps=n_sweeps,
         elapsed=elapsed,
-        energy=sim.energy(),
-        magnetization=sim.magnetization(),
+        energy=avg_energy,
+        magnetization=avg_mag,
     )
 
 

@@ -139,6 +139,43 @@ impl IsingSimulation {
         Ok((total_accepted, total_attempted))
     }
 
+    /// Perform MC sweeps while accumulating observable averages.
+    ///
+    /// Returns (avg_energy, avg_magnetization, accepted, attempted).
+    /// Energy and magnetization are per-site, averaged over all sweeps.
+    fn sweep_measured(
+        &mut self,
+        n_sweeps: usize,
+        beta: f64,
+    ) -> PyResult<(f64, f64, usize, usize)> {
+        if !beta.is_finite() || beta < 0.0 {
+            return Err(MCIsingError::InvalidTemperature(if beta == 0.0 {
+                0.0
+            } else {
+                1.0 / beta
+            })
+            .into());
+        }
+
+        let mut total_accepted = 0;
+        let mut total_attempted = 0;
+        let mut energy_sum = 0.0;
+        let mut mag_sum = 0.0;
+
+        for _ in 0..n_sweeps {
+            let result = self.dispatch_sweep(beta);
+            total_accepted += result.accepted;
+            total_attempted += result.attempted;
+
+            energy_sum +=
+                observables::energy_per_site(&self.spins, &self.lattice, self.j1, self.j2, self.h);
+            mag_sum += observables::magnetization_per_site(&self.spins);
+        }
+
+        let n = n_sweeps as f64;
+        Ok((energy_sum / n, mag_sum / n, total_accepted, total_attempted))
+    }
+
     /// Get the algorithm name.
     #[getter]
     fn algorithm_name(&self) -> &str {
