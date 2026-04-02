@@ -66,6 +66,13 @@ def run(
         list[float] | None,
         typer.Option("-T", "--temperature", help="Temperature(s) to simulate."),
     ] = None,
+    t_range: Annotated[
+        str | None,
+        typer.Option(
+            "--T-range",
+            help="Temperature range as start:stop:step (e.g. 4.0:0.5:0.1).",
+        ),
+    ] = None,
     n_sweeps: Annotated[
         int, typer.Option("--sweeps", help="MC sweeps per temperature.")
     ] = 1000,
@@ -136,7 +143,15 @@ def run(
     ] = "metropolis",
 ) -> None:
     """Run a Monte Carlo simulation of the 2D Ising model."""
-    temps = tuple(temperatures) if temperatures else (3.0, 2.269, 1.5)
+    if temperatures and t_range:
+        raise typer.BadParameter("Use either -T or --T-range, not both.")
+
+    if t_range:
+        temps = _parse_t_range(t_range)
+    elif temperatures:
+        temps = tuple(temperatures)
+    else:
+        temps = (3.0, 2.269, 1.5)
 
     adaptive_config = AdaptiveConfig(
         enabled=adaptive,
@@ -353,7 +368,7 @@ def _run_scaling_benchmark(seed: int, compare: bool) -> None:
         )
         if has_peapods:
             table.add_column(
-                "peapods / mcising",
+                "mcising / peapods",
                 justify="right",
                 style="bold cyan",
             )
@@ -381,8 +396,8 @@ def _run_scaling_benchmark(seed: int, compare: bool) -> None:
                     row.append("-")
                 if has_peapods:
                     peapods_r = row_results.get("peapods")
-                    if peapods_r and rust_ups > 0:
-                        ratio = peapods_r.updates_per_sec / rust_ups
+                    if peapods_r and peapods_r.updates_per_sec > 0:
+                        ratio = rust_ups / peapods_r.updates_per_sec
                         row.append(f"{ratio:,.1f}x")
                     else:
                         row.append("-")
@@ -392,7 +407,7 @@ def _run_scaling_benchmark(seed: int, compare: bool) -> None:
     console.print(table)
     if has_peapods:
         console.print(
-            "\n[dim]Note: peapods/mcising ratio >1 means peapods"
+            "\n[dim]Note: mcising/peapods ratio >1 means mcising"
             " is faster per update.[/dim]"
         )
 
@@ -456,6 +471,37 @@ def _print_benchmark_results(
                 f"[bold green]{fastest / slowest:,.0f}x[/bold green] faster "
                 f"than the slowest baseline"
             )
+
+
+def _parse_t_range(value: str) -> tuple[float, ...]:
+    """Parse a 'start:stop:step' string into a temperature tuple."""
+    import numpy as np
+
+    parts = value.split(":")
+    if len(parts) != 3:
+        raise typer.BadParameter(
+            f"--T-range must be start:stop:step (e.g. 4.0:0.5:0.1), got '{value}'"
+        )
+    try:
+        start, stop, step = float(parts[0]), float(parts[1]), float(parts[2])
+    except ValueError:
+        raise typer.BadParameter(
+            f"--T-range values must be numbers, got '{value}'"
+        )
+    if step <= 0:
+        raise typer.BadParameter(f"step must be positive, got {step}")
+    if start <= 0 or stop <= 0:
+        raise typer.BadParameter("start and stop must be positive temperatures")
+
+    if start > stop:
+        temps = np.arange(start, stop - 1e-10, -step)
+    else:
+        temps = np.arange(start, stop + 1e-10, step)
+
+    if len(temps) == 0:
+        raise typer.BadParameter(f"--T-range produced no temperatures: '{value}'")
+
+    return tuple(float(t) for t in temps)
 
 
 def _print_config(config: SimulationConfig) -> None:

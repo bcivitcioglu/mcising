@@ -107,7 +107,7 @@ impl IsingSimulation {
             rng,
             lattice_size,
             algorithm: algo_kind,
-            metropolis: Metropolis,
+            metropolis: Metropolis::new(),
             wolff,
             swendsen_wang,
         })

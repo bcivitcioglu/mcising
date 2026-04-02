@@ -9,8 +9,8 @@ pub struct SquareLattice {
     size: usize,
     num_sites: usize,
     shape: [usize; 2],
-    nn_table: Vec<Vec<usize>>,
-    nnn_table: Vec<Vec<usize>>,
+    nn_table: Vec<usize>,  // flat, stride 4: nn_table[idx*4 .. idx*4+4]
+    nnn_table: Vec<usize>, // flat, stride 4: nnn_table[idx*4 .. idx*4+4]
 }
 
 impl SquareLattice {
@@ -24,28 +24,24 @@ impl SquareLattice {
         }
 
         let num_sites = size * size;
-        let mut nn_table = Vec::with_capacity(num_sites);
-        let mut nnn_table = Vec::with_capacity(num_sites);
+        let mut nn_table = Vec::with_capacity(num_sites * 4);
+        let mut nnn_table = Vec::with_capacity(num_sites * 4);
 
         for idx in 0..num_sites {
             let row = idx / size;
             let col = idx % size;
 
             // Nearest neighbors: up, down, left, right
-            nn_table.push(vec![
-                ((row + 1) % size) * size + col,        // down
-                ((row + size - 1) % size) * size + col, // up
-                row * size + (col + 1) % size,          // right
-                row * size + (col + size - 1) % size,   // left
-            ]);
+            nn_table.push(((row + 1) % size) * size + col);        // down
+            nn_table.push(((row + size - 1) % size) * size + col); // up
+            nn_table.push(row * size + (col + 1) % size);          // right
+            nn_table.push(row * size + (col + size - 1) % size);   // left
 
             // Next-nearest neighbors: four diagonals
-            nnn_table.push(vec![
-                ((row + 1) % size) * size + (col + 1) % size, // down-right
-                ((row + 1) % size) * size + (col + size - 1) % size, // down-left
-                ((row + size - 1) % size) * size + (col + 1) % size, // up-right
-                ((row + size - 1) % size) * size + (col + size - 1) % size, // up-left
-            ]);
+            nnn_table.push(((row + 1) % size) * size + (col + 1) % size);         // down-right
+            nnn_table.push(((row + 1) % size) * size + (col + size - 1) % size);  // down-left
+            nnn_table.push(((row + size - 1) % size) * size + (col + 1) % size);  // up-right
+            nnn_table.push(((row + size - 1) % size) * size + (col + size - 1) % size); // up-left
         }
 
         Some(Self {
@@ -76,11 +72,11 @@ impl Lattice for SquareLattice {
     }
 
     fn nearest_neighbors(&self, idx: usize) -> &[usize] {
-        &self.nn_table[idx]
+        &self.nn_table[idx * 4..idx * 4 + 4]
     }
 
     fn next_nearest_neighbors(&self, idx: usize) -> &[usize] {
-        &self.nnn_table[idx]
+        &self.nnn_table[idx * 4..idx * 4 + 4]
     }
 
     fn distance_squared(&self, idx_a: usize, idx_b: usize) -> usize {
