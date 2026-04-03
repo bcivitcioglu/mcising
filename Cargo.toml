@@ -1,9 +1,9 @@
 [package]
 name = "mcising"
-version = "0.2.0"
+version = "0.10.0"
 edition = "2021"
 license = "MIT"
-description = "High-performance Ising model Monte Carlo simulation core"
+description = "High-performance Ising model Monte Carlo simulation with a Rust core"
 
 [lib]
 name = "_core"
