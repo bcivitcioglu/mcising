@@ -62,14 +62,15 @@ impl McAlgorithm for SwendsenWang {
         spins: &mut [i8],
         lattice: &L,
         j1: f64,
-        j2: f64,
+        _j2: f64,
+        _j3: f64,
         h: f64,
         beta: f64,
         rng: &mut R,
     ) -> SweepResult {
         debug_assert!(
-            j2 == 0.0 && h == 0.0,
-            "Swendsen-Wang algorithm requires J2=0 and h=0"
+            _j2 == 0.0 && _j3 == 0.0 && h == 0.0,
+            "Swendsen-Wang algorithm requires J2=0, J3=0, and h=0"
         );
 
         let n = lattice.num_sites();
@@ -155,7 +156,7 @@ mod tests {
         let mut rng = create_rng(42);
         let mut sw = SwendsenWang::new(lattice.num_sites());
 
-        sw.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 1.0, &mut rng);
+        sw.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 1.0, &mut rng);
 
         for &s in &spins {
             assert!(s == 1 || s == -1, "Spin must be +1 or -1, got {s}");
@@ -172,8 +173,8 @@ mod tests {
         let mut sw1 = SwendsenWang::new(lattice.num_sites());
         let mut sw2 = SwendsenWang::new(lattice.num_sites());
 
-        sw1.sweep(&mut spins1, &lattice, 1.0, 0.0, 0.0, 0.5, &mut rng1);
-        sw2.sweep(&mut spins2, &lattice, 1.0, 0.0, 0.0, 0.5, &mut rng2);
+        sw1.sweep(&mut spins1, &lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng1);
+        sw2.sweep(&mut spins2, &lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng2);
 
         assert_eq!(spins1, spins2);
     }
@@ -189,7 +190,7 @@ mod tests {
         // At low T with all-up, the entire lattice is one cluster.
         // It flips with p=0.5, so |m| should remain 1.0.
         for _ in 0..10 {
-            sw.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, beta_large, &mut rng);
+            sw.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, beta_large, &mut rng);
         }
 
         let mag: f64 = spins.iter().map(|&s| f64::from(s)).sum::<f64>() / spins.len() as f64;
@@ -211,7 +212,7 @@ mod tests {
         let mut sw = SwendsenWang::new(n);
 
         for _ in 0..20 {
-            let result = sw.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.5, &mut rng);
+            let result = sw.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng);
             assert!(result.accepted <= n, "Cannot flip more than N spins");
             assert_eq!(result.attempted, n);
         }

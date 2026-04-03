@@ -16,6 +16,7 @@ from mcising.constants import (
     DEFAULT_H,
     DEFAULT_J1,
     DEFAULT_J2,
+    DEFAULT_J3,
     DEFAULT_LATTICE_SIZE,
     DEFAULT_MEASUREMENT_INTERVAL,
     DEFAULT_N_SWEEPS,
@@ -70,6 +71,8 @@ class LatticeConfig:
         Nearest-neighbor coupling strength.
     j2 : float
         Next-nearest-neighbor coupling strength.
+    j3 : float
+        Third-nearest-neighbor coupling strength.
     h : float
         External magnetic field.
     """
@@ -78,6 +81,7 @@ class LatticeConfig:
     size: int = DEFAULT_LATTICE_SIZE
     j1: float = DEFAULT_J1
     j2: float = DEFAULT_J2
+    j3: float = DEFAULT_J3
     h: float = DEFAULT_H
 
     def __post_init__(self) -> None:
@@ -89,6 +93,9 @@ class LatticeConfig:
             raise ValueError(msg)
         if not isinstance(self.j2, (int, float)) or not _is_finite(self.j2):
             msg = f"j2 must be a finite number, got {self.j2}"
+            raise ValueError(msg)
+        if not isinstance(self.j3, (int, float)) or not _is_finite(self.j3):
+            msg = f"j3 must be a finite number, got {self.j3}"
             raise ValueError(msg)
         if not isinstance(self.h, (int, float)) or not _is_finite(self.h):
             msg = f"h must be a finite number, got {self.h}"
@@ -212,10 +219,15 @@ class SimulationConfig:
             msg = "At least one temperature must be specified"
             raise ValueError(msg)
         if self.algorithm in (Algorithm.WOLFF, Algorithm.SWENDSEN_WANG):
-            if self.lattice.j2 != 0.0 or self.lattice.h != 0.0:
+            has_frustration = (
+                self.lattice.j2 != 0.0
+                or self.lattice.j3 != 0.0
+                or self.lattice.h != 0.0
+            )
+            if has_frustration:
                 raise ConfigurationError(
-                    "Cluster algorithms require J2=0 and h=0. "
-                    "Use algorithm='metropolis' for J1-J2 or "
+                    "Cluster algorithms require J2=0, J3=0, and h=0. "
+                    "Use algorithm='metropolis' for J1-J2, J1-J3, or "
                     "external field simulations."
                 )
 

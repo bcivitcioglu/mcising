@@ -24,11 +24,11 @@ class TestLatticeInitialization:
 
     def test_invalid_lattice_size_raises(self) -> None:
         with pytest.raises(ValueError, match="Lattice size must be >= 2"):
-            IsingSimulation(1, 1.0, 0.0, 0.0, 42)
+            IsingSimulation(1, 1.0, 0.0, 0.0, 0.0, 42)
 
     def test_invalid_j1_raises(self) -> None:
         with pytest.raises(ValueError, match="j1"):
-            IsingSimulation(4, float("inf"), 0.0, 0.0, 42)
+            IsingSimulation(4, float("inf"), 0.0, 0.0, 0.0, 42)
 
     def test_properties_accessible(self, small_sim: IsingSimulation) -> None:
         assert small_sim.j1 == 1.0

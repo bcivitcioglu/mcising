@@ -38,14 +38,15 @@ impl McAlgorithm for Wolff {
         spins: &mut [i8],
         lattice: &L,
         j1: f64,
-        j2: f64,
+        _j2: f64,
+        _j3: f64,
         h: f64,
         beta: f64,
         rng: &mut R,
     ) -> SweepResult {
         debug_assert!(
-            j2 == 0.0 && h == 0.0,
-            "Wolff algorithm requires J2=0 and h=0"
+            _j2 == 0.0 && _j3 == 0.0 && h == 0.0,
+            "Wolff algorithm requires J2=0, J3=0, and h=0"
         );
 
         let n = lattice.num_sites();
@@ -118,7 +119,7 @@ mod tests {
         let mut rng = create_rng(42);
         let mut wolff = Wolff::new(lattice.num_sites());
 
-        wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 1.0, &mut rng);
+        wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 1.0, &mut rng);
 
         for &s in &spins {
             assert!(s == 1 || s == -1, "Spin must be +1 or -1, got {s}");
@@ -136,7 +137,7 @@ mod tests {
         let mut wolff = Wolff::new(n);
 
         for _ in 0..20 {
-            let result = wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.5, &mut rng);
+            let result = wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng);
             assert!(result.accepted >= 1, "Cluster must have at least 1 site");
             assert!(
                 result.accepted <= n,
@@ -156,8 +157,8 @@ mod tests {
         let mut wolff1 = Wolff::new(lattice.num_sites());
         let mut wolff2 = Wolff::new(lattice.num_sites());
 
-        wolff1.sweep(&mut spins1, &lattice, 1.0, 0.0, 0.0, 0.5, &mut rng1);
-        wolff2.sweep(&mut spins2, &lattice, 1.0, 0.0, 0.0, 0.5, &mut rng2);
+        wolff1.sweep(&mut spins1, &lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng1);
+        wolff2.sweep(&mut spins2, &lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng2);
 
         assert_eq!(spins1, spins2);
     }
@@ -174,7 +175,7 @@ mod tests {
         // Since all spins are aligned, the cluster = entire lattice, and it flips
         // back and forth. Magnetization magnitude should stay 1.0.
         for _ in 0..10 {
-            wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, beta_large, &mut rng);
+            wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, beta_large, &mut rng);
         }
 
         let mag: f64 = spins.iter().map(|&s| f64::from(s)).sum::<f64>() / spins.len() as f64;
@@ -198,7 +199,7 @@ mod tests {
         let mut total_cluster_size = 0;
         let n_sweeps = 100;
         for _ in 0..n_sweeps {
-            let result = wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, beta_small, &mut rng);
+            let result = wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, beta_small, &mut rng);
             total_cluster_size += result.accepted;
         }
         let avg_cluster_size = total_cluster_size as f64 / n_sweeps as f64;

@@ -12,6 +12,7 @@ class IsingSimulation:
     num_sites: int
     j1: float
     j2: float
+    j3: float
     h: float
 
     algorithm_name: str
@@ -21,6 +22,7 @@ class IsingSimulation:
         lattice_size: int,
         j1: float,
         j2: float,
+        j3: float,
         h: float,
         seed: int,
         algorithm: str = "metropolis",

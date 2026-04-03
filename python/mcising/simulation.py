@@ -119,6 +119,7 @@ class Simulation:
             lattice_size=config.lattice.size,
             j1=config.lattice.j1,
             j2=config.lattice.j2,
+            j3=config.lattice.j3,
             h=config.lattice.h,
             seed=config.seed,
             algorithm=config.algorithm.value,

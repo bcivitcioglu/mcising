@@ -61,6 +61,7 @@ def run(
     ] = 16,
     j1: Annotated[float, typer.Option(help="Nearest-neighbor coupling.")] = 1.0,
     j2: Annotated[float, typer.Option(help="Next-nearest-neighbor coupling.")] = 0.0,
+    j3: Annotated[float, typer.Option(help="Third-nearest-neighbor coupling.")] = 0.0,
     h: Annotated[float, typer.Option(help="External magnetic field.")] = 0.0,
     temperatures: Annotated[
         list[float] | None,
@@ -164,6 +165,7 @@ def run(
             size=lattice_size,
             j1=j1,
             j2=j2,
+            j3=j3,
             h=h,
         ),
         algorithm=Algorithm(algorithm),
@@ -513,7 +515,7 @@ def _print_config(config: SimulationConfig) -> None:
     table.add_row("Algorithm", config.algorithm.value)
     table.add_row("Lattice", f"{config.lattice.size}x{config.lattice.size} square")
     lc = config.lattice
-    table.add_row("J1 / J2 / h", f"{lc.j1} / {lc.j2} / {lc.h}")
+    table.add_row("J1 / J2 / J3 / h", f"{lc.j1} / {lc.j2} / {lc.j3} / {lc.h}")
     table.add_row("Temperatures", ", ".join(f"{t:.3f}" for t in config.temperatures))
     table.add_row("Sweeps", str(config.n_sweeps))
     table.add_row("Thermalization", str(config.n_thermalization))

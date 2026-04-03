@@ -9,19 +9,19 @@ from mcising._core import IsingSimulation
 
 class TestMagnetization:
     def test_all_up_magnetization(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
         spins = np.ones((4, 4), dtype=np.int8)
         sim.set_spins(spins)
         assert sim.magnetization() == pytest.approx(1.0)
 
     def test_all_down_magnetization(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
         spins = -np.ones((4, 4), dtype=np.int8)
         sim.set_spins(spins)
         assert sim.magnetization() == pytest.approx(-1.0)
 
     def test_checkerboard_magnetization(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
         spins = np.ones((4, 4), dtype=np.int8)
         for i in range(4):
             for j in range(4):
@@ -36,7 +36,7 @@ class TestMagnetization:
         assert -1.0 <= m <= 1.0
 
     def test_single_flip_changes_magnetization(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
         spins = np.ones((4, 4), dtype=np.int8)
         sim.set_spins(spins)
         assert sim.magnetization() == pytest.approx(1.0)

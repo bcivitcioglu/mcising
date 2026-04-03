@@ -62,6 +62,7 @@ pub trait McAlgorithm {
         lattice: &L,
         j1: f64,
         j2: f64,
+        j3: f64,
         h: f64,
         beta: f64,
         rng: &mut R,

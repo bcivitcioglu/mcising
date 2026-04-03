@@ -28,6 +28,7 @@ pub struct IsingSimulation {
     lattice: SquareLattice,
     j1: f64,
     j2: f64,
+    j3: f64,
     h: f64,
     rng: Xoshiro256StarStar,
     lattice_size: usize,
@@ -45,15 +46,17 @@ impl IsingSimulation {
     /// * `lattice_size` - Linear size L of the L x L lattice (must be >= 2)
     /// * `j1` - Nearest-neighbor coupling strength
     /// * `j2` - Next-nearest-neighbor coupling strength
+    /// * `j3` - Third-nearest-neighbor coupling strength
     /// * `h` - External magnetic field
     /// * `seed` - Random seed for reproducibility
     /// * `algorithm` - Algorithm name: "metropolis", "wolff", or "swendsen_wang"
     #[new]
-    #[pyo3(signature = (lattice_size, j1, j2, h, seed, algorithm = "metropolis"))]
+    #[pyo3(signature = (lattice_size, j1, j2, j3, h, seed, algorithm = "metropolis"))]
     fn new(
         lattice_size: usize,
         j1: f64,
         j2: f64,
+        j3: f64,
         h: f64,
         seed: u64,
         algorithm: &str,
@@ -67,14 +70,17 @@ impl IsingSimulation {
         if !j2.is_finite() {
             return Err(MCIsingError::InvalidCoupling("j2", j2).into());
         }
+        if !j3.is_finite() {
+            return Err(MCIsingError::InvalidCoupling("j3", j3).into());
+        }
         if !h.is_finite() {
             return Err(MCIsingError::InvalidCoupling("h", h).into());
         }
 
         let algo_kind = AlgorithmKind::from_str(algorithm)?;
 
-        // Cluster algorithms require J2=0 and h=0
-        if algo_kind.requires_no_frustration() && (j2 != 0.0 || h != 0.0) {
+        // Cluster algorithms require J2=0, J3=0, and h=0
+        if algo_kind.requires_no_frustration() && (j2 != 0.0 || j3 != 0.0 || h != 0.0) {
             return Err(MCIsingError::ClusterAlgorithmConstraint(
                 algo_kind.name().to_string(),
             )
@@ -103,11 +109,12 @@ impl IsingSimulation {
             lattice,
             j1,
             j2,
+            j3,
             h,
             rng,
             lattice_size,
             algorithm: algo_kind,
-            metropolis: Metropolis::new(j1, j2, h),
+            metropolis: Metropolis::new(j1, j2, j3, h),
             wolff,
             swendsen_wang,
         })
@@ -168,7 +175,7 @@ impl IsingSimulation {
             total_attempted += result.attempted;
 
             energy_sum +=
-                observables::energy_per_site(&self.spins, &self.lattice, self.j1, self.j2, self.h);
+                observables::energy_per_site(&self.spins, &self.lattice, self.j1, self.j2, self.j3, self.h);
             mag_sum += observables::magnetization_per_site(&self.spins);
         }
 
@@ -184,7 +191,7 @@ impl IsingSimulation {
 
     /// Compute the total energy per site.
     fn energy(&self) -> f64 {
-        observables::energy_per_site(&self.spins, &self.lattice, self.j1, self.j2, self.h)
+        observables::energy_per_site(&self.spins, &self.lattice, self.j1, self.j2, self.j3, self.h)
     }
 
     /// Compute the magnetization per site.
@@ -265,6 +272,9 @@ impl IsingSimulation {
         for &nbr in self.lattice.next_nearest_neighbors(idx) {
             local_field += self.j2 * f64::from(self.spins[nbr]);
         }
+        for &nbr in self.lattice.third_nearest_neighbors(idx) {
+            local_field += self.j3 * f64::from(self.spins[nbr]);
+        }
 
         let interaction = -spin * local_field;
         let field = -self.h * spin;
@@ -313,6 +323,12 @@ impl IsingSimulation {
     #[getter]
     fn j2(&self) -> f64 {
         self.j2
+    }
+
+    /// Get J3 coupling.
+    #[getter]
+    fn j3(&self) -> f64 {
+        self.j3
     }
 
     /// Get external field h.
@@ -365,6 +381,7 @@ impl IsingSimulation {
                 &self.lattice,
                 self.j1,
                 self.j2,
+                self.j3,
                 self.h,
             ));
         }
@@ -400,6 +417,7 @@ impl IsingSimulation {
                 &self.lattice,
                 self.j1,
                 self.j2,
+                self.j3,
                 self.h,
             ));
         }
@@ -480,6 +498,7 @@ impl IsingSimulation {
                 &self.lattice,
                 self.j1,
                 self.j2,
+                self.j3,
                 self.h,
             ));
             magnetizations.push(observables::magnetization_per_site(&self.spins));
@@ -503,11 +522,12 @@ impl IsingSimulation {
     /// String representation.
     fn __repr__(&self) -> String {
         format!(
-            "IsingSimulation(lattice_size={}, algorithm={}, j1={}, j2={}, h={}, energy={:.4}, mag={:.4})",
+            "IsingSimulation(lattice_size={}, algorithm={}, j1={}, j2={}, j3={}, h={}, energy={:.4}, mag={:.4})",
             self.lattice_size,
             self.algorithm.name(),
             self.j1,
             self.j2,
+            self.j3,
             self.h,
             self.energy(),
             self.magnetization()
@@ -527,6 +547,7 @@ impl IsingSimulation {
                 &self.lattice,
                 self.j1,
                 self.j2,
+                self.j3,
                 self.h,
                 beta,
                 &mut self.rng,
@@ -540,6 +561,7 @@ impl IsingSimulation {
                     &self.lattice,
                     self.j1,
                     self.j2,
+                    self.j3,
                     self.h,
                     beta,
                     &mut self.rng,
@@ -553,6 +575,7 @@ impl IsingSimulation {
                     &self.lattice,
                     self.j1,
                     self.j2,
+                    self.j3,
                     self.h,
                     beta,
                     &mut self.rng,

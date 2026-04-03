@@ -19,6 +19,7 @@ CORRELATION_THRESHOLD: Final[float] = 1e-8
 DEFAULT_LATTICE_SIZE: Final[int] = 10
 DEFAULT_J1: Final[float] = 1.0
 DEFAULT_J2: Final[float] = 0.0
+DEFAULT_J3: Final[float] = 0.0
 DEFAULT_H: Final[float] = 0.0
 DEFAULT_SEED: Final[int] = 42
 DEFAULT_N_SWEEPS: Final[int] = 1000

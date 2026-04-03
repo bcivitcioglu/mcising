@@ -246,7 +246,7 @@ def bench_mcising(
     """Benchmark mcising Rust core."""
     from mcising._core import IsingSimulation
 
-    sim = IsingSimulation(lattice_size, 1.0, 0.0, 0.0, seed, algorithm)
+    sim = IsingSimulation(lattice_size, 1.0, 0.0, 0.0, 0.0, seed, algorithm)
     beta = 1.0 / 2.269
 
     # Warmup

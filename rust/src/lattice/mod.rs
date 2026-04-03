@@ -33,4 +33,20 @@ pub trait Lattice: Send + Sync {
 
     /// Convert (row, col, ...) multi-index to flat index.
     fn multi_to_flat(&self, indices: &[usize]) -> usize;
+
+    /// Number of third-nearest neighbors per site.
+    ///
+    /// Returns 0 by default (no TNN defined). Override for lattices
+    /// that support J3 coupling.
+    fn tnn_coordination_number(&self) -> usize {
+        0
+    }
+
+    /// Third-nearest neighbor indices for a given site (precomputed).
+    ///
+    /// Returns an empty slice by default. Override for lattices that
+    /// support J3 coupling.
+    fn third_nearest_neighbors(&self, _idx: usize) -> &[usize] {
+        &[]
+    }
 }

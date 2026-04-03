@@ -15,19 +15,19 @@ class TestEnergyAllUp:
     """
 
     def test_all_up_energy(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
         spins = np.ones((4, 4), dtype=np.int8)
         sim.set_spins(spins)
         assert sim.energy() == pytest.approx(-2.0)
 
     def test_all_up_energy_larger(self) -> None:
-        sim = IsingSimulation(16, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(16, 1.0, 0.0, 0.0, 0.0, 42)
         spins = np.ones((16, 16), dtype=np.int8)
         sim.set_spins(spins)
         assert sim.energy() == pytest.approx(-2.0)
 
     def test_all_down_energy(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
         spins = -np.ones((4, 4), dtype=np.int8)
         sim.set_spins(spins)
         assert sim.energy() == pytest.approx(-2.0)
@@ -41,7 +41,7 @@ class TestEnergyCheckerboard:
     """
 
     def test_checkerboard_energy(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
         spins = np.ones((4, 4), dtype=np.int8)
         for i in range(4):
             for j in range(4):
@@ -55,14 +55,14 @@ class TestEnergyWithField:
     """Energy with external field h."""
 
     def test_all_up_with_field(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.0, 1.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 1.0, 42)
         spins = np.ones((4, 4), dtype=np.int8)
         sim.set_spins(spins)
         # E/N = -2.0 (NN) + (-h * m) = -2.0 + (-1.0 * 1.0) = -3.0
         assert sim.energy() == pytest.approx(-3.0)
 
     def test_all_down_with_field(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.0, 1.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 1.0, 42)
         spins = -np.ones((4, 4), dtype=np.int8)
         sim.set_spins(spins)
         # E/N = -2.0 (NN) + (-h * m) = -2.0 + (-1.0 * (-1.0)) = -1.0
@@ -73,14 +73,14 @@ class TestEnergyWithJ2:
     """Energy with next-nearest-neighbor coupling J2."""
 
     def test_all_up_with_j2(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.5, 0.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.5, 0.0, 0.0, 42)
         spins = np.ones((4, 4), dtype=np.int8)
         sim.set_spins(spins)
         # E/N = -J1*(4/2) - J2*(4/2) = -2.0 - 1.0 = -3.0
         assert sim.energy() == pytest.approx(-3.0)
 
     def test_checkerboard_with_j2(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.5, 0.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.5, 0.0, 0.0, 42)
         spins = np.ones((4, 4), dtype=np.int8)
         for i in range(4):
             for j in range(4):
@@ -96,7 +96,7 @@ class TestSpinEnergy:
     """Test per-spin energy computation."""
 
     def test_spin_energy_center_all_up(self) -> None:
-        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
         spins = np.ones((4, 4), dtype=np.int8)
         sim.set_spins(spins)
         # All-up: each spin has local energy = -J1 * 4 = -4.0 (4 aligned NN)

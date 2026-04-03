@@ -11,14 +11,14 @@ class TestWolffConfig:
     """Test Wolff algorithm constraint enforcement."""
 
     def test_wolff_j2_nonzero_raises(self) -> None:
-        with pytest.raises(ConfigurationError, match="J2=0 and h=0"):
+        with pytest.raises(ConfigurationError, match="J2=0, J3=0, and h=0"):
             SimulationConfig(
                 lattice=LatticeConfig(size=4, j2=0.5),
                 algorithm=Algorithm.WOLFF,
             )
 
     def test_wolff_h_nonzero_raises(self) -> None:
-        with pytest.raises(ConfigurationError, match="J2=0 and h=0"):
+        with pytest.raises(ConfigurationError, match="J2=0, J3=0, and h=0"):
             SimulationConfig(
                 lattice=LatticeConfig(size=4, h=1.0),
                 algorithm=Algorithm.WOLFF,

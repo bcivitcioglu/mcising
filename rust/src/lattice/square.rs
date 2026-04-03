@@ -2,8 +2,9 @@ use super::Lattice;
 
 /// 2D square lattice with periodic boundary conditions.
 ///
-/// Supports nearest-neighbor (coordination 4) and next-nearest-neighbor
-/// (coordination 4, diagonal) interactions. Neighbor tables are precomputed
+/// Supports nearest-neighbor (coordination 4), next-nearest-neighbor
+/// (coordination 4, diagonal), and third-nearest-neighbor (coordination 4,
+/// two steps along axes) interactions. Neighbor tables are precomputed
 /// at construction time.
 pub struct SquareLattice {
     size: usize,
@@ -11,6 +12,7 @@ pub struct SquareLattice {
     shape: [usize; 2],
     nn_table: Vec<usize>,  // flat, stride 4: nn_table[idx*4 .. idx*4+4]
     nnn_table: Vec<usize>, // flat, stride 4: nnn_table[idx*4 .. idx*4+4]
+    tnn_table: Vec<usize>, // flat, stride 4: tnn_table[idx*4 .. idx*4+4]
 }
 
 impl SquareLattice {
@@ -26,6 +28,7 @@ impl SquareLattice {
         let num_sites = size * size;
         let mut nn_table = Vec::with_capacity(num_sites * 4);
         let mut nnn_table = Vec::with_capacity(num_sites * 4);
+        let mut tnn_table = Vec::with_capacity(num_sites * 4);
 
         for idx in 0..num_sites {
             let row = idx / size;
@@ -42,6 +45,12 @@ impl SquareLattice {
             nnn_table.push(((row + 1) % size) * size + (col + size - 1) % size);  // down-left
             nnn_table.push(((row + size - 1) % size) * size + (col + 1) % size);  // up-right
             nnn_table.push(((row + size - 1) % size) * size + (col + size - 1) % size); // up-left
+
+            // Third-nearest neighbors: two steps along each axis
+            tnn_table.push(((row + 2) % size) * size + col);        // down 2
+            tnn_table.push(((row + size - 2) % size) * size + col); // up 2
+            tnn_table.push(row * size + (col + 2) % size);          // right 2
+            tnn_table.push(row * size + (col + size - 2) % size);   // left 2
         }
 
         Some(Self {
@@ -50,6 +59,7 @@ impl SquareLattice {
             shape: [size, size],
             nn_table,
             nnn_table,
+            tnn_table,
         })
     }
 }
@@ -103,6 +113,14 @@ impl Lattice for SquareLattice {
 
     fn multi_to_flat(&self, indices: &[usize]) -> usize {
         indices[0] * self.size + indices[1]
+    }
+
+    fn tnn_coordination_number(&self) -> usize {
+        4
+    }
+
+    fn third_nearest_neighbors(&self, idx: usize) -> &[usize] {
+        &self.tnn_table[idx * 4..idx * 4 + 4]
     }
 }
 
@@ -172,6 +190,7 @@ mod tests {
         for idx in 0..lattice.num_sites() {
             assert_eq!(lattice.nearest_neighbors(idx).len(), 4);
             assert_eq!(lattice.next_nearest_neighbors(idx).len(), 4);
+            assert_eq!(lattice.third_nearest_neighbors(idx).len(), 4);
         }
     }
 
@@ -185,6 +204,9 @@ mod tests {
             for &nbr in lattice.next_nearest_neighbors(idx) {
                 assert!(nbr < lattice.num_sites());
             }
+            for &nbr in lattice.third_nearest_neighbors(idx) {
+                assert!(nbr < lattice.num_sites());
+            }
         }
     }
 
@@ -194,6 +216,7 @@ mod tests {
         for idx in 0..lattice.num_sites() {
             assert!(!lattice.nearest_neighbors(idx).contains(&idx));
             assert!(!lattice.next_nearest_neighbors(idx).contains(&idx));
+            assert!(!lattice.third_nearest_neighbors(idx).contains(&idx));
         }
     }
 
@@ -213,6 +236,67 @@ mod tests {
                     lattice.next_nearest_neighbors(nbr).contains(&idx),
                     "Site {nbr} should have {idx} as NNN"
                 );
+            }
+            for &nbr in lattice.third_nearest_neighbors(idx) {
+                assert!(
+                    lattice.third_nearest_neighbors(nbr).contains(&idx),
+                    "Site {nbr} should have {idx} as TNN"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_tnn_coordination_number() {
+        let lattice = SquareLattice::new(4).unwrap();
+        assert_eq!(lattice.tnn_coordination_number(), 4);
+    }
+
+    #[test]
+    fn test_third_nearest_neighbors_corner() {
+        // 4x4 lattice, site 0 = (0,0)
+        // TNN: two steps along axes: (2,0)=8, (0,2)=2, (3-1=2,0) via PBC: up2=(2,0)=8
+        // Actually: down2=(2,0)=8, up2=((0+4-2)%4,0)=(2,0)=8... wait.
+        // For size=4: down2 = (0+2)%4 = 2, row=2 → idx=8
+        //             up2 = (0+4-2)%4 = 2, row=2 → idx=8
+        // That means down2 and up2 are the SAME site for size=4!
+        // This is expected: on a 4x4 lattice, 2 steps down = 2 steps up (PBC).
+        // Use size=6 to avoid this degeneracy.
+        let lattice = SquareLattice::new(6).unwrap();
+        let tnn = lattice.third_nearest_neighbors(0);
+        assert_eq!(tnn.len(), 4);
+        // site 0 = (0,0): TNN = (2,0)=12, (4,0)=24, (0,2)=2, (0,4)=4
+        assert!(tnn.contains(&12)); // down 2
+        assert!(tnn.contains(&24)); // up 2 (PBC: (0+6-2)%6 = 4, idx=4*6+0=24)
+        assert!(tnn.contains(&2));  // right 2
+        assert!(tnn.contains(&4));  // left 2 (PBC: (0+6-2)%6 = 4)
+    }
+
+    #[test]
+    fn test_tnn_distance_squared() {
+        // TNN are at distance 2 along one axis → d²=4
+        let lattice = SquareLattice::new(8).unwrap();
+        for idx in 0..lattice.num_sites() {
+            for &nbr in lattice.third_nearest_neighbors(idx) {
+                assert_eq!(
+                    lattice.distance_squared(idx, nbr),
+                    4,
+                    "TNN of site {idx} at site {nbr} should be at distance²=4"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_tnn_no_overlap_with_nn_or_nnn() {
+        // TNN should not overlap with NN or NNN
+        let lattice = SquareLattice::new(8).unwrap();
+        for idx in 0..lattice.num_sites() {
+            let nn = lattice.nearest_neighbors(idx);
+            let nnn = lattice.next_nearest_neighbors(idx);
+            for &tnn in lattice.third_nearest_neighbors(idx) {
+                assert!(!nn.contains(&tnn), "TNN should not overlap with NN");
+                assert!(!nnn.contains(&tnn), "TNN should not overlap with NNN");
             }
         }
     }

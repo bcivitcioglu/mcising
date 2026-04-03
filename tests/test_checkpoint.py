@@ -119,7 +119,7 @@ class TestRngState:
         """RNG state save/restore produces bitwise identical results."""
         from mcising._core import IsingSimulation
 
-        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
         sim.sweep(10, 0.5)
 
         rng_state = sim.get_rng_state()

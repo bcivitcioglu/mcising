@@ -11,13 +11,13 @@ from mcising.config import LatticeConfig, SimulationConfig
 @pytest.fixture
 def small_sim() -> IsingSimulation:
     """A small 4x4 Rust simulation for fast unit tests."""
-    return IsingSimulation(4, 1.0, 0.0, 0.0, 42)
+    return IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
 
 
 @pytest.fixture
 def sim_8x8() -> IsingSimulation:
     """An 8x8 Rust simulation for physics tests."""
-    return IsingSimulation(8, 1.0, 0.0, 0.0, 42)
+    return IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42)
 
 
 @pytest.fixture

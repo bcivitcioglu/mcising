@@ -3,10 +3,18 @@ use std::collections::BTreeMap;
 
 /// Compute the total energy per site of the spin configuration.
 ///
-/// E/N = (-sum_{<i,j>} J1*si*sj - sum_{<<i,j>>} J2*si*sj - h*sum_i si) / N
+/// E/N = (-sum_{<i,j>} J1*si*sj - sum_{<<i,j>>} J2*si*sj
+///        - sum_{<<<i,j>>>} J3*si*sj - h*sum_i si) / N
 ///
 /// Interaction terms are divided by 2 to correct for double-counting.
-pub fn energy_per_site<L: Lattice>(spins: &[i8], lattice: &L, j1: f64, j2: f64, h: f64) -> f64 {
+pub fn energy_per_site<L: Lattice>(
+    spins: &[i8],
+    lattice: &L,
+    j1: f64,
+    j2: f64,
+    j3: f64,
+    h: f64,
+) -> f64 {
     let n = lattice.num_sites();
     let mut interaction = 0.0;
     let mut field = 0.0;
@@ -19,6 +27,9 @@ pub fn energy_per_site<L: Lattice>(spins: &[i8], lattice: &L, j1: f64, j2: f64, 
         }
         for &nbr in lattice.next_nearest_neighbors(idx) {
             interaction -= j2 * spin * f64::from(spins[nbr]);
+        }
+        for &nbr in lattice.third_nearest_neighbors(idx) {
+            interaction -= j3 * spin * f64::from(spins[nbr]);
         }
         field -= h * spin;
     }
@@ -115,7 +126,7 @@ mod tests {
         // Energy per site = -32/16 = -2.0
         let lattice = SquareLattice::new(4).unwrap();
         let spins = vec![1i8; 16];
-        let e = energy_per_site(&spins, &lattice, 1.0, 0.0, 0.0);
+        let e = energy_per_site(&spins, &lattice, 1.0, 0.0, 0.0, 0.0);
         assert!(
             (e - (-2.0)).abs() < 1e-10,
             "Expected energy -2.0 for all-up ferromagnet, got {e}"
@@ -130,7 +141,7 @@ mod tests {
         // Total: -3.0
         let lattice = SquareLattice::new(4).unwrap();
         let spins = vec![1i8; 16];
-        let e = energy_per_site(&spins, &lattice, 1.0, 0.5, 0.0);
+        let e = energy_per_site(&spins, &lattice, 1.0, 0.5, 0.0, 0.0);
         assert!((e - (-3.0)).abs() < 1e-10, "Expected energy -3.0, got {e}");
     }
 
@@ -142,7 +153,7 @@ mod tests {
         // Total: -3.0
         let lattice = SquareLattice::new(4).unwrap();
         let spins = vec![1i8; 16];
-        let e = energy_per_site(&spins, &lattice, 1.0, 0.0, 1.0);
+        let e = energy_per_site(&spins, &lattice, 1.0, 0.0, 0.0, 1.0);
         assert!((e - (-3.0)).abs() < 1e-10, "Expected energy -3.0, got {e}");
     }
 
@@ -160,7 +171,7 @@ mod tests {
                 spins[idx] = -1;
             }
         }
-        let e = energy_per_site(&spins, &lattice, 1.0, 0.0, 0.0);
+        let e = energy_per_site(&spins, &lattice, 1.0, 0.0, 0.0, 0.0);
         assert!(
             (e - 2.0).abs() < 1e-10,
             "Expected energy +2.0 for checkerboard, got {e}"

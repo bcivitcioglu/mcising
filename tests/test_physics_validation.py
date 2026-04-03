@@ -76,14 +76,14 @@ class TestEnergyBounds:
     is bounded: -2.0 <= E/N <= +2.0."""
 
     def test_energy_within_bounds(self) -> None:
-        sim = IsingSimulation(8, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42)
         sim.sweep(100, 0.5)
         e = sim.energy()
         assert -2.0 <= e <= 2.0
 
     def test_ground_state_energy(self) -> None:
         """All-up (or all-down) state has E/N = -2.0."""
-        sim = IsingSimulation(8, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42)
         spins = np.ones((8, 8), dtype=np.int8)
         sim.set_spins(spins)
         assert sim.energy() == pytest.approx(-2.0)
@@ -95,7 +95,7 @@ class TestDetailedBalance:
 
     def test_energy_stationarity(self) -> None:
         """After thermalization, energy should fluctuate around a mean."""
-        sim = IsingSimulation(8, 1.0, 0.0, 0.0, 42)
+        sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42)
         # Thermalize
         sim.sweep(200, 0.5)
 
@@ -116,13 +116,13 @@ class TestFieldEffect:
     """External field h should bias magnetization in its direction."""
 
     def test_positive_field_positive_magnetization(self) -> None:
-        sim = IsingSimulation(8, 1.0, 0.0, 2.0, 42)  # h = 2.0
+        sim = IsingSimulation(8, 1.0, 0.0, 0.0, 2.0, 42)  # h = 2.0
         sim.sweep(500, 1.0)
         m = sim.magnetization()
         assert m > 0.5  # Strong field should align spins
 
     def test_negative_field_negative_magnetization(self) -> None:
-        sim = IsingSimulation(8, 1.0, 0.0, -2.0, 42)  # h = -2.0
+        sim = IsingSimulation(8, 1.0, 0.0, 0.0, -2.0, 42)  # h = -2.0
         sim.sweep(500, 1.0)
         m = sim.magnetization()
         assert m < -0.5
