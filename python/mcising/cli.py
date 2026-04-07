@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Final
 
@@ -233,7 +234,7 @@ def benchmark(
         bool,
         typer.Option(
             "--compare",
-            help="Compare mcising against Pure Python and NumPy baselines.",
+            help="Compare all lattices + algorithms vs peapods.",
         ),
     ] = False,
     scaling: Annotated[
@@ -246,14 +247,18 @@ def benchmark(
 ) -> None:
     """Benchmark sweep performance.
 
-    By default, benchmarks the mcising Rust core only.
-    Use --compare to include Pure Python and NumPy baselines.
+    By default, benchmarks the mcising Rust core only (square Metropolis).
+    Use --compare for comprehensive multi-lattice/algorithm comparison.
     Use --scaling to run across L=8,16,32,64,128,256.
     """
-    from mcising.benchmarks import bench_mcising, bench_numpy, bench_pure_python
+    from mcising.benchmarks import bench_mcising
+
+    if compare:
+        _run_full_benchmark(lattice_size, n_sweeps, seed)
+        return
 
     if scaling:
-        _run_scaling_benchmark(seed, compare)
+        _run_scaling_benchmark(seed, False)
         return
 
     console.print(
@@ -264,50 +269,10 @@ def benchmark(
         )
     )
 
-    results: list[BenchmarkResult] = []
-
-    if compare:
-        with console.status("[bold blue]Running Pure Python baseline..."):
-            results.append(
-                bench_pure_python(lattice_size, n_sweeps, seed)
-            )
-
-        with console.status("[bold blue]Running NumPy baseline..."):
-            results.append(bench_numpy(lattice_size, n_sweeps, seed))
-
     with console.status("[bold blue]Running mcising (Rust)..."):
-        results.append(bench_mcising(lattice_size, n_sweeps, seed))
+        result = bench_mcising(lattice_size, n_sweeps, seed)
 
-    if compare:
-        peapods_result = _try_bench_peapods(lattice_size, n_sweeps, seed)
-        if peapods_result is not None:
-            results.append(peapods_result)
-
-    _print_benchmark_results(results, compare)
-
-
-def _try_bench_peapods(
-    lattice_size: int, n_sweeps: int, seed: int
-) -> BenchmarkResult | None:
-    """Try to run peapods benchmark; return None if not installed."""
-    try:
-        from mcising.benchmarks import bench_peapods
-    except ImportError:
-        console.print(
-            "[dim]peapods not installed. "
-            "Install with: uv sync --group benchmark[/dim]"
-        )
-        return None
-
-    try:
-        with console.status("[bold blue]Running peapods (Rust)..."):
-            return bench_peapods(lattice_size, n_sweeps, seed)
-    except ImportError:
-        console.print(
-            "[dim]peapods not installed. "
-            "Install with: uv sync --group benchmark[/dim]"
-        )
-        return None
+    _print_benchmark_results([result], compare=False)
 
 
 def _run_scaling_benchmark(seed: int, compare: bool) -> None:
@@ -420,6 +385,143 @@ def _run_scaling_benchmark(seed: int, compare: bool) -> None:
             "\n[dim]Note: mcising/peapods ratio >1 means mcising"
             " is faster per update.[/dim]"
         )
+
+
+def _run_full_benchmark(
+    lattice_size: int, n_sweeps: int, seed: int
+) -> None:
+    """Run comprehensive benchmark across lattices and algorithms."""
+    from mcising.benchmarks import (
+        bench_mcising,
+        bench_peapods,
+        bench_peapods_cubic,
+        bench_peapods_sw,
+        bench_peapods_triangular,
+        bench_peapods_wolff,
+    )
+
+    # Check peapods availability
+    has_peapods = True
+    try:
+        from peapods import Ising  # type: ignore[import-untyped] # noqa: F401
+    except ImportError:
+        has_peapods = False
+        console.print(
+            "[dim]peapods not installed — showing mcising only[/dim]"
+        )
+
+    cubic_size = min(lattice_size, 16)
+    _peapods_fn = Callable[[int, int, int], BenchmarkResult]
+    cases: list[
+        tuple[str, str, str, int, float, _peapods_fn | None]
+    ] = [
+        (
+            "Metropolis: Square",
+            "square",
+            "metropolis",
+            lattice_size,
+            2.269,
+            bench_peapods if has_peapods else None,
+        ),
+        (
+            "Metropolis: Triangular",
+            "triangular",
+            "metropolis",
+            lattice_size,
+            3.641,
+            bench_peapods_triangular if has_peapods else None,
+        ),
+        (
+            "Metropolis: Cubic",
+            "cubic",
+            "metropolis",
+            cubic_size,
+            4.5115,
+            bench_peapods_cubic if has_peapods else None,
+        ),
+        (
+            "Wolff: Square",
+            "square",
+            "wolff",
+            lattice_size,
+            2.269,
+            bench_peapods_wolff if has_peapods else None,
+        ),
+        (
+            "Swendsen-Wang: Square",
+            "square",
+            "swendsen_wang",
+            lattice_size,
+            2.269,
+            bench_peapods_sw if has_peapods else None,
+        ),
+    ]
+
+    console.print(
+        Panel(
+            "[bold]Full Benchmark:[/bold] "
+            "Metropolis + Cluster × multiple lattices\n"
+            f"L={lattice_size} (cubic L={cubic_size}), "
+            f"{n_sweeps:,} sweeps per case",
+            border_style="blue",
+        )
+    )
+
+    for title, lat_type, algorithm, size, temp, peapods_fn in cases:
+        _dim = (
+            f"{size}×{size}"
+            if lat_type != "cubic"
+            else f"{size}³"
+        )
+        console.print(
+            f"\n[bold blue]{title}[/bold blue] "
+            f"({_dim}, T={temp})"
+        )
+
+        table = Table(border_style="green", show_header=True)
+        table.add_column("Implementation", style="bold")
+        table.add_column("Time", justify="right")
+        table.add_column("Updates/sec", justify="right")
+        table.add_column("Sweeps/sec", justify="right")
+        table.add_column("E/site", justify="right")
+        table.add_column("vs mcising", justify="right", style="bold")
+
+        with console.status(f"[bold blue]{title}..."):
+            mc = bench_mcising(
+                size, n_sweeps, seed, algorithm, lat_type, temp
+            )
+            rows: list[BenchmarkResult] = [mc]
+
+            if peapods_fn is not None:
+                try:
+                    pp = peapods_fn(size, n_sweeps, seed)
+                    rows.append(pp)
+                except Exception as e:
+                    console.print(f"  [dim]peapods error: {e}[/dim]")
+
+        mc_ups = mc.updates_per_sec
+        for r in rows:
+            if "mcising" in r.name:
+                vs = "1.0x"
+            elif r.updates_per_sec > mc_ups:
+                ratio = r.updates_per_sec / mc_ups
+                vs = f"[yellow]{ratio:.1f}x faster[/yellow]"
+            elif r.updates_per_sec > 0:
+                ratio = mc_ups / r.updates_per_sec
+                vs = f"{ratio:.1f}x slower"
+            else:
+                vs = "-"
+
+            table.add_row(
+                r.name,
+                f"{r.elapsed:.3f} s",
+                f"{r.updates_per_sec:,.0f}",
+                f"{r.sweeps_per_sec:,.0f}",
+                f"{r.energy:.4f}",
+                vs,
+            )
+
+        console.print(table)
 
 
 def _print_benchmark_results(
