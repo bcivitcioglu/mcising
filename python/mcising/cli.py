@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Final
 
@@ -230,13 +229,6 @@ def benchmark(
         int, typer.Option("--sweeps", help="Sweeps to benchmark.")
     ] = 10000,
     seed: Annotated[int, typer.Option(help="Random seed.")] = 42,
-    compare: Annotated[
-        bool,
-        typer.Option(
-            "--compare",
-            help="Compare all lattices + algorithms vs peapods.",
-        ),
-    ] = False,
     scaling: Annotated[
         bool,
         typer.Option(
@@ -245,34 +237,122 @@ def benchmark(
         ),
     ] = False,
 ) -> None:
-    """Benchmark sweep performance.
-
-    By default, benchmarks the mcising Rust core only (square Metropolis).
-    Use --compare for comprehensive multi-lattice/algorithm comparison.
-    Use --scaling to run across L=8,16,32,64,128,256.
-    """
+    """Benchmark mcising performance across all lattices, algorithms, and couplings."""
     from mcising.benchmarks import bench_mcising
-
-    if compare:
-        _run_full_benchmark(lattice_size, n_sweeps, seed)
-        return
 
     if scaling:
         _run_scaling_benchmark(seed, False)
         return
 
+    cubic_size = min(lattice_size, 16)
+    chain_size = lattice_size * lattice_size  # same site count as 2D
+
     console.print(
         Panel(
-            f"[bold]Benchmark:[/bold] {lattice_size}x{lattice_size} lattice, "
-            f"{n_sweeps:,} sweeps, T=T_c=2.269",
+            "[bold]mcising Benchmark[/bold]\n"
+            f"L={lattice_size} (cubic L={cubic_size}), "
+            f"{n_sweeps:,} sweeps per case",
             border_style="blue",
         )
     )
 
-    with console.status("[bold blue]Running mcising (Rust)..."):
-        result = bench_mcising(lattice_size, n_sweeps, seed)
+    def _run(
+        label: str, lt: str, alg: str, sz: int, temp: float,
+    ) -> BenchmarkResult:
+        return bench_mcising(sz, n_sweeps, seed, alg, lt, temp)
 
-    _print_benchmark_results([result], compare=False)
+    # ── Table 1: Metropolis across lattices ───────────────────────
+    console.print("\n[bold]Metropolis Performance[/bold]")
+    metro_table = Table(border_style="green")
+    metro_table.add_column("Lattice", style="bold")
+    metro_table.add_column("Sites", justify="right")
+    metro_table.add_column("Updates/sec", justify="right")
+    metro_table.add_column("Sweeps/sec", justify="right")
+    metro_table.add_column("E/site", justify="right")
+
+    metro_cases = [
+        (f"Square {lattice_size}x{lattice_size}", "square", lattice_size, 2.269),
+        (f"Triangular {lattice_size}x{lattice_size}",
+         "triangular", lattice_size, 3.641),
+        (f"Honeycomb {lattice_size}x{lattice_size}", "honeycomb", lattice_size, 1.519),
+        (f"Chain ({chain_size})", "chain", chain_size, 1.0),
+        (f"Cubic {cubic_size}^3", "cubic", cubic_size, 4.5115),
+    ]
+
+    with console.status("[bold blue]Metropolis benchmarks..."):
+        for label, lt, sz, temp in metro_cases:
+            r = _run(label, lt, "metropolis", sz, temp)
+            metro_table.add_row(
+                label,
+                f"{r.total_updates // r.n_sweeps:,}",
+                f"{r.updates_per_sec:,.0f}",
+                f"{r.sweeps_per_sec:,.0f}",
+                f"{r.energy:.4f}",
+            )
+    console.print(metro_table)
+
+    # ── Table 2: Cluster algorithms ───────────────────────────────
+    console.print(
+        f"\n[bold]Cluster Algorithms"
+        f" (Square {lattice_size}x{lattice_size})[/bold]"
+    )
+    cluster_table = Table(border_style="green")
+    cluster_table.add_column("Algorithm", style="bold")
+    cluster_table.add_column("Updates/sec", justify="right")
+    cluster_table.add_column("Sweeps/sec", justify="right")
+    cluster_table.add_column("E/site", justify="right")
+
+    with console.status("[bold blue]Cluster benchmarks..."):
+        for alg_label, alg in [("Wolff", "wolff"), ("Swendsen-Wang", "swendsen_wang")]:
+            r = _run(alg_label, "square", alg, lattice_size, 2.269)
+            cluster_table.add_row(
+                alg_label,
+                f"{r.updates_per_sec:,.0f}",
+                f"{r.sweeps_per_sec:,.0f}",
+                f"{r.energy:.4f}",
+            )
+    console.print(cluster_table)
+
+    # ── Table 3: Coupling strategies ──────────────────────────────
+    console.print(
+        f"\n[bold]Coupling Strategies"
+        f" (Square {lattice_size}x{lattice_size})[/bold]"
+    )
+    coupling_table = Table(border_style="green")
+    coupling_table.add_column("Strategy", style="bold")
+    coupling_table.add_column("Updates/sec", justify="right")
+    coupling_table.add_column("Sweeps/sec", justify="right")
+
+    import time as _time
+
+    from mcising._core import IsingSimulation
+
+    coupling_cases = [
+        ("J1", 1.0, 0.0, 0.0, 0.0),
+        ("J1+J2", 1.0, 1.0, 0.0, 0.0),
+        ("J1+J2+J3", 1.0, 1.0, 1.0, 0.0),
+        ("J1+J2+J3+H", 1.0, 1.0, 1.0, 1.0),
+    ]
+    n_sites = lattice_size * lattice_size
+    beta = 1.0 / 2.269
+
+    with console.status("[bold blue]Coupling benchmarks..."):
+        for label, j1, j2, j3, h in coupling_cases:
+            sim = IsingSimulation(
+                lattice_size, j1, j2, j3, h, seed, "metropolis", "square",
+            )
+            sim.sweep(100, beta)
+            start = _time.perf_counter()
+            sim.sweep(n_sweeps, beta)
+            elapsed = _time.perf_counter() - start
+            ups = n_sweeps * n_sites / elapsed
+            sps = n_sweeps / elapsed
+            coupling_table.add_row(
+                label,
+                f"{ups:,.0f}",
+                f"{sps:,.0f}",
+            )
+    console.print(coupling_table)
 
 
 def _run_scaling_benchmark(seed: int, compare: bool) -> None:
@@ -387,202 +467,6 @@ def _run_scaling_benchmark(seed: int, compare: bool) -> None:
         )
 
 
-def _run_full_benchmark(
-    lattice_size: int, n_sweeps: int, seed: int
-) -> None:
-    """Run comprehensive benchmark across lattices and algorithms."""
-    from mcising.benchmarks import (
-        bench_mcising,
-        bench_peapods,
-        bench_peapods_cubic,
-        bench_peapods_sw,
-        bench_peapods_triangular,
-        bench_peapods_wolff,
-    )
-
-    # Check peapods availability
-    has_peapods = True
-    try:
-        from peapods import Ising  # type: ignore[import-untyped] # noqa: F401
-    except ImportError:
-        has_peapods = False
-        console.print(
-            "[dim]peapods not installed — showing mcising only[/dim]"
-        )
-
-    cubic_size = min(lattice_size, 16)
-    _peapods_fn = Callable[[int, int, int], BenchmarkResult]
-    cases: list[
-        tuple[str, str, str, int, float, _peapods_fn | None]
-    ] = [
-        (
-            "Metropolis: Square",
-            "square",
-            "metropolis",
-            lattice_size,
-            2.269,
-            bench_peapods if has_peapods else None,
-        ),
-        (
-            "Metropolis: Triangular",
-            "triangular",
-            "metropolis",
-            lattice_size,
-            3.641,
-            bench_peapods_triangular if has_peapods else None,
-        ),
-        (
-            "Metropolis: Cubic",
-            "cubic",
-            "metropolis",
-            cubic_size,
-            4.5115,
-            bench_peapods_cubic if has_peapods else None,
-        ),
-        (
-            "Wolff: Square",
-            "square",
-            "wolff",
-            lattice_size,
-            2.269,
-            bench_peapods_wolff if has_peapods else None,
-        ),
-        (
-            "Swendsen-Wang: Square",
-            "square",
-            "swendsen_wang",
-            lattice_size,
-            2.269,
-            bench_peapods_sw if has_peapods else None,
-        ),
-    ]
-
-    console.print(
-        Panel(
-            "[bold]Full Benchmark:[/bold] "
-            "Metropolis + Cluster × multiple lattices\n"
-            f"L={lattice_size} (cubic L={cubic_size}), "
-            f"{n_sweeps:,} sweeps per case",
-            border_style="blue",
-        )
-    )
-
-    for title, lat_type, algorithm, size, temp, peapods_fn in cases:
-        _dim = (
-            f"{size}×{size}"
-            if lat_type != "cubic"
-            else f"{size}³"
-        )
-        console.print(
-            f"\n[bold blue]{title}[/bold blue] "
-            f"({_dim}, T={temp})"
-        )
-
-        table = Table(border_style="green", show_header=True)
-        table.add_column("Implementation", style="bold")
-        table.add_column("Time", justify="right")
-        table.add_column("Updates/sec", justify="right")
-        table.add_column("Sweeps/sec", justify="right")
-        table.add_column("E/site", justify="right")
-        table.add_column("vs mcising", justify="right", style="bold")
-
-        with console.status(f"[bold blue]{title}..."):
-            mc = bench_mcising(
-                size, n_sweeps, seed, algorithm, lat_type, temp
-            )
-            rows: list[BenchmarkResult] = [mc]
-
-            if peapods_fn is not None:
-                try:
-                    pp = peapods_fn(size, n_sweeps, seed)
-                    rows.append(pp)
-                except Exception as e:
-                    console.print(f"  [dim]peapods error: {e}[/dim]")
-
-        mc_ups = mc.updates_per_sec
-        for r in rows:
-            if "mcising" in r.name:
-                vs = "1.0x"
-            elif r.updates_per_sec > mc_ups:
-                ratio = r.updates_per_sec / mc_ups
-                vs = f"[yellow]{ratio:.1f}x faster[/yellow]"
-            elif r.updates_per_sec > 0:
-                ratio = mc_ups / r.updates_per_sec
-                vs = f"{ratio:.1f}x slower"
-            else:
-                vs = "-"
-
-            table.add_row(
-                r.name,
-                f"{r.elapsed:.3f} s",
-                f"{r.updates_per_sec:,.0f}",
-                f"{r.sweeps_per_sec:,.0f}",
-                f"{r.energy:.4f}",
-                vs,
-            )
-
-        console.print(table)
-
-
-def _print_benchmark_results(
-    results: list[BenchmarkResult], compare: bool
-) -> None:
-    """Print benchmark results as a Rich table."""
-
-    table = Table(title="Benchmark Results", border_style="green")
-    table.add_column("Implementation", style="bold")
-    table.add_column("Time", justify="right")
-    table.add_column("Sweeps", justify="right")
-    table.add_column("Updates/sec", justify="right")
-    table.add_column("Sweeps/sec", justify="right")
-    table.add_column("E/site", justify="right")
-    table.add_column("|M|/site", justify="right")
-    if compare:
-        table.add_column(
-            "vs mcising", justify="right", style="bold green"
-        )
-
-    rust_ups: float | None = None
-    for r in results:
-        if "mcising" in r.name:
-            rust_ups = r.updates_per_sec
-
-    for r in results:
-        vs_mcising = ""
-        if compare and rust_ups is not None and r.updates_per_sec > 0:
-            if "mcising" in r.name:
-                vs_mcising = "1.0x"
-            elif r.updates_per_sec > rust_ups:
-                ratio = r.updates_per_sec / rust_ups
-                vs_mcising = f"[yellow]{ratio:,.1f}x faster[/yellow]"
-            else:
-                ratio = rust_ups / r.updates_per_sec
-                vs_mcising = f"{ratio:,.1f}x slower"
-
-        table.add_row(
-            r.name,
-            f"{r.elapsed:.3f} s",
-            f"{r.n_sweeps:,}",
-            f"{r.updates_per_sec:,.0f}",
-            f"{r.sweeps_per_sec:,.0f}",
-            f"{r.energy:.4f}",
-            f"{abs(r.magnetization):.4f}",
-            *([vs_mcising] if compare else []),
-        )
-
-    console.print(table)
-
-    if compare and len(results) >= 2:
-        console.print()
-        # Summary line
-        slowest = min(r.updates_per_sec for r in results if r.updates_per_sec > 0)
-        fastest = max(r.updates_per_sec for r in results)
-        if slowest > 0:
-            console.print(
-                f"  [bold]Overall speedup:[/bold] mcising is "
-                f"[bold green]{fastest / slowest:,.0f}x[/bold green] faster "
-                f"than the slowest baseline"
-            )
 
 
 def _parse_t_range(value: str) -> tuple[float, ...]:

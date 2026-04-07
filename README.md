@@ -14,12 +14,65 @@
 
 ---
 
-**mcising** is a Python library for Monte Carlo simulation of Ising spin systems on square lattices. It supports nearest-neighbor (J1) and next-nearest-neighbor (J2) interactions, external magnetic fields, correlation functions, and adaptive thermalization. The performance-critical simulation loop is written in Rust via PyO3.
+**mcising** is a Python library for Monte Carlo simulation of Ising spin systems. It supports 5 lattice geometries, J1-J2-J3 frustrated magnetism with external fields, 3 Monte Carlo algorithms, and adaptive thermalization. The performance-critical core is written in Rust via PyO3.
+
+## Performance
+
+**2.7-3.4x faster** than [peapods](https://github.com/PeaBrane/peapods) (Rust/PyO3) across all shared benchmarks.
+
+MacBook Pro 14-inch (2023, Apple M2 Pro, 32 GB). Reproduce with [`benchmarks/compare_peapods.py`](benchmarks/compare_peapods.py).
+
+```
+Metropolis: Square (32×32, T=2.269)
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Implementation  ┃    Time ┃ Updates/sec ┃ Sweeps/sec ┃  E/site ┃  vs mcising ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━┩
+│ mcising         │ 0.038 s │ 269,221,877 │    262,912 │ -1.3906 │        1.0x │
+│ peapods         │ 0.131 s │  78,146,389 │     76,315 │ -1.4250 │ 3.4x slower │
+└─────────────────┴─────────┴─────────────┴────────────┴─────────┴─────────────┘
+
+Metropolis: Triangular (32×32, T=3.641)
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Implementation  ┃    Time ┃ Updates/sec ┃ Sweeps/sec ┃  E/site ┃  vs mcising ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━┩
+│ mcising         │ 0.046 s │ 223,340,013 │    218,105 │ -2.1836 │        1.0x │
+│ peapods         │ 0.157 s │  65,100,107 │     63,574 │ -2.0238 │ 3.4x slower │
+└─────────────────┴─────────┴─────────────┴────────────┴─────────┴─────────────┘
+
+Metropolis: Cubic (16³, T=4.5115)
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Implementation  ┃    Time ┃ Updates/sec ┃ Sweeps/sec ┃  E/site ┃  vs mcising ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━┩
+│ mcising         │ 0.279 s │ 146,924,310 │     35,870 │ -1.1982 │        1.0x │
+│ peapods         │ 0.812 s │  50,430,683 │     12,312 │ -1.0385 │ 2.9x slower │
+└─────────────────┴─────────┴─────────────┴────────────┴─────────┴─────────────┘
+
+Wolff: Square (32×32, T=2.269)
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Implementation  ┃    Time ┃ Updates/sec ┃ Sweeps/sec ┃  E/site ┃  vs mcising ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━┩
+│ mcising (wolff) │ 0.103 s │  99,690,738 │     97,354 │ -1.5117 │        1.0x │
+│ peapods         │ 0.337 s │  30,386,647 │     29,674 │ -1.4337 │ 3.3x slower │
+└─────────────────┴─────────┴─────────────┴────────────┴─────────┴─────────────┘
+
+Swendsen-Wang: Square (32×32, T=2.269)
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Implementation  ┃    Time ┃ Updates/sec ┃ Sweeps/sec ┃  E/site ┃  vs mcising ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━┩
+│ mcising         │ 0.214 s │  47,960,246 │     46,836 │ -1.3125 │        1.0x │
+│ peapods         │ 0.569 s │  18,008,160 │     17,586 │ -1.4323 │ 2.7x slower │
+└─────────────────┴─────────┴─────────────┴────────────┴─────────┴─────────────┘
+```
+
+mcising also supports features not available in peapods: J2/J3 coupling, external magnetic field, honeycomb lattice, and 1D chain.
 
 ## Features
 
-- **Rust-accelerated Metropolis algorithm** via PyO3/maturin
-- **J1-J2 frustrated magnetism** -- nearest and next-nearest-neighbor couplings
+- **5 lattice geometries** -- square, triangular, honeycomb (2-sublattice), cubic (3D), chain (1D)
+- **3 MC algorithms** -- Metropolis, Wolff cluster, Swendsen-Wang cluster
+- **J1-J2-J3 frustrated magnetism** -- nearest, next-nearest, and third-nearest-neighbor couplings
+- **External magnetic field** -- h coupling, compatible with all lattices
+- **15 Metropolis strategies** -- auto-selected lookup tables optimized per coupling combination
 - **Adaptive thermalization** -- MSER equilibration detection + Sokal autocorrelation estimation
 - **Cool-down approach** -- temperatures processed in descending order to avoid metastable states
 - **Correlation functions** -- spin-spin correlation and correlation length
@@ -128,9 +181,9 @@ save_json_summary(results, "summary.json")
 ```
 mcising/
 ├── rust/src/              # Rust core (compiled to mcising._core)
-│   ├── algorithm/         # MC algorithms (Metropolis)
+│   ├── algorithm/         # MC algorithms (Metropolis, Wolff, Swendsen-Wang)
 │   ├── autocorrelation.rs # MSER + Sokal windowing
-│   ├── lattice/           # Lattice geometries (square)
+│   ├── lattice/           # Lattice geometries (square, triangular, honeycomb, cubic, chain)
 │   ├── observables.rs     # Energy, magnetization, correlation
 │   └── simulation.rs      # PyO3 boundary (IsingSimulation)
 ├── python/mcising/        # Python package
@@ -139,7 +192,8 @@ mcising/
 │   ├── io.py              # HDF5/JSON I/O
 │   ├── plotting.py        # Matplotlib visualization
 │   └── cli.py             # Typer CLI
-└── tests/                 # pytest suite (94 tests)
+├── tests/                 # 376 tests (141 Rust + 235 Python)
+└── benchmarks/            # Reproducible performance comparisons
 ```
 
 ## License
