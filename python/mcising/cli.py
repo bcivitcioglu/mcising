@@ -60,7 +60,11 @@ def run(
         int, typer.Option("-L", "--lattice-size", help="Lattice size L (L x L).")
     ] = 16,
     lattice: Annotated[
-        str, typer.Option("--lattice", help="Lattice type: square, triangular, chain.")
+        str,
+        typer.Option(
+            "--lattice",
+            help="Lattice: square, triangular, chain, honeycomb, cubic.",
+        ),
     ] = "square",
     j1: Annotated[float, typer.Option(help="Nearest-neighbor coupling.")] = 1.0,
     j2: Annotated[float, typer.Option(help="Next-nearest-neighbor coupling.")] = 0.0,

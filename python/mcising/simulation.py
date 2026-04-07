@@ -312,8 +312,9 @@ class Simulation:
 
         energies = np.empty(n_measurements, dtype=np.float64)
         magnetizations = np.empty(n_measurements, dtype=np.float64)
+        spin_shape = self._core.get_spins().shape
         configs = np.empty(
-            (n_measurements, self.config.lattice.size, self.config.lattice.size),
+            (n_measurements, *spin_shape),
             dtype=np.int8,
         )
 

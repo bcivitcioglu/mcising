@@ -40,9 +40,8 @@ class LatticeType(str, Enum):
     SQUARE = "square"
     TRIANGULAR = "triangular"
     CHAIN = "chain"
-    # Future lattice types:
-    # HONEYCOMB = "honeycomb"
-    # CUBIC = "cubic"
+    HONEYCOMB = "honeycomb"
+    CUBIC = "cubic"
 
 
 class Algorithm(str, Enum):

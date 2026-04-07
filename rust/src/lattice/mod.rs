@@ -1,9 +1,13 @@
 pub mod chain;
+pub mod cubic;
+pub mod honeycomb;
 pub mod square;
 pub mod triangular;
 
 use crate::error::MCIsingError;
 use chain::ChainLattice;
+use cubic::CubicLattice;
+use honeycomb::HoneycombLattice;
 use square::SquareLattice;
 use triangular::TriangularLattice;
 
@@ -66,6 +70,8 @@ pub enum LatticeKind {
     Square(SquareLattice),
     Triangular(TriangularLattice),
     Chain(ChainLattice),
+    Honeycomb(HoneycombLattice),
+    Cubic(CubicLattice),
 }
 
 /// Dispatch macro: matches on `LatticeKind` and executes a generic body
@@ -79,6 +85,8 @@ macro_rules! with_lattice {
             LatticeKind::Square($lat) => $body,
             LatticeKind::Triangular($lat) => $body,
             LatticeKind::Chain($lat) => $body,
+            LatticeKind::Honeycomb($lat) => $body,
+            LatticeKind::Cubic($lat) => $body,
         }
     };
 }
@@ -96,6 +104,12 @@ impl LatticeKind {
                 .ok_or(MCIsingError::InvalidLatticeSize(size)),
             "chain" => ChainLattice::new(size)
                 .map(LatticeKind::Chain)
+                .ok_or(MCIsingError::InvalidLatticeSize(size)),
+            "honeycomb" => HoneycombLattice::new(size)
+                .map(LatticeKind::Honeycomb)
+                .ok_or(MCIsingError::InvalidLatticeSize(size)),
+            "cubic" => CubicLattice::new(size)
+                .map(LatticeKind::Cubic)
                 .ok_or(MCIsingError::InvalidLatticeSize(size)),
             _ => Err(MCIsingError::InvalidLatticeType(s.to_string())),
         }

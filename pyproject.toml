@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "mcising"
-version = "0.11.2"
+version = "0.12.0"
 description = "High-performance Ising model Monte Carlo simulation with Rust core"
 readme = "README.md"
 license = { text = "MIT" }

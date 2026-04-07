@@ -45,7 +45,7 @@ impl fmt::Display for MCIsingError {
             Self::InvalidLatticeType(name) => {
                 write!(
                     f,
-                    "Unknown lattice type '{name}'. Valid options: square, triangular, chain"
+                    "Unknown lattice type '{name}'. Valid options: square, triangular, chain, honeycomb, cubic"
                 )
             }
         }
