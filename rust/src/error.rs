@@ -11,6 +11,7 @@ pub enum MCIsingError {
     InvalidSpinConfiguration(String),
     InvalidAlgorithm(String),
     ClusterAlgorithmConstraint(String),
+    InvalidLatticeType(String),
 }
 
 impl fmt::Display for MCIsingError {
@@ -39,6 +40,12 @@ impl fmt::Display for MCIsingError {
                     f,
                     "Cluster algorithm '{alg}' requires J2=0 and h=0. \
                      Use algorithm='metropolis' for J1-J2 or external field simulations."
+                )
+            }
+            Self::InvalidLatticeType(name) => {
+                write!(
+                    f,
+                    "Unknown lattice type '{name}'. Valid options: square, triangular, chain"
                 )
             }
         }

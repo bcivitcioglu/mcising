@@ -123,6 +123,7 @@ class Simulation:
             h=config.lattice.h,
             seed=config.seed,
             algorithm=config.algorithm.value,
+            lattice_type=config.lattice.lattice_type.value,
         )
 
     def run(

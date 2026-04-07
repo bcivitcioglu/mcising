@@ -54,7 +54,7 @@ class TestSpinManipulation:
 
     def test_set_spins_wrong_shape_raises(self, small_sim: IsingSimulation) -> None:
         wrong = np.ones((3, 3), dtype=np.int8)
-        with pytest.raises(ValueError, match="Expected shape"):
+        with pytest.raises(ValueError, match="Expected 16 spins"):
             small_sim.set_spins(wrong)
 
     def test_set_spins_invalid_values_raises(self, small_sim: IsingSimulation) -> None:

@@ -59,6 +59,9 @@ def run(
     lattice_size: Annotated[
         int, typer.Option("-L", "--lattice-size", help="Lattice size L (L x L).")
     ] = 16,
+    lattice: Annotated[
+        str, typer.Option("--lattice", help="Lattice type: square, triangular, chain.")
+    ] = "square",
     j1: Annotated[float, typer.Option(help="Nearest-neighbor coupling.")] = 1.0,
     j2: Annotated[float, typer.Option(help="Next-nearest-neighbor coupling.")] = 0.0,
     j3: Annotated[float, typer.Option(help="Third-nearest-neighbor coupling.")] = 0.0,
@@ -162,6 +165,7 @@ def run(
 
     config = SimulationConfig(
         lattice=LatticeConfig(
+            lattice_type=LatticeType(lattice),
             size=lattice_size,
             j1=j1,
             j2=j2,

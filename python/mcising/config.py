@@ -38,12 +38,11 @@ class LatticeType(str, Enum):
     """Available lattice geometries."""
 
     SQUARE = "square"
+    TRIANGULAR = "triangular"
+    CHAIN = "chain"
     # Future lattice types:
-    # TRIANGULAR = "triangular"
     # HONEYCOMB = "honeycomb"
-    # KAGOME = "kagome"
     # CUBIC = "cubic"
-    # CHAIN = "chain"
 
 
 class Algorithm(str, Enum):
