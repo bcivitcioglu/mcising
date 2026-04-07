@@ -863,4 +863,52 @@ mod tests {
         let e = compute_energy(&spins, &lattice, 1.0, 0.5, 0.25, 0.0);
         assert!((e - (-3.5)).abs() < 1e-10, "Expected -3.5, got {e}");
     }
+
+    // ── Cross-lattice tests (non-square coordination numbers) ────────
+
+    fn assert_energy_decreases_on_lattice<L: Lattice>(
+        lattice: &L, j1: f64, j2: f64, j3: f64, h: f64,
+        z_nn: usize, z_nnn: usize, z_tnn: usize,
+    ) {
+        let mut rng = create_rng(42);
+        let mut spins: Vec<i8> = (0..lattice.num_sites())
+            .map(|_| if rng.gen::<bool>() { 1 } else { -1 })
+            .collect();
+        let e_before = crate::observables::energy_per_site(&spins, lattice, j1, j2, j3, h);
+        let mut metro = Metropolis::new(j1, j2, j3, h, z_nn, z_nnn, z_tnn);
+        for _ in 0..100 {
+            metro.sweep(&mut spins, lattice, j1, j2, j3, h, 1e10, &mut rng);
+        }
+        let e_after = crate::observables::energy_per_site(&spins, lattice, j1, j2, j3, h);
+        assert!(e_after <= e_before + 1e-10,
+            "Energy should decrease: {e_before} -> {e_after}");
+    }
+
+    #[test]
+    fn test_energy_decreases_j1_triangular() {
+        use crate::lattice::triangular::TriangularLattice;
+        let lat = TriangularLattice::new(8).unwrap();
+        assert_energy_decreases_on_lattice(&lat, 1.0, 0.0, 0.0, 0.0, 6, 6, 6);
+    }
+
+    #[test]
+    fn test_energy_decreases_j1_chain() {
+        use crate::lattice::chain::ChainLattice;
+        let lat = ChainLattice::new(50).unwrap();
+        assert_energy_decreases_on_lattice(&lat, 1.0, 0.0, 0.0, 0.0, 2, 2, 2);
+    }
+
+    #[test]
+    fn test_energy_decreases_j1_honeycomb() {
+        use crate::lattice::honeycomb::HoneycombLattice;
+        let lat = HoneycombLattice::new(8).unwrap();
+        assert_energy_decreases_on_lattice(&lat, 1.0, 0.0, 0.0, 0.0, 3, 6, 3);
+    }
+
+    #[test]
+    fn test_energy_decreases_j1j2_cubic() {
+        use crate::lattice::cubic::CubicLattice;
+        let lat = CubicLattice::new(6).unwrap();
+        assert_energy_decreases_on_lattice(&lat, 1.0, 0.5, 0.0, 0.0, 6, 12, 8);
+    }
 }
