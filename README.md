@@ -14,7 +14,7 @@
 
 ---
 
-**mcising** is a Python library for Monte Carlo simulation of Ising spin systems. It supports 5 lattice geometries, J1-J2-J3 frustrated magnetism with external fields, 3 Monte Carlo algorithms, and adaptive thermalization. The performance-critical core is written in Rust via PyO3.
+**mcising** is a Python library for Monte Carlo simulation of Ising spin systems. It supports 5 lattice geometries, J1-J2-J3 frustrated magnetism with external fields, 3 Monte Carlo algorithms, 3 execution modes (including parallel tempering), and adaptive thermalization. The performance-critical core is written in Rust via PyO3.
 
 ## Performance
 
@@ -64,17 +64,17 @@ Swendsen-Wang: Square (32×32, T=2.269)
 └─────────────────┴─────────┴─────────────┴────────────┴─────────┴─────────────┘
 ```
 
-mcising also supports features not available in peapods: J2/J3 coupling, external magnetic field, honeycomb lattice, and 1D chain.
+mcising also supports features not available in peapods: J2/J3 coupling, external magnetic field, honeycomb lattice, 1D chain, and parallel tempering.
 
 ## Features
 
 - **5 lattice geometries** -- square, triangular, honeycomb (2-sublattice), cubic (3D), chain (1D)
 - **3 MC algorithms** -- Metropolis, Wolff cluster, Swendsen-Wang cluster
+- **3 execution modes** -- sequential cool-down, independent parallel (Rayon), parallel tempering with replica exchange
 - **J1-J2-J3 frustrated magnetism** -- nearest, next-nearest, and third-nearest-neighbor couplings
 - **External magnetic field** -- h coupling, compatible with all lattices
 - **15 Metropolis strategies** -- auto-selected lookup tables optimized per coupling combination
 - **Adaptive thermalization** -- MSER equilibration detection + Sokal autocorrelation estimation
-- **Cool-down approach** -- temperatures processed in descending order to avoid metastable states
 - **Correlation functions** -- spin-spin correlation and correlation length
 - **HDF5 output** with crash-safe incremental checkpointing
 - **Rich CLI** with progress bars, benchmarking, and structured output
@@ -89,7 +89,7 @@ pip install mcising
 For development (requires Rust toolchain):
 
 ```bash
-git clone https://github.com/burakericok/mcising.git
+git clone https://github.com/bcivitcioglu/mcising.git
 cd mcising
 uv sync
 uv run maturin develop
@@ -100,10 +100,10 @@ uv run maturin develop
 ### Python API
 
 ```python
-from mcising import Simulation, SimulationConfig, LatticeConfig
+from mcising import Simulation, SimulationConfig, LatticeConfig, LatticeType
 
 config = SimulationConfig(
-    lattice=LatticeConfig(size=32, j1=1.0, j2=0.0),
+    lattice=LatticeConfig(size=32, j1=1.0),
     temperatures=(3.0, 2.269, 1.5),
     n_sweeps=1000,
     seed=42,
@@ -116,6 +116,48 @@ results = sim.run()
 for T in results.temperatures:
     print(f"T={T:.3f}: <E>={results.energy[T].mean():.4f}, "
           f"<|M|>={abs(results.magnetization[T]).mean():.4f}")
+```
+
+### Multiple Lattice Types
+
+```python
+from mcising import LatticeType
+
+# Triangular lattice with J1-J2 frustration
+config = SimulationConfig(
+    lattice=LatticeConfig(
+        lattice_type=LatticeType.TRIANGULAR,
+        size=32,
+        j1=1.0,
+        j2=0.5,
+    ),
+    temperatures=(4.0, 3.641, 2.0),
+    n_sweeps=1000,
+)
+
+# Also available: HONEYCOMB, CUBIC, CHAIN
+```
+
+### Parallel Execution
+
+```python
+from mcising import ExecutionMode
+
+# Independent: each temperature runs in parallel (uses all CPU cores)
+config = SimulationConfig(
+    lattice=LatticeConfig(size=32),
+    temperatures=(3.0, 2.5, 2.269, 2.0, 1.5),
+    n_sweeps=1000,
+    mode=ExecutionMode.INDEPENDENT,  # ~6x faster with 10 cores
+)
+
+# Parallel Tempering: parallel + replica swap for better sampling
+config = SimulationConfig(
+    lattice=LatticeConfig(size=32),
+    temperatures=(3.0, 2.5, 2.269, 2.0, 1.5),
+    n_sweeps=1000,
+    mode=ExecutionMode.PARALLEL_TEMPERING,
+)
 ```
 
 ### Adaptive Mode
@@ -147,6 +189,12 @@ for T in results.temperatures:
 # Basic run
 mcising run -L 32 --seed 42 -o results.h5
 
+# Triangular lattice with parallel tempering
+mcising run -L 32 --lattice triangular --mode parallel_tempering
+
+# Independent parallel execution (uses all CPU cores)
+mcising run -L 32 --mode independent -T 3.0 -T 2.269 -T 1.5
+
 # Adaptive mode
 mcising run -L 64 --adaptive --min-samples 200 --seed 42
 
@@ -156,8 +204,8 @@ mcising run -L 32 --checkpoint sim.h5
 # Resume interrupted run
 mcising run -L 32 --checkpoint sim.h5 --resume
 
-# Benchmark performance
-mcising benchmark -L 64 --sweeps 10000
+# Benchmark performance across all lattices and algorithms
+mcising benchmark
 
 # Show info
 mcising info
@@ -185,6 +233,7 @@ mcising/
 │   ├── autocorrelation.rs # MSER + Sokal windowing
 │   ├── lattice/           # Lattice geometries (square, triangular, honeycomb, cubic, chain)
 │   ├── observables.rs     # Energy, magnetization, correlation
+│   ├── parallel.rs        # Rayon-parallelized execution (independent + parallel tempering)
 │   └── simulation.rs      # PyO3 boundary (IsingSimulation)
 ├── python/mcising/        # Python package
 │   ├── simulation.py      # High-level Simulation class
@@ -192,7 +241,7 @@ mcising/
 │   ├── io.py              # HDF5/JSON I/O
 │   ├── plotting.py        # Matplotlib visualization
 │   └── cli.py             # Typer CLI
-├── tests/                 # 376 tests (141 Rust + 235 Python)
+├── tests/                 # 401 tests (141 Rust + 260 Python)
 └── benchmarks/            # Reproducible performance comparisons
 ```
 
