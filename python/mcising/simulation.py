@@ -17,7 +17,9 @@ from rich.progress import (
 )
 
 from mcising._core import IsingSimulation as _RustSim
-from mcising.config import SimulationConfig
+from mcising._core import run_independent_temperatures as _run_independent
+from mcising._core import run_parallel_tempering as _run_pt
+from mcising.config import ExecutionMode, SimulationConfig
 from mcising.constants import INF_TEMP
 from mcising.exceptions import SimulationError
 
@@ -137,26 +139,178 @@ class Simulation:
     ) -> SimulationResults:
         """Execute the full simulation across all temperatures.
 
-        Temperatures are processed in descending order using a cool-down
-        approach. The system is initialized at high temperature and gradually
-        cooled to avoid metastable states.
+        Behavior depends on ``config.mode``:
+
+        - **COOLDOWN** (default): Temperatures processed sequentially in
+          descending order. Spins carried from high T to low T.
+        - **INDEPENDENT**: Each temperature runs in parallel from random
+          initialization. Uses all CPU cores via Rayon.
 
         Parameters
         ----------
         show_progress : bool
             Whether to display a Rich progress bar.
         on_temperature_complete : callable, optional
-            Called with ``(temperature, results)`` after each temperature
-            finishes data collection. Useful for checkpointing.
+            Called after each temperature (cooldown mode only).
         skip_temperatures : frozenset[float], optional
-            Temperatures to skip (e.g. already checkpointed). Skipped
-            temperatures are excluded from the thermalization schedule.
+            Temperatures to skip (cooldown mode only).
 
         Returns
         -------
         SimulationResults
             Collected measurements across all temperatures.
         """
+        if self.config.mode == ExecutionMode.INDEPENDENT:
+            return self._run_independent(show_progress=show_progress)
+
+        if self.config.mode == ExecutionMode.PARALLEL_TEMPERING:
+            return self._run_parallel_tempering(
+                show_progress=show_progress
+            )
+
+        return self._run_cooldown(
+            show_progress=show_progress,
+            on_temperature_complete=on_temperature_complete,
+            skip_temperatures=skip_temperatures,
+        )
+
+    def _run_independent(
+        self, *, show_progress: bool = True
+    ) -> SimulationResults:
+        """Run all temperatures in parallel via Rayon."""
+        import time
+
+        start_time = time.monotonic()
+        temps = list(self.config.temperatures)
+
+        results = SimulationResults(
+            temperatures=temps,
+            metadata={
+                "config": self.config,
+                "mode": "independent",
+            },
+        )
+        if self.config.compute_correlation:
+            results.correlation_function = {}
+            results.correlation_length = {}
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            TimeElapsedColumn(),
+            disable=not show_progress,
+        ) as progress:
+            progress.add_task(
+                f"Running {len(temps)} temperatures in parallel...",
+                total=None,
+            )
+
+            raw = _run_independent(
+                lattice_size=self.config.lattice.size,
+                j1=self.config.lattice.j1,
+                j2=self.config.lattice.j2,
+                j3=self.config.lattice.j3,
+                h=self.config.lattice.h,
+                base_seed=self.config.seed,
+                algorithm=self.config.algorithm.value,
+                lattice_type=self.config.lattice.lattice_type.value,
+                temperatures=temps,
+                n_thermalization=self.config.n_thermalization,
+                n_sweeps=self.config.n_sweeps,
+                measurement_interval=self.config.measurement_interval,
+                store_configs=True,
+            )
+
+        for entry in raw:
+            temp = float(entry["temperature"])
+            results.energy[temp] = np.asarray(entry["energies"])
+            results.magnetization[temp] = np.asarray(
+                entry["magnetizations"]
+            )
+            if "configurations" in entry:
+                results.configurations[temp] = np.asarray(
+                    entry["configurations"]
+                )
+
+        elapsed = time.monotonic() - start_time
+        results.metadata["elapsed_seconds"] = elapsed
+
+        return results
+
+    def _run_parallel_tempering(
+        self, *, show_progress: bool = True
+    ) -> SimulationResults:
+        """Run Parallel Tempering via Rayon."""
+        import time
+
+        start_time = time.monotonic()
+        temps = list(self.config.temperatures)
+
+        results = SimulationResults(
+            temperatures=sorted(temps),
+            metadata={
+                "config": self.config,
+                "mode": "parallel_tempering",
+            },
+        )
+        if self.config.compute_correlation:
+            results.correlation_function = {}
+            results.correlation_length = {}
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            TimeElapsedColumn(),
+            disable=not show_progress,
+        ) as progress:
+            progress.add_task(
+                f"Parallel Tempering: {len(temps)} replicas...",
+                total=None,
+            )
+
+            raw = _run_pt(
+                lattice_size=self.config.lattice.size,
+                j1=self.config.lattice.j1,
+                j2=self.config.lattice.j2,
+                j3=self.config.lattice.j3,
+                h=self.config.lattice.h,
+                base_seed=self.config.seed,
+                algorithm=self.config.algorithm.value,
+                lattice_type=self.config.lattice.lattice_type.value,
+                temperatures=temps,
+                n_thermalization=self.config.n_thermalization,
+                n_sweeps=self.config.n_sweeps,
+                measurement_interval=self.config.measurement_interval,
+                swap_interval=self.config.swap_interval,
+                store_configs=True,
+            )
+
+        for entry in raw:
+            temp = float(entry["temperature"])
+            results.energy[temp] = np.asarray(entry["energies"])
+            results.magnetization[temp] = np.asarray(
+                entry["magnetizations"]
+            )
+            if "configurations" in entry:
+                results.configurations[temp] = np.asarray(
+                    entry["configurations"]
+                )
+
+        elapsed = time.monotonic() - start_time
+        results.metadata["elapsed_seconds"] = elapsed
+
+        return results
+
+    def _run_cooldown(
+        self,
+        *,
+        show_progress: bool = True,
+        on_temperature_complete: (
+            Callable[[float, SimulationResults], None] | None
+        ) = None,
+        skip_temperatures: frozenset[float] | None = None,
+    ) -> SimulationResults:
+        """Run temperatures sequentially via cool-down (original behavior)."""
         import time
 
         start_time = time.monotonic()
@@ -166,14 +320,16 @@ class Simulation:
 
         # Build effective schedule excluding skipped temperatures
         effective_temps = [
-            t for t in sorted_temps if t not in (skip_temperatures or frozenset())
+            t
+            for t in sorted_temps
+            if t not in (skip_temperatures or frozenset())
         ]
 
         results = SimulationResults(
             temperatures=list(effective_temps),
             metadata={
                 "config": self.config,
-                "version": "0.2.0",
+                "mode": "cooldown",
             },
         )
         if self.config.compute_correlation:
@@ -197,8 +353,12 @@ class Simulation:
 
         n_skipped = len(sorted_temps) - len(effective_temps)
 
-        with Progress(*progress_columns, disable=not show_progress) as progress:
-            task = progress.add_task("Temperature scan", total=len(sorted_temps))
+        with Progress(
+            *progress_columns, disable=not show_progress
+        ) as progress:
+            task = progress.add_task(
+                "Temperature scan", total=len(sorted_temps)
+            )
 
             # Pre-advance for skipped temperatures
             if n_skipped > 0:
@@ -214,24 +374,26 @@ class Simulation:
                 )
 
                 if adaptive:
-                    # Adaptive: thermalize with diagnostics, then adaptive collection
-                    self._thermalize_adaptive(from_temp, to_temp, results)
-
+                    self._thermalize_adaptive(
+                        from_temp, to_temp, results
+                    )
                     progress.update(
                         task,
                         description=f"T={to_temp:.3f} (measuring)",
                     )
-
-                    self._collect_at_temperature_adaptive(to_temp, results)
+                    self._collect_at_temperature_adaptive(
+                        to_temp, results
+                    )
                 else:
-                    # Fixed: original behavior
-                    self._thermalize(from_temp, to_temp, self.config.n_thermalization)
-
+                    self._thermalize(
+                        from_temp,
+                        to_temp,
+                        self.config.n_thermalization,
+                    )
                     progress.update(
                         task,
                         description=f"T={to_temp:.3f} (measuring)",
                     )
-
                     self._collect_at_temperature(to_temp, results)
 
                 if on_temperature_complete is not None:

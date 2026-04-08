@@ -15,6 +15,7 @@ pub mod autocorrelation;
 pub mod error;
 pub mod lattice;
 pub mod observables;
+pub mod parallel;
 pub mod rng;
 pub mod simulation;
 
@@ -26,5 +27,7 @@ use pyo3::prelude::*;
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<simulation::IsingSimulation>()?;
+    m.add_function(wrap_pyfunction!(parallel::run_independent_temperatures, m)?)?;
+    m.add_function(wrap_pyfunction!(parallel::run_parallel_tempering, m)?)?;
     Ok(())
 }

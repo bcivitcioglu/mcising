@@ -23,8 +23,8 @@ use crate::rng::create_rng;
 /// All physics computation happens in Rust; Python calls methods on this class.
 #[pyclass]
 pub struct IsingSimulation {
-    spins: Vec<i8>,
-    lattice: LatticeKind,
+    pub(crate) spins: Vec<i8>,
+    pub(crate) lattice: LatticeKind,
     j1: f64,
     j2: f64,
     j3: f64,
@@ -39,22 +39,10 @@ pub struct IsingSimulation {
     swendsen_wang: Option<SwendsenWang>,
 }
 
-#[pymethods]
 impl IsingSimulation {
-    /// Create a new Ising simulation.
-    ///
-    /// # Arguments
-    /// * `lattice_size` - Linear size L of the lattice (must be >= 2)
-    /// * `j1` - Nearest-neighbor coupling strength
-    /// * `j2` - Next-nearest-neighbor coupling strength
-    /// * `j3` - Third-nearest-neighbor coupling strength
-    /// * `h` - External magnetic field
-    /// * `seed` - Random seed for reproducibility
-    /// * `algorithm` - Algorithm name: "metropolis", "wolff", or "swendsen_wang"
-    /// * `lattice_type` - Lattice geometry: "square" or "triangular"
-    #[new]
-    #[pyo3(signature = (lattice_size, j1, j2, j3, h, seed, algorithm = "metropolis", lattice_type = "square"))]
-    fn new(
+    /// Create a new simulation (pure Rust, no PyO3 dependency).
+    /// Used by both the PyO3 `__new__` and the parallel runner.
+    pub fn new_internal(
         lattice_size: usize,
         j1: f64,
         j2: f64,
@@ -63,42 +51,39 @@ impl IsingSimulation {
         seed: u64,
         algorithm: &str,
         lattice_type: &str,
-    ) -> PyResult<Self> {
+    ) -> Result<Self, MCIsingError> {
         let lattice = LatticeKind::from_str(lattice_type, lattice_size)?;
 
         if !j1.is_finite() {
-            return Err(MCIsingError::InvalidCoupling("j1", j1).into());
+            return Err(MCIsingError::InvalidCoupling("j1", j1));
         }
         if !j2.is_finite() {
-            return Err(MCIsingError::InvalidCoupling("j2", j2).into());
+            return Err(MCIsingError::InvalidCoupling("j2", j2));
         }
         if !j3.is_finite() {
-            return Err(MCIsingError::InvalidCoupling("j3", j3).into());
+            return Err(MCIsingError::InvalidCoupling("j3", j3));
         }
         if !h.is_finite() {
-            return Err(MCIsingError::InvalidCoupling("h", h).into());
+            return Err(MCIsingError::InvalidCoupling("h", h));
         }
 
         let algo_kind = AlgorithmKind::from_str(algorithm)?;
 
-        // Cluster algorithms require J2=0, J3=0, and h=0
         if algo_kind.requires_no_frustration() && (j2 != 0.0 || j3 != 0.0 || h != 0.0) {
             return Err(MCIsingError::ClusterAlgorithmConstraint(
                 algo_kind.name().to_string(),
-            )
-            .into());
+            ));
         }
 
-        // Validate coupling vs lattice support
         if j2 != 0.0 && lattice.nnn_coordination_number() == 0 {
             return Err(MCIsingError::InvalidCoupling(
                 "j2 (no NNN defined for this lattice)", j2,
-            ).into());
+            ));
         }
         if j3 != 0.0 && lattice.tnn_coordination_number() == 0 {
             return Err(MCIsingError::InvalidCoupling(
                 "j3 (no TNN defined for this lattice)", j3,
-            ).into());
+            ));
         }
 
         let num_sites = lattice.num_sites();
@@ -138,6 +123,37 @@ impl IsingSimulation {
             wolff,
             swendsen_wang,
         })
+    }
+
+    /// Perform sweeps (pure Rust, no PyO3). Used by parallel runner.
+    pub fn sweep_internal(&mut self, n_sweeps: usize, beta: f64) -> SweepResult {
+        let mut total = SweepResult { accepted: 0, attempted: 0 };
+        for _ in 0..n_sweeps {
+            let r = self.dispatch_sweep(beta);
+            total.accepted += r.accepted;
+            total.attempted += r.attempted;
+        }
+        total
+    }
+}
+
+#[pymethods]
+impl IsingSimulation {
+    /// Create a new Ising simulation (PyO3 entry point).
+    #[new]
+    #[pyo3(signature = (lattice_size, j1, j2, j3, h, seed, algorithm = "metropolis", lattice_type = "square"))]
+    fn new(
+        lattice_size: usize,
+        j1: f64,
+        j2: f64,
+        j3: f64,
+        h: f64,
+        seed: u64,
+        algorithm: &str,
+        lattice_type: &str,
+    ) -> PyResult<Self> {
+        Self::new_internal(lattice_size, j1, j2, j3, h, seed, algorithm, lattice_type)
+            .map_err(|e| e.into())
     }
 
     /// Perform MC sweeps at the given inverse temperature.

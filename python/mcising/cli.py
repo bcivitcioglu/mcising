@@ -15,6 +15,7 @@ from mcising.benchmarks import BenchmarkResult
 from mcising.config import (
     AdaptiveConfig,
     Algorithm,
+    ExecutionMode,
     LatticeConfig,
     LatticeType,
     SimulationConfig,
@@ -149,6 +150,13 @@ def run(
             help="MC algorithm: metropolis, wolff, swendsen_wang.",
         ),
     ] = "metropolis",
+    mode: Annotated[
+        str,
+        typer.Option(
+            "--mode",
+            help="cooldown, independent, or parallel_tempering.",
+        ),
+    ] = "cooldown",
 ) -> None:
     """Run a Monte Carlo simulation of the 2D Ising model."""
     if temperatures and t_range:
@@ -184,6 +192,7 @@ def run(
         seed=seed,
         compute_correlation=correlation,
         adaptive=adaptive_config,
+        mode=ExecutionMode(mode),
     )
 
     _print_config(config)

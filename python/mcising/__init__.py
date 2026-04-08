@@ -11,6 +11,7 @@ from mcising._core import IsingSimulation
 from mcising.config import (
     AdaptiveConfig,
     Algorithm,
+    ExecutionMode,
     LatticeConfig,
     LatticeType,
     SimulationConfig,
@@ -33,6 +34,7 @@ __all__: Final[list[str]] = [
     "LatticeConfig",
     "LatticeType",
     "Algorithm",
+    "ExecutionMode",
     "AdaptiveConfig",
     # I/O
     "save_hdf5",

@@ -28,6 +28,7 @@ from mcising.exceptions import ConfigurationError
 __all__: Final[list[str]] = [
     "LatticeType",
     "Algorithm",
+    "ExecutionMode",
     "LatticeConfig",
     "AdaptiveConfig",
     "SimulationConfig",
@@ -50,9 +51,20 @@ class Algorithm(str, Enum):
     METROPOLIS = "metropolis"
     WOLFF = "wolff"
     SWENDSEN_WANG = "swendsen_wang"
-    # Future algorithms:
-    # WANG_LANDAU = "wang_landau"
-    # PARALLEL_TEMPERING = "parallel_tempering"
+
+
+class ExecutionMode(str, Enum):
+    """Execution strategy for temperature scans.
+
+    COOLDOWN: Sequential cool-down — carry spins from high T to low T.
+        Best for avoiding metastable states. Single-threaded.
+    INDEPENDENT: Each temperature runs independently from random init.
+        Fully parallelized via Rayon. Uses all CPU cores.
+    """
+
+    COOLDOWN = "cooldown"
+    INDEPENDENT = "independent"
+    PARALLEL_TEMPERING = "parallel_tempering"
 
 
 @dataclass(frozen=True)
@@ -187,6 +199,10 @@ class SimulationConfig:
         Collect a measurement every this many sweeps.
     compute_correlation : bool
         Whether to compute the correlation function.
+    mode : ExecutionMode
+        Execution strategy. COOLDOWN (default) processes temperatures
+        sequentially via cool-down. INDEPENDENT runs each temperature
+        in parallel from random initialization using all CPU cores.
     """
 
     lattice: LatticeConfig = field(default_factory=LatticeConfig)
@@ -198,6 +214,8 @@ class SimulationConfig:
     measurement_interval: int = DEFAULT_MEASUREMENT_INTERVAL
     compute_correlation: bool = False
     adaptive: AdaptiveConfig = field(default_factory=AdaptiveConfig)
+    mode: ExecutionMode = ExecutionMode.COOLDOWN
+    swap_interval: int = 1
 
     def __post_init__(self) -> None:
         if self.n_sweeps < 1:
@@ -208,6 +226,9 @@ class SimulationConfig:
             raise ValueError(msg)
         if self.measurement_interval < 1:
             msg = f"measurement_interval must be >= 1, got {self.measurement_interval}"
+            raise ValueError(msg)
+        if self.swap_interval < 1:
+            msg = f"swap_interval must be >= 1, got {self.swap_interval}"
             raise ValueError(msg)
         for temp in self.temperatures:
             if temp <= 0 or not _is_finite(temp):

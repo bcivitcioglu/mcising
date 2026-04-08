@@ -65,3 +65,37 @@ class IsingSimulation:
     def get_rng_state(self) -> list[int]: ...
     def set_rng_state(self, state: list[int]) -> None: ...
     def __repr__(self) -> str: ...
+
+def run_parallel_tempering(
+    lattice_size: int,
+    j1: float,
+    j2: float,
+    j3: float,
+    h: float,
+    base_seed: int,
+    algorithm: str,
+    lattice_type: str,
+    temperatures: list[float],
+    n_thermalization: int,
+    n_sweeps: int,
+    measurement_interval: int,
+    swap_interval: int = 1,
+    store_configs: bool = False,
+) -> list[dict[str, Any]]: ...
+
+def run_independent_temperatures(
+    lattice_size: int,
+    j1: float,
+    j2: float,
+    j3: float,
+    h: float,
+    base_seed: int,
+    algorithm: str,
+    lattice_type: str,
+    temperatures: list[float],
+    n_thermalization: int,
+    n_sweeps: int,
+    measurement_interval: int,
+    store_configs: bool = False,
+    compute_correlation: bool = False,
+) -> list[dict[str, Any]]: ...
