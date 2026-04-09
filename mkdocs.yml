@@ -1,0 +1,105 @@
+site_name: mcising
+site_url: https://bcivitcioglu.github.io/mcising
+site_description: High-performance Ising model Monte Carlo simulation with a Rust core.
+site_author: Burak Civitcioglu
+repo_url: https://github.com/bcivitcioglu/mcising
+repo_name: bcivitcioglu/mcising
+
+theme:
+  name: material
+  logo: assets/logomark.svg
+  favicon: assets/logomark.svg
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - content.tabs.link
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Home: index.md
+  - Tutorial:
+    - Your First Simulation: tutorial/first-simulation.md
+    - Lattice Types: tutorial/lattice-types.md
+    - Frustrated Magnetism: tutorial/frustrated-magnetism.md
+    - Cluster Algorithms: tutorial/cluster-algorithms.md
+    - Parallel Execution: tutorial/parallel-execution.md
+    - Adaptive Mode: tutorial/adaptive-mode.md
+  - User Guide:
+    - Configuration: guide/configuration.md
+    - Saving Results: guide/saving-results.md
+    - CLI Reference: guide/cli.md
+    - Plotting: guide/plotting.md
+  - API Reference:
+    - Simulation: reference/simulation.md
+    - Configuration: reference/config.md
+    - I/O: reference/io.md
+    - Plotting: reference/plotting.md
+    - Exceptions: reference/exceptions.md
+  - Advanced:
+    - Performance: advanced/performance.md
+    - Physics Background: advanced/physics.md
+    - Contributing: advanced/contributing.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            docstring_style: numpy
+            merge_init_into_class: true
+            show_if_no_docstring: false
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+extra:
+  version:
+    provider: mike
+    default: latest
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/bcivitcioglu/mcising
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/mcising/
