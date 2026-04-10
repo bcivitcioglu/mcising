@@ -85,14 +85,150 @@ class SimulationResults:
 
     temperatures: list[float] = field(default_factory=list)
     energy: dict[float, NDArray[np.float64]] = field(default_factory=dict)
-    magnetization: dict[float, NDArray[np.float64]] = field(default_factory=dict)
-    configurations: dict[float, NDArray[np.int8]] = field(default_factory=dict)
+    magnetization: dict[float, NDArray[np.float64]] = field(
+        default_factory=dict
+    )
+    configurations: dict[float, NDArray[np.int8]] = field(
+        default_factory=dict
+    )
     correlation_function: (
         dict[float, tuple[NDArray[np.float64], NDArray[np.float64]]] | None
     ) = None
     correlation_length: dict[float, NDArray[np.float64]] | None = None
     adaptive_diagnostics: dict[float, AdaptiveDiagnostics] | None = None
     metadata: dict[str, object] = field(default_factory=dict)
+
+    def _num_sites(self) -> int:
+        """Infer number of sites from stored configurations or config."""
+        config = self.metadata.get("config")
+        if config is not None and hasattr(config, "lattice"):
+            from mcising._core import IsingSimulation as _Sim
+
+            sim = _Sim(
+                config.lattice.size,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0,
+                "metropolis",
+                config.lattice.lattice_type.value,
+            )
+            return int(sim.num_sites)
+        # Fallback: infer from first config shape
+        for cfg in self.configurations.values():
+            if cfg.ndim >= 2:
+                return int(np.prod(cfg.shape[1:]))
+        # Last resort: assume square
+        return 1
+
+    def specific_heat(self, temperature: float) -> float:
+        """Specific heat per site: Cv = N * Var(E) / T^2.
+
+        Parameters
+        ----------
+        temperature : float
+            Temperature to compute Cv at.
+
+        Returns
+        -------
+        float
+            Specific heat per site.
+        """
+        e = self.energy[temperature]
+        n = self._num_sites()
+        return float(n * np.var(e) / (temperature * temperature))
+
+    def susceptibility(self, temperature: float) -> float:
+        """Magnetic susceptibility per site: chi = N * Var(M) / T.
+
+        Parameters
+        ----------
+        temperature : float
+            Temperature to compute chi at.
+
+        Returns
+        -------
+        float
+            Susceptibility per site.
+        """
+        m = self.magnetization[temperature]
+        n = self._num_sites()
+        return float(n * np.var(m) / temperature)
+
+    def summary(self) -> None:
+        """Print a Rich table summarizing results per temperature.
+
+        Shows mean energy, magnetization, specific heat, and
+        susceptibility for each temperature.
+        """
+        from rich.console import Console
+        from rich.table import Table
+
+        table = Table(
+            title="Simulation Results", border_style="blue"
+        )
+        table.add_column("T", justify="right", style="bold")
+        table.add_column("<E>/N", justify="right")
+        table.add_column("<|M|>/N", justify="right")
+        table.add_column("Cv/N", justify="right")
+        table.add_column("chi/N", justify="right")
+        table.add_column("samples", justify="right", style="dim")
+
+        for t in sorted(self.temperatures):
+            if t not in self.energy:
+                continue
+            e = self.energy[t]
+            m = self.magnetization[t]
+            cv = self.specific_heat(t)
+            chi = self.susceptibility(t)
+            table.add_row(
+                f"{t:.4f}",
+                f"{float(np.mean(e)):.4f}",
+                f"{float(np.mean(np.abs(m))):.4f}",
+                f"{cv:.4f}",
+                f"{chi:.4f}",
+                str(len(e)),
+            )
+
+        Console().print(table)
+
+    def to_dataframe(self) -> object:
+        """Convert results to a pandas DataFrame.
+
+        Returns a DataFrame with columns: T, E_mean, E_std,
+        M_mean, M_std, Cv, chi.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Summary statistics per temperature.
+
+        Raises
+        ------
+        ImportError
+            If pandas is not installed.
+        """
+        import pandas as pd  # type: ignore[import-untyped]
+
+        rows = []
+        for t in sorted(self.temperatures):
+            if t not in self.energy:
+                continue
+            e = self.energy[t]
+            m = self.magnetization[t]
+            rows.append(
+                {
+                    "T": t,
+                    "E_mean": float(np.mean(e)),
+                    "E_std": float(np.std(e)),
+                    "M_mean": float(np.mean(np.abs(m))),
+                    "M_std": float(np.std(m)),
+                    "Cv": self.specific_heat(t),
+                    "chi": self.susceptibility(t),
+                }
+            )
+        return pd.DataFrame(rows)
 
 
 class Simulation:
