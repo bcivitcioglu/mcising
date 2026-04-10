@@ -504,7 +504,9 @@ def _parse_t_range(value: str) -> tuple[float, ...]:
         temps = np.arange(start, stop + 1e-10, step)
 
     if len(temps) == 0:
-        raise typer.BadParameter(f"--T-range produced no temperatures: '{value}'")
+        raise typer.BadParameter(
+            f"--T-range produced no temperatures: '{value}'"
+        )
 
     return tuple(float(t) for t in temps)
 
@@ -574,3 +576,369 @@ def _print_results_summary(results: mcising.SimulationResults) -> None:
     elapsed = results.metadata.get("elapsed_seconds", 0)
     console.print(table)
     console.print(f"\n[dim]Completed in {float(elapsed):.2f}s[/dim]")  # type: ignore[arg-type]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Post-run commands: summary, plot, export
+# ═══════════════════════════════════════════════════════════════════
+
+
+@app.command()
+def summary(
+    file: Annotated[Path, typer.Argument(help="HDF5 results file.")],
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output as JSON."),
+    ] = False,
+    csv_output: Annotated[
+        bool,
+        typer.Option("--csv", help="Output as CSV."),
+    ] = False,
+) -> None:
+    """Inspect simulation results from an HDF5 file."""
+    import json as json_mod
+
+    import numpy as np
+
+    from mcising.io import load_hdf5
+
+    results = load_hdf5(file)
+
+    if json_output or csv_output:
+        rows = []
+        for t in sorted(results.temperatures):
+            if t not in results.energy:
+                continue
+            e = results.energy[t]
+            m = results.magnetization.get(t)
+            row = {
+                "T": t,
+                "E_mean": float(np.mean(e)),
+                "E_std": float(np.std(e)),
+                "M_mean": float(np.mean(np.abs(m))) if m is not None else 0,
+                "Cv": results.specific_heat(t),
+                "chi": results.susceptibility(t),
+                "samples": len(e),
+            }
+            rows.append(row)
+
+        if json_output:
+            print(json_mod.dumps(rows, indent=2))
+        else:
+            print("T,E_mean,E_std,M_mean,Cv,chi,samples")
+            for r in rows:
+                print(
+                    f"{r['T']},{r['E_mean']},{r['E_std']},"
+                    f"{r['M_mean']},{r['Cv']},{r['chi']},"
+                    f"{r['samples']}"
+                )
+    else:
+        results.summary()
+
+
+# ── Plot subcommand group ─────────────────────────────────────────
+
+plot_app = typer.Typer(
+    help="Generate plots from HDF5 results. Requires -o.",
+)
+app.add_typer(plot_app, name="plot")
+
+
+def _save_plot(fig: object, output: Path, dpi: int) -> None:
+    """Save a matplotlib figure and close it."""
+    import matplotlib.pyplot as plt
+    from matplotlib.figure import Figure
+
+    assert isinstance(fig, Figure)
+    fig.savefig(output, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    console.print(f"[green]Saved:[/green] {output}")
+
+
+@plot_app.command("energy")
+def plot_energy_cmd(
+    file: Annotated[
+        list[Path], typer.Argument(help="HDF5 file(s).")
+    ],
+    output: Annotated[Path, typer.Option("-o", help="Output image.")],
+    dpi: Annotated[int, typer.Option(help="DPI.")] = 150,
+) -> None:
+    """Plot energy per site vs temperature."""
+    from mcising.plotting import plot_energy
+
+    paths = [str(f) for f in file]
+    src: str | list[str] = paths if len(paths) > 1 else paths[0]
+    _save_plot(plot_energy(src), output, dpi)  # type: ignore[arg-type]
+
+
+@plot_app.command("magnetization")
+def plot_magnetization_cmd(
+    file: Annotated[
+        list[Path], typer.Argument(help="HDF5 file(s).")
+    ],
+    output: Annotated[Path, typer.Option("-o", help="Output image.")],
+    dpi: Annotated[int, typer.Option(help="DPI.")] = 150,
+) -> None:
+    """Plot |magnetization| per site vs temperature."""
+    from mcising.plotting import plot_magnetization
+
+    paths = [str(f) for f in file]
+    src: str | list[str] = paths if len(paths) > 1 else paths[0]
+    _save_plot(plot_magnetization(src), output, dpi)  # type: ignore[arg-type]
+
+
+@plot_app.command("specific-heat")
+def plot_specific_heat_cmd(
+    file: Annotated[
+        list[Path], typer.Argument(help="HDF5 file(s).")
+    ],
+    output: Annotated[Path, typer.Option("-o", help="Output image.")],
+    dpi: Annotated[int, typer.Option(help="DPI.")] = 150,
+) -> None:
+    """Plot specific heat per site vs temperature."""
+    from mcising.plotting import plot_specific_heat
+
+    paths = [str(f) for f in file]
+    src: str | list[str] = paths if len(paths) > 1 else paths[0]
+    _save_plot(plot_specific_heat(src), output, dpi)  # type: ignore[arg-type]
+
+
+@plot_app.command("susceptibility")
+def plot_susceptibility_cmd(
+    file: Annotated[
+        list[Path], typer.Argument(help="HDF5 file(s).")
+    ],
+    output: Annotated[Path, typer.Option("-o", help="Output image.")],
+    dpi: Annotated[int, typer.Option(help="DPI.")] = 150,
+) -> None:
+    """Plot susceptibility per site vs temperature."""
+    from mcising.plotting import plot_susceptibility
+
+    paths = [str(f) for f in file]
+    src: str | list[str] = paths if len(paths) > 1 else paths[0]
+    _save_plot(plot_susceptibility(src), output, dpi)  # type: ignore[arg-type]
+
+
+@plot_app.command("lattice")
+def plot_lattice_cmd(
+    file: Annotated[Path, typer.Argument(help="HDF5 file.")],
+    output: Annotated[Path, typer.Option("-o", help="Output image.")],
+    temperature: Annotated[
+        float, typer.Option("--temperature", "-T", help="Temperature.")
+    ],
+    n: Annotated[
+        int | None,
+        typer.Option(help="Config index (0-based). Omit for all."),
+    ] = None,
+    dpi: Annotated[int, typer.Option(help="DPI.")] = 150,
+) -> None:
+    """Plot spin configuration(s) at a temperature."""
+    from mcising.plotting import plot_lattice
+
+    _save_plot(
+        plot_lattice(str(file), temperature=temperature, n=n),
+        output,
+        dpi,
+    )
+
+
+@plot_app.command("timeseries")
+def plot_timeseries_cmd(
+    file: Annotated[Path, typer.Argument(help="HDF5 file.")],
+    output: Annotated[Path, typer.Option("-o", help="Output image.")],
+    temperature: Annotated[
+        float, typer.Option("--temperature", "-T", help="Temperature.")
+    ],
+    dpi: Annotated[int, typer.Option(help="DPI.")] = 150,
+) -> None:
+    """Plot energy time series at a temperature."""
+    from mcising.plotting import plot_energy_timeseries
+
+    _save_plot(
+        plot_energy_timeseries(str(file), temperature), output, dpi
+    )
+
+
+@plot_app.command("histogram")
+def plot_histogram_cmd(
+    file: Annotated[Path, typer.Argument(help="HDF5 file.")],
+    output: Annotated[Path, typer.Option("-o", help="Output image.")],
+    temperature: Annotated[
+        float, typer.Option("--temperature", "-T", help="Temperature.")
+    ],
+    dpi: Annotated[int, typer.Option(help="DPI.")] = 150,
+) -> None:
+    """Plot magnetization distribution at a temperature."""
+    from mcising.plotting import plot_magnetization_histogram
+
+    _save_plot(
+        plot_magnetization_histogram(str(file), temperature),
+        output,
+        dpi,
+    )
+
+
+# ── Export command ────────────────────────────────────────────────
+
+
+@app.command()
+def export(
+    file: Annotated[Path, typer.Argument(help="HDF5 results file.")],
+    output: Annotated[Path, typer.Argument(help="Output zip file.")],
+    flat: Annotated[
+        bool, typer.Option("--flat", help="Flat folder structure.")
+    ] = False,
+    temperature: Annotated[
+        list[float] | None,
+        typer.Option("--temperature", "-T", help="Temperature(s)."),
+    ] = None,
+    dpi: Annotated[int, typer.Option(help="DPI.")] = 100,
+) -> None:
+    """Export lattice configurations as PNGs in a zip file."""
+    from mcising.plotting import export_lattices
+
+    count = export_lattices(
+        str(file),
+        output,
+        flat=flat,
+        temperatures=temperature,
+        dpi=dpi,
+    )
+    console.print(f"[green]Exported {count} images to {output}[/green]")
+
+
+# ── Docs subcommand group ─────────────────────────────────────────
+
+docs_app = typer.Typer(
+    help="API and capability reference for agents and developers.",
+    invoke_without_command=True,
+)
+app.add_typer(docs_app, name="docs")
+
+
+@docs_app.callback()
+def docs_default(
+    ctx: typer.Context,
+) -> None:
+    """Show full capabilities overview."""
+    if ctx.invoked_subcommand is not None:
+        return
+    # Default: show everything
+    _docs_cli()
+
+
+@docs_app.command("lattices")
+def docs_lattices() -> None:
+    """List available lattice types."""
+    print(
+        """LATTICE TYPES
+=============
+square       2D  coord=4   Tc=2.269   shape=(L,L)      J1,J2,J3,H supported
+triangular   2D  coord=6   Tc=3.641   shape=(L,L)      J1,J2,J3,H supported
+honeycomb    2D  coord=3   Tc=1.519   shape=(L,L,2)    J1,J2,J3,H supported
+cubic        3D  coord=6   Tc=4.512   shape=(L,L,L)    J1,J2,J3,H supported
+chain        1D  coord=2   Tc=0       shape=(N,)        J1,J2,J3,H supported"""
+    )
+
+
+@docs_app.command("algorithms")
+def docs_algorithms() -> None:
+    """List available algorithms and constraints."""
+    print(
+        """ALGORITHMS
+==========
+metropolis      Single-spin-flip. All couplings. All lattices.
+wolff           Cluster flip (DFS). J2=J3=H=0 only. All lattices.
+swendsen_wang   Multi-cluster (Union-Find). J2=J3=H=0 only."""
+    )
+
+
+@docs_app.command("couplings")
+def docs_couplings() -> None:
+    """Show coupling support per lattice."""
+    print(
+        """COUPLING SUPPORT
+================
+Lattice      z_NN (J1)  z_NNN (J2)  z_TNN (J3)  H
+square       4          4           4           yes
+triangular   6          6           6           yes
+honeycomb    3          6           3           yes
+cubic        6          12          8           yes
+chain        2          2           2           yes
+
+15 Metropolis strategies auto-selected based on active couplings:
+J1, J2, J3, H, J1H, J2H, J3H, J1J2, J1J3, J2J3, J1J2H, J1J3H, J2J3H, J1J2J3, J1J2J3H"""
+    )
+
+
+@docs_app.command("modes")
+def docs_modes() -> None:
+    """List execution modes."""
+    print(
+        """EXECUTION MODES
+===============
+cooldown            Sequential cool-down. Single-threaded. Default.
+independent         Parallel per T via Rayon. ~6x speedup.
+parallel_tempering  Parallel + replica swap. Best for frustration."""
+    )
+
+
+@docs_app.command("cli")
+def _docs_cli() -> None:
+    """Show all CLI commands with examples."""
+    print(
+        """mcising CLI REFERENCE
+=====================
+
+mcising info
+  Show version and build info.
+
+mcising run [OPTIONS]
+  Run a Monte Carlo simulation.
+  Examples:
+    mcising run -L 32 --T-range 3.5:1.5:0.1 -o results.h5
+    mcising run -L 32 --lattice triangular --j2 0.5 -o results.h5
+    mcising run -L 32 --algorithm wolff --mode independent -o results.h5
+    mcising run -L 64 --adaptive --min-samples 200 -o results.h5
+    mcising run -L 32 --checkpoint sim.h5 --resume
+
+mcising summary <file.h5>
+  Print results table from HDF5.
+  Examples:
+    mcising summary results.h5
+    mcising summary results.h5 --json
+    mcising summary results.h5 --csv
+
+mcising plot <type> <file.h5> -o <output.png>
+  Generate a plot. Types: energy, magnetization, specific-heat,
+  susceptibility, lattice, timeseries, histogram.
+  Examples:
+    mcising plot energy results.h5 -o energy.png
+    mcising plot specific-heat results.h5 -o cv.png
+    mcising plot lattice results.h5 -o lat.png -T 2.269
+    mcising plot lattice results.h5 -o lat.png -T 2.269 --n 3
+    mcising plot timeseries results.h5 -o trace.png -T 2.269
+    mcising plot histogram results.h5 -o hist.png -T 2.269
+    mcising plot energy a.h5 b.h5 c.h5 -o compare.png
+
+mcising export <file.h5> <output.zip>
+  Export lattice PNGs to zip.
+  Examples:
+    mcising export results.h5 lattices.zip
+    mcising export results.h5 lattices.zip --flat
+    mcising export results.h5 lattices.zip -T 2.269 -T 1.5
+
+mcising benchmark
+  Performance benchmark.
+  Examples:
+    mcising benchmark
+    mcising benchmark -L 64 --sweeps 50000
+    mcising benchmark --scaling
+
+mcising docs [topic]
+  Capability reference. Topics: lattices, algorithms, couplings, modes, cli.
+  Examples:
+    mcising docs
+    mcising docs lattices
+    mcising docs algorithms"""
+    )

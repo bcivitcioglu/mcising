@@ -111,8 +111,22 @@ This runs a Monte Carlo simulation of the 2D Ising model on a 32x32 square latti
 
 </div>
 
+## Or use the CLI
+
+```bash
+mcising run -L 32 -T 3.0 -T 2.269 -T 1.5 -o results.h5
+mcising summary results.h5
+mcising plot energy results.h5 -o energy.png
+mcising plot specific-heat results.h5 -o cv.png
+mcising export results.h5 lattices.zip
+```
+
+Full CLI reference: **[CLI Guide](guide/cli.md)**
+
 ## Next steps
 
 New to mcising? Start with the **[Tutorial](tutorial/first-simulation.md)** — it walks you through a complete simulation in 5 minutes.
 
 Looking for a specific function or class? Check the **[API Reference](reference/simulation.md)**.
+
+Need CLI commands? See the **[CLI Reference](guide/cli.md)**.

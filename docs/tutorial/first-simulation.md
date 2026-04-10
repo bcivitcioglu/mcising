@@ -94,14 +94,29 @@ This produces a plot of energy and magnetization vs temperature with error bars.
 
 ## Use the CLI instead
 
-You can do the same thing from the command line:
+You can do the entire workflow from the command line:
 
 ```bash
+# Run
 mcising run -L 32 --seed 42 -T 3.0 -T 2.269 -T 1.5 -o results.h5
+
+# Inspect
+mcising summary results.h5
+
+# Plot
+mcising plot energy results.h5 -o energy.png
+mcising plot specific-heat results.h5 -o cv.png
+mcising plot lattice results.h5 -o spins.png -T 2.269
+
+# Export all lattice configs as PNGs
+mcising export results.h5 lattices.zip
 ```
+
+See the [CLI Reference](../guide/cli.md) for all commands.
 
 ## What's next?
 
 - **[Lattice Types](lattice-types.md)** — try triangular, honeycomb, cubic, or chain lattices
 - **[Frustrated Magnetism](frustrated-magnetism.md)** — add J2 and J3 couplings for competing interactions
 - **[Parallel Execution](parallel-execution.md)** — use all your CPU cores with `mode=ExecutionMode.INDEPENDENT`
+- **[CLI Reference](../guide/cli.md)** — full command-line interface documentation
