@@ -1,3 +1,5 @@
+publish.sh
+
 # Rust
 /target/
 Cargo.lock
@@ -45,3 +47,4 @@ htmlcov/
 
 # Jupyter
 .ipynb_checkpoints/site/
+

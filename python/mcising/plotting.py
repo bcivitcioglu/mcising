@@ -415,8 +415,34 @@ def export_lattices(
     if temperatures is not None:
         all_temps = [t for t in all_temps if t in temperatures]
 
+    total_images = sum(
+        len(results.configurations[t]) for t in all_temps
+    )
+
+    from rich.progress import (
+        BarColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+        TimeRemainingColumn,
+    )
+
     count = 0
-    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
+    with (
+        zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf,
+        Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+        ) as progress,
+    ):
+        task = progress.add_task(
+            f"Exporting {total_images} images", total=total_images
+        )
         for temp in all_temps:
             configs = results.configurations[temp]
             for cfg_idx in range(len(configs)):
@@ -449,6 +475,7 @@ def export_lattices(
 
                 zf.writestr(arcname, buf.getvalue())
                 count += 1
+                progress.update(task, advance=1)
 
     return count
 
