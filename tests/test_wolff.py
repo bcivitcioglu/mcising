@@ -6,6 +6,8 @@ from mcising import Simulation, SimulationConfig
 from mcising.config import AdaptiveConfig, Algorithm, LatticeConfig
 from mcising.exceptions import ConfigurationError
 
+from tests._stats import DEFAULT_SEEDS, assert_samples_agree
+
 
 class TestWolffConfig:
     """Test Wolff algorithm constraint enforcement."""
@@ -72,49 +74,54 @@ class TestWolffSimulation:
         # Wolff acceptance_rate = cluster_size / N, should be > 0
         assert result["acceptance_rate"] > 0
 
-    def test_metropolis_agreement(self) -> None:
-        """Wolff and Metropolis should produce statistically consistent results."""
+    @pytest.mark.statistical
+    @pytest.mark.parametrize("seed", DEFAULT_SEEDS)
+    def test_metropolis_agreement(self, seed: int) -> None:
+        """Wolff and Metropolis sample the same equilibrium ensemble at T=2.
+
+        Metropolis gets a cool-down ladder: a single-temperature config
+        ramps from INF_TEMP in ~1 sweep below Tc, so it can sit in a
+        stripe state for hundreds of production sweeps and bias <E> by
+        up to +0.25/site. Wolff decorrelates in O(1) cluster updates and
+        needs no ladder. Comparison uses blocking standard errors
+        (autocorrelation-aware), plus an absolute floor so the test
+        cannot pass vacuously if one run's error estimate explodes.
+        """
         lattice = LatticeConfig(size=16, j1=1.0, j2=0.0, h=0.0)
+        metro_results = Simulation(
+            SimulationConfig(
+                lattice=lattice,
+                algorithm=Algorithm.METROPOLIS,
+                temperatures=(3.0, 2.5, 2.0),
+                n_sweeps=3000,
+                n_thermalization=500,
+                measurement_interval=10,
+                seed=seed,
+            )
+        ).run(show_progress=False)
+        wolff_results = Simulation(
+            SimulationConfig(
+                lattice=lattice,
+                algorithm=Algorithm.WOLFF,
+                temperatures=(2.0,),
+                n_sweeps=2000,
+                n_thermalization=200,
+                measurement_interval=5,
+                seed=seed + 1,  # independent xoshiro stream
+            )
+        ).run(show_progress=False)
 
-        # Run Metropolis
-        metro_config = SimulationConfig(
-            lattice=lattice,
-            algorithm=Algorithm.METROPOLIS,
-            temperatures=(2.0,),
-            n_sweeps=5000,
-            n_thermalization=500,
-            measurement_interval=10,
-            seed=42,
+        assert_samples_agree(
+            metro_results.energy[2.0],
+            wolff_results.energy[2.0],
+            label_a=f"Metropolis <E> (seed={seed})",
+            label_b=f"Wolff <E> (seed={seed + 1})",
         )
-        metro_results = Simulation(metro_config).run(show_progress=False)
-
-        # Run Wolff
-        wolff_config = SimulationConfig(
-            lattice=lattice,
-            algorithm=Algorithm.WOLFF,
-            temperatures=(2.0,),
-            n_sweeps=2000,
-            n_thermalization=200,
-            measurement_interval=5,
-            seed=123,
-        )
-        wolff_results = Simulation(wolff_config).run(show_progress=False)
-
-        # Compare mean energies — should agree within statistical error
-        metro_e = np.mean(metro_results.energy[2.0])
-        wolff_e = np.mean(wolff_results.energy[2.0])
-        metro_se = np.std(metro_results.energy[2.0]) / np.sqrt(
-            len(metro_results.energy[2.0])
-        )
-        wolff_se = np.std(wolff_results.energy[2.0]) / np.sqrt(
-            len(wolff_results.energy[2.0])
-        )
-        combined_se = np.sqrt(metro_se**2 + wolff_se**2)
-
-        assert abs(metro_e - wolff_e) < 5 * combined_se, (
-            f"Energy disagreement: Metropolis={metro_e:.4f}, Wolff={wolff_e:.4f}, "
-            f"5σ={5 * combined_se:.4f}"
-        )
+        # Power floor: ~3% of |E|/site at T=2 and ~10x the expected
+        # combined error — catches vacuous sigma-passes.
+        metro_e = float(np.mean(metro_results.energy[2.0]))
+        wolff_e = float(np.mean(wolff_results.energy[2.0]))
+        assert abs(metro_e - wolff_e) < 0.04
 
     def test_wolff_adaptive(self) -> None:
         config = SimulationConfig(

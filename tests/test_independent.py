@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import time
-
 import numpy as np
+import pytest
 from mcising.config import (
     Algorithm,
     ExecutionMode,
@@ -13,6 +12,8 @@ from mcising.config import (
     SimulationConfig,
 )
 from mcising.simulation import Simulation
+
+from tests._stats import assert_ordered_means, assert_samples_agree
 
 
 class TestIndependentBasic:
@@ -179,11 +180,23 @@ class TestIndependentAlgorithms:
         assert len(results.energy) == 2
 
 
-class TestIndependentPerformance:
-    """Test that independent mode is actually faster for many temperatures."""
+class TestIndependentManyTemperatures:
+    """Test a wide temperature scan for completeness and consistency."""
 
-    def test_faster_than_cooldown_many_temps(self) -> None:
-        """With 20 temperatures, independent should be faster."""
+    @pytest.mark.slow
+    @pytest.mark.statistical
+    def test_many_temperature_scan_is_complete_and_consistent(self) -> None:
+        """A 20-point scan returns complete, physical, cooldown-consistent data.
+
+        This replaces a wall-clock assertion (independent < 3x cooldown),
+        which measured the CI runner, not the library. What actually needs
+        guarding is that the parallel path drops no temperature and samples
+        the same ensemble. Agreement is asserted only for T >= 3.0:
+        independent mode thermalizes at the target beta (parallel.rs:83),
+        i.e. it quenches, so below Tc it can sit in metastable stripe
+        states that cool-down anneals away — a difference of protocol,
+        not of physics.
+        """
         temps = tuple(
             float(f"{t:.2f}") for t in np.linspace(1.5, 3.5, 20)
         )
@@ -195,25 +208,37 @@ class TestIndependentPerformance:
             measurement_interval=10,
             seed=42,
         )
-
-        # Cooldown
-        t0 = time.monotonic()
-        Simulation(
+        cooldown = Simulation(
             SimulationConfig(**base, mode=ExecutionMode.COOLDOWN)
         ).run(show_progress=False)
-        cooldown_time = time.monotonic() - t0
-
-        # Independent
-        t0 = time.monotonic()
-        Simulation(
+        independent = Simulation(
             SimulationConfig(**base, mode=ExecutionMode.INDEPENDENT)
         ).run(show_progress=False)
-        independent_time = time.monotonic() - t0
 
-        # Independent should be faster on multi-core machines.
-        # On CI with 1-2 cores it might not be, so use a generous threshold.
-        # Just verify it completes and isn't dramatically slower.
-        assert independent_time < cooldown_time * 3.0, (
-            f"Independent ({independent_time:.2f}s) should not be "
-            f"much slower than cooldown ({cooldown_time:.2f}s)"
+        assert set(independent.energy) == set(temps)
+        assert set(cooldown.energy) == set(temps)
+        for t in temps:
+            e = independent.energy[t]
+            assert e.size == 50
+            assert np.all(np.isfinite(e))
+            assert np.all(np.abs(e) <= 2.0 + 1e-9)
+
+        hot = sorted(t for t in temps if t >= 3.0)
+        for t in hot:
+            assert_samples_agree(
+                cooldown.energy[t],
+                independent.energy[t],
+                label_a=f"cooldown <E>(T={t})",
+                label_b=f"independent <E>(T={t})",
+            )
+        assert_ordered_means(
+            [(f"T={t}", independent.energy[t]) for t in hot],
+            increasing=True,
+        )
+        assert_ordered_means(
+            [
+                (f"T={temps[0]}", independent.energy[temps[0]]),
+                (f"T={temps[-1]}", independent.energy[temps[-1]]),
+            ],
+            increasing=True,
         )
