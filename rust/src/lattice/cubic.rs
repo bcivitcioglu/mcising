@@ -43,9 +43,7 @@ impl CubicLattice {
             let zp = (z + 1) % size;
             let zm = (z + size - 1) % size;
 
-            let flat = |zz: usize, yy: usize, xx: usize| -> usize {
-                zz * l2 + yy * size + xx
-            };
+            let flat = |zz: usize, yy: usize, xx: usize| -> usize { zz * l2 + yy * size + xx };
 
             // NN: 6 neighbors along axes
             nn_table.push(flat(z, y, xp)); // +x
@@ -130,9 +128,18 @@ impl Lattice for CubicLattice {
         let yb = (idx_b % l2) / self.size;
         let xb = idx_b % self.size;
 
-        let dx = { let d = xa.abs_diff(xb); d.min(self.size - d) };
-        let dy = { let d = ya.abs_diff(yb); d.min(self.size - d) };
-        let dz = { let d = za.abs_diff(zb); d.min(self.size - d) };
+        let dx = {
+            let d = xa.abs_diff(xb);
+            d.min(self.size - d)
+        };
+        let dy = {
+            let d = ya.abs_diff(yb);
+            d.min(self.size - d)
+        };
+        let dz = {
+            let d = za.abs_diff(zb);
+            d.min(self.size - d)
+        };
 
         dx * dx + dy * dy + dz * dz
     }
@@ -180,8 +187,16 @@ mod tests {
         let lat = CubicLattice::new(4).unwrap();
         for i in 0..lat.num_sites() {
             assert_eq!(lat.nearest_neighbors(i).len(), 6, "Site {i} wrong NN count");
-            assert_eq!(lat.next_nearest_neighbors(i).len(), 12, "Site {i} wrong NNN count");
-            assert_eq!(lat.third_nearest_neighbors(i).len(), 8, "Site {i} wrong TNN count");
+            assert_eq!(
+                lat.next_nearest_neighbors(i).len(),
+                12,
+                "Site {i} wrong NNN count"
+            );
+            assert_eq!(
+                lat.third_nearest_neighbors(i).len(),
+                8,
+                "Site {i} wrong TNN count"
+            );
         }
     }
 
@@ -216,8 +231,10 @@ mod tests {
         let lat = CubicLattice::new(4).unwrap();
         for i in 0..lat.num_sites() {
             for &n in lat.nearest_neighbors(i) {
-                assert!(lat.nearest_neighbors(n).contains(&i),
-                    "Site {n} should have {i} as NN");
+                assert!(
+                    lat.nearest_neighbors(n).contains(&i),
+                    "Site {n} should have {i} as NN"
+                );
             }
         }
     }
@@ -228,7 +245,7 @@ mod tests {
         for i in 0..lat.num_sites() {
             let nn = lat.nearest_neighbors(i);
             let mut s = nn.to_vec();
-            s.sort();
+            s.sort_unstable();
             s.dedup();
             assert_eq!(s.len(), 6, "Site {i} has duplicate NN");
         }
@@ -239,8 +256,10 @@ mod tests {
         let lat = CubicLattice::new(4).unwrap();
         for i in 0..lat.num_sites() {
             for &n in lat.next_nearest_neighbors(i) {
-                assert!(lat.next_nearest_neighbors(n).contains(&i),
-                    "Site {n} should have {i} as NNN");
+                assert!(
+                    lat.next_nearest_neighbors(n).contains(&i),
+                    "Site {n} should have {i} as NNN"
+                );
             }
         }
     }
@@ -250,8 +269,10 @@ mod tests {
         let lat = CubicLattice::new(4).unwrap();
         for i in 0..lat.num_sites() {
             for &n in lat.third_nearest_neighbors(i) {
-                assert!(lat.third_nearest_neighbors(n).contains(&i),
-                    "Site {n} should have {i} as TNN");
+                assert!(
+                    lat.third_nearest_neighbors(n).contains(&i),
+                    "Site {n} should have {i} as TNN"
+                );
             }
         }
     }

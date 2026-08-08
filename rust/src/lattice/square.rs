@@ -35,22 +35,22 @@ impl SquareLattice {
             let col = idx % size;
 
             // Nearest neighbors: up, down, left, right
-            nn_table.push(((row + 1) % size) * size + col);        // down
+            nn_table.push(((row + 1) % size) * size + col); // down
             nn_table.push(((row + size - 1) % size) * size + col); // up
-            nn_table.push(row * size + (col + 1) % size);          // right
-            nn_table.push(row * size + (col + size - 1) % size);   // left
+            nn_table.push(row * size + (col + 1) % size); // right
+            nn_table.push(row * size + (col + size - 1) % size); // left
 
             // Next-nearest neighbors: four diagonals
-            nnn_table.push(((row + 1) % size) * size + (col + 1) % size);         // down-right
-            nnn_table.push(((row + 1) % size) * size + (col + size - 1) % size);  // down-left
-            nnn_table.push(((row + size - 1) % size) * size + (col + 1) % size);  // up-right
+            nnn_table.push(((row + 1) % size) * size + (col + 1) % size); // down-right
+            nnn_table.push(((row + 1) % size) * size + (col + size - 1) % size); // down-left
+            nnn_table.push(((row + size - 1) % size) * size + (col + 1) % size); // up-right
             nnn_table.push(((row + size - 1) % size) * size + (col + size - 1) % size); // up-left
 
             // Third-nearest neighbors: two steps along each axis
-            tnn_table.push(((row + 2) % size) * size + col);        // down 2
+            tnn_table.push(((row + 2) % size) * size + col); // down 2
             tnn_table.push(((row + size - 2) % size) * size + col); // up 2
-            tnn_table.push(row * size + (col + 2) % size);          // right 2
-            tnn_table.push(row * size + (col + size - 2) % size);   // left 2
+            tnn_table.push(row * size + (col + 2) % size); // right 2
+            tnn_table.push(row * size + (col + size - 2) % size); // left 2
         }
 
         Some(Self {
@@ -268,8 +268,8 @@ mod tests {
         // site 0 = (0,0): TNN = (2,0)=12, (4,0)=24, (0,2)=2, (0,4)=4
         assert!(tnn.contains(&12)); // down 2
         assert!(tnn.contains(&24)); // up 2 (PBC: (0+6-2)%6 = 4, idx=4*6+0=24)
-        assert!(tnn.contains(&2));  // right 2
-        assert!(tnn.contains(&4));  // left 2 (PBC: (0+6-2)%6 = 4)
+        assert!(tnn.contains(&2)); // right 2
+        assert!(tnn.contains(&4)); // left 2 (PBC: (0+6-2)%6 = 4)
     }
 
     #[test]

@@ -164,9 +164,15 @@ mod tests {
     fn test_all_valid_indices() {
         let lat = ChainLattice::new(20).unwrap();
         for i in 0..lat.num_sites() {
-            for &n in lat.nearest_neighbors(i) { assert!(n < lat.num_sites()); }
-            for &n in lat.next_nearest_neighbors(i) { assert!(n < lat.num_sites()); }
-            for &n in lat.third_nearest_neighbors(i) { assert!(n < lat.num_sites()); }
+            for &n in lat.nearest_neighbors(i) {
+                assert!(n < lat.num_sites());
+            }
+            for &n in lat.next_nearest_neighbors(i) {
+                assert!(n < lat.num_sites());
+            }
+            for &n in lat.third_nearest_neighbors(i) {
+                assert!(n < lat.num_sites());
+            }
         }
     }
 
@@ -185,8 +191,10 @@ mod tests {
         let lat = ChainLattice::new(10).unwrap();
         for i in 0..lat.num_sites() {
             for &n in lat.nearest_neighbors(i) {
-                assert!(lat.nearest_neighbors(n).contains(&i),
-                    "{n} should have {i} as NN");
+                assert!(
+                    lat.nearest_neighbors(n).contains(&i),
+                    "{n} should have {i} as NN"
+                );
             }
         }
     }

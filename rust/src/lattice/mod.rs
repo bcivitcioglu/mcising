@@ -94,6 +94,12 @@ pub(crate) use with_lattice;
 
 impl LatticeKind {
     /// Parse lattice type from string (used at PyO3 boundary).
+    ///
+    /// # Errors
+    ///
+    /// Returns `MCIsingError::InvalidLatticeType` for unrecognized names and
+    /// `MCIsingError::InvalidLatticeSize` if the lattice cannot be built at
+    /// `size`.
     pub fn from_str(s: &str, size: usize) -> Result<Self, MCIsingError> {
         match s {
             "square" => SquareLattice::new(size)

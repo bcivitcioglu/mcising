@@ -86,6 +86,13 @@ pub enum AlgorithmKind {
 
 impl AlgorithmKind {
     /// Parse algorithm name from string (used at PyO3 boundary).
+    ///
+    /// # Errors
+    ///
+    /// Returns `MCIsingError::InvalidAlgorithm` for unrecognized names.
+    // Inherent `from_str` is the frozen pre-1.0 surface; adopting the
+    // `FromStr` trait belongs to the P10/P11 API phases.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self, MCIsingError> {
         match s {
             "metropolis" => Ok(Self::Metropolis),

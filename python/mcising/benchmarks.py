@@ -295,7 +295,7 @@ def bench_peapods(
     Requires: ``uv sync --group benchmark``
     """
     import numpy as np
-    from peapods import Ising  # type: ignore[import-untyped]
+    from peapods import Ising
 
     model = Ising(
         (lattice_size, lattice_size),

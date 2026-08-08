@@ -1,8 +1,5 @@
-publish.sh
-
 # Rust
 /target/
-Cargo.lock
 
 # Python
 __pycache__/
@@ -19,9 +16,6 @@ build/
 .venv/
 venv/
 ENV/
-
-# uv
-uv.lock
 
 # IDE
 .idea/
@@ -46,5 +40,10 @@ htmlcov/
 *.dSYM/
 
 # Jupyter
-.ipynb_checkpoints/site/
+.ipynb_checkpoints/
 
+# Built docs (deployed by CI, never committed)
+site/
+
+# Pre-Rust implementation kept on disk for reference, not in the repo
+_legacy/

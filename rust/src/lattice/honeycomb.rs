@@ -17,7 +17,7 @@ use super::Lattice;
 pub struct HoneycombLattice {
     size: usize,
     num_sites: usize,
-    shape: [usize; 3],    // [L, L, 2]
+    shape: [usize; 3],     // [L, L, 2]
     nn_table: Vec<usize>,  // stride 3
     nnn_table: Vec<usize>, // stride 6
     tnn_table: Vec<usize>, // stride 3
@@ -48,92 +48,91 @@ impl HoneycombLattice {
             let down = (row + 1) % size;
 
             // Helper to compute flat index from (r, c, s)
-            let flat = |r: usize, c: usize, s: usize| -> usize {
-                r * stride_row + c * 2 + s
-            };
+            let flat = |r: usize, c: usize, s: usize| -> usize { r * stride_row + c * 2 + s };
 
             if sub == 0 {
                 // ── Sublattice A ──
                 // NN (3 neighbors, all sublattice B):
-                nn_table.push(flat(row, col, 1));         // same-cell B
-                if row % 2 == 0 {
-                    nn_table.push(flat(up, col, 1));      // up B (no col shift)
-                    nn_table.push(flat(down, col, 1));    // down B (no col shift)
+                nn_table.push(flat(row, col, 1)); // same-cell B
+                if row.is_multiple_of(2) {
+                    nn_table.push(flat(up, col, 1)); // up B (no col shift)
+                    nn_table.push(flat(down, col, 1)); // down B (no col shift)
                 } else {
                     let left = (col + size - 1) % size;
-                    nn_table.push(flat(up, left, 1));     // up-left B
-                    nn_table.push(flat(down, left, 1));   // down-left B
+                    nn_table.push(flat(up, left, 1)); // up-left B
+                    nn_table.push(flat(down, left, 1)); // down-left B
                 }
 
                 // NNN (6 neighbors, all sublattice A):
                 let left = (col + size - 1) % size;
                 let right = (col + 1) % size;
-                nnn_table.push(flat(row, left, 0));       // left A
-                nnn_table.push(flat(row, right, 0));      // right A
-                if row % 2 == 0 {
-                    nnn_table.push(flat(up, col, 0));     // up A (no shift)
-                    nnn_table.push(flat(up, left, 0));    // up-left A
-                    nnn_table.push(flat(down, col, 0));   // down A (no shift)
-                    nnn_table.push(flat(down, left, 0));  // down-left A
+                nnn_table.push(flat(row, left, 0)); // left A
+                nnn_table.push(flat(row, right, 0)); // right A
+                if row.is_multiple_of(2) {
+                    nnn_table.push(flat(up, col, 0)); // up A (no shift)
+                    nnn_table.push(flat(up, left, 0)); // up-left A
+                    nnn_table.push(flat(down, col, 0)); // down A (no shift)
+                    nnn_table.push(flat(down, left, 0)); // down-left A
                 } else {
-                    nnn_table.push(flat(up, right, 0));   // up-right A
-                    nnn_table.push(flat(up, col, 0));     // up A
+                    nnn_table.push(flat(up, right, 0)); // up-right A
+                    nnn_table.push(flat(up, col, 0)); // up A
                     nnn_table.push(flat(down, right, 0)); // down-right A
-                    nnn_table.push(flat(down, col, 0));   // down A
+                    nnn_table.push(flat(down, col, 0)); // down A
                 }
 
                 // TNN (3 neighbors, all sublattice B at distance 2):
+                // Only left-side wraps are used here — this shell's asymmetry
+                // is B2; the table is redesigned in P05.
                 let left = (col + size - 1) % size;
-                let right = (col + 1) % size;
-                tnn_table.push(flat(row, left, 1));       // left B (far)
-                if row % 2 == 0 {
-                    tnn_table.push(flat(up, left, 1));    // up-left B
-                    tnn_table.push(flat(down, left, 1));  // down-left B
+                tnn_table.push(flat(row, left, 1)); // left B (far)
+                if row.is_multiple_of(2) {
+                    tnn_table.push(flat(up, left, 1)); // up-left B
+                    tnn_table.push(flat(down, left, 1)); // down-left B
                 } else {
                     let left2 = (col + size - 2) % size;
-                    tnn_table.push(flat(up, left2, 1));   // up-far-left B
+                    tnn_table.push(flat(up, left2, 1)); // up-far-left B
                     tnn_table.push(flat(down, left2, 1)); // down-far-left B
                 }
             } else {
                 // ── Sublattice B ──
                 // NN (3 neighbors, all sublattice A):
                 // Exact mirror of A's connectivity.
-                nn_table.push(flat(row, col, 0));         // same-cell A
-                if row % 2 == 0 {
+                nn_table.push(flat(row, col, 0)); // same-cell A
+                if row.is_multiple_of(2) {
                     let right = (col + 1) % size;
-                    nn_table.push(flat(up, right, 0));    // up-right A
-                    nn_table.push(flat(down, right, 0));  // down-right A
+                    nn_table.push(flat(up, right, 0)); // up-right A
+                    nn_table.push(flat(down, right, 0)); // down-right A
                 } else {
-                    nn_table.push(flat(up, col, 0));      // up A (no col shift)
-                    nn_table.push(flat(down, col, 0));    // down A (no col shift)
+                    nn_table.push(flat(up, col, 0)); // up A (no col shift)
+                    nn_table.push(flat(down, col, 0)); // down A (no col shift)
                 }
 
                 // NNN (6 neighbors, all sublattice B):
                 let left = (col + size - 1) % size;
                 let right = (col + 1) % size;
-                nnn_table.push(flat(row, left, 1));       // left B
-                nnn_table.push(flat(row, right, 1));      // right B
-                if row % 2 == 0 {
-                    nnn_table.push(flat(up, right, 1));   // up-right B
-                    nnn_table.push(flat(up, col, 1));     // up B
+                nnn_table.push(flat(row, left, 1)); // left B
+                nnn_table.push(flat(row, right, 1)); // right B
+                if row.is_multiple_of(2) {
+                    nnn_table.push(flat(up, right, 1)); // up-right B
+                    nnn_table.push(flat(up, col, 1)); // up B
                     nnn_table.push(flat(down, right, 1)); // down-right B
-                    nnn_table.push(flat(down, col, 1));   // down B
+                    nnn_table.push(flat(down, col, 1)); // down B
                 } else {
-                    nnn_table.push(flat(up, col, 1));     // up B
-                    nnn_table.push(flat(up, left, 1));    // up-left B
-                    nnn_table.push(flat(down, col, 1));   // down B
-                    nnn_table.push(flat(down, left, 1));  // down-left B
+                    nnn_table.push(flat(up, col, 1)); // up B
+                    nnn_table.push(flat(up, left, 1)); // up-left B
+                    nnn_table.push(flat(down, col, 1)); // down B
+                    nnn_table.push(flat(down, left, 1)); // down-left B
                 }
 
                 // TNN (3 neighbors, all sublattice A at distance 2):
                 let right = (col + 1) % size;
-                tnn_table.push(flat(row, right, 0));      // right A (far)
-                if row % 2 == 0 {
+                tnn_table.push(flat(row, right, 0)); // right A (far)
+                if row.is_multiple_of(2) {
                     let right2 = (col + 2) % size;
-                    tnn_table.push(flat(up, right2, 0));  // up-far-right A
-                    tnn_table.push(flat(down, right2, 0));// down-far-right A
+                    tnn_table.push(flat(up, right2, 0)); // up-far-right A
+                    tnn_table.push(flat(down, right2, 0)); // down-far-right A
                 } else {
-                    tnn_table.push(flat(up, right, 0));   // up-right A
+                    tnn_table.push(flat(up, right, 0)); // up-right A
                     tnn_table.push(flat(down, right, 0)); // down-right A
                 }
             }
@@ -242,8 +241,16 @@ mod tests {
         let lat = HoneycombLattice::new(6).unwrap();
         for i in 0..lat.num_sites() {
             assert_eq!(lat.nearest_neighbors(i).len(), 3, "Site {i} wrong NN count");
-            assert_eq!(lat.next_nearest_neighbors(i).len(), 6, "Site {i} wrong NNN count");
-            assert_eq!(lat.third_nearest_neighbors(i).len(), 3, "Site {i} wrong TNN count");
+            assert_eq!(
+                lat.next_nearest_neighbors(i).len(),
+                6,
+                "Site {i} wrong NNN count"
+            );
+            assert_eq!(
+                lat.third_nearest_neighbors(i).len(),
+                3,
+                "Site {i} wrong TNN count"
+            );
         }
     }
 
@@ -267,9 +274,18 @@ mod tests {
     fn test_no_self_neighbors() {
         let lat = HoneycombLattice::new(6).unwrap();
         for i in 0..lat.num_sites() {
-            assert!(!lat.nearest_neighbors(i).contains(&i), "Site {i} is its own NN");
-            assert!(!lat.next_nearest_neighbors(i).contains(&i), "Site {i} is its own NNN");
-            assert!(!lat.third_nearest_neighbors(i).contains(&i), "Site {i} is its own TNN");
+            assert!(
+                !lat.nearest_neighbors(i).contains(&i),
+                "Site {i} is its own NN"
+            );
+            assert!(
+                !lat.next_nearest_neighbors(i).contains(&i),
+                "Site {i} is its own NNN"
+            );
+            assert!(
+                !lat.third_nearest_neighbors(i).contains(&i),
+                "Site {i} is its own TNN"
+            );
         }
     }
 
@@ -292,9 +308,9 @@ mod tests {
         for i in 0..lat.num_sites() {
             let nn = lat.nearest_neighbors(i);
             let mut sorted = nn.to_vec();
-            sorted.sort();
+            sorted.sort_unstable();
             sorted.dedup();
-            assert_eq!(sorted.len(), 3, "Site {i} has duplicate NN: {:?}", nn);
+            assert_eq!(sorted.len(), 3, "Site {i} has duplicate NN: {nn:?}");
         }
     }
 
@@ -306,7 +322,8 @@ mod tests {
             let my_sub = i % 2;
             for &n in lat.nearest_neighbors(i) {
                 assert_ne!(
-                    n % 2, my_sub,
+                    n % 2,
+                    my_sub,
                     "Site {i} (sub={my_sub}) has NN {n} (sub={}), should be opposite",
                     n % 2
                 );
@@ -322,7 +339,8 @@ mod tests {
             let my_sub = i % 2;
             for &n in lat.next_nearest_neighbors(i) {
                 assert_eq!(
-                    n % 2, my_sub,
+                    n % 2,
+                    my_sub,
                     "Site {i} (sub={my_sub}) has NNN {n} (sub={}), should be same",
                     n % 2
                 );

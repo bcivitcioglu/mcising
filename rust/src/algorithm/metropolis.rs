@@ -47,7 +47,6 @@ pub struct Metropolis {
     // ── Lookup tables ────────────────────────────────────────────────
     // Each table stores min(1, exp(-beta * dE)) for all possible dE values.
     // Sized by coordination number: z neighbors → z+1 possible sum values.
-
     /// Single-coupling sign-branch table: ceil(z/2) entries for positive dE only.
     table_sign: Vec<f64>,
     cached_key_sign: f64,
@@ -79,6 +78,9 @@ pub struct Metropolis {
 
 impl Metropolis {
     pub fn new(j1: f64, j2: f64, j3: f64, h: f64, z_nn: usize, z_nnn: usize, z_tnn: usize) -> Self {
+        // Exhaustive truth table kept explicit; the all-zero arm is a
+        // deliberate degenerate mapping, not an accidental duplicate.
+        #[allow(clippy::match_same_arms)]
         let strategy = match (j1 != 0.0, j2 != 0.0, j3 != 0.0, h != 0.0) {
             (true, true, true, true) => SweepStrategy::J1J2J3H,
             (true, true, true, false) => SweepStrategy::J1J2J3,
@@ -101,7 +103,7 @@ impl Metropolis {
         // Pre-allocate tables with correct sizes for this lattice's coordination.
         // Max single-coupling sign-branch entries: ceil(z/2) for the largest z used.
         let max_z = z_nn.max(z_nnn).max(z_tnn);
-        let sign_size = (max_z + 1) / 2; // ceil(z/2)
+        let sign_size = max_z.div_ceil(2); // ceil(z/2)
 
         // Coupling+field: 2 * (z+1) for the active single coupling
         let cf_size = 2 * (max_z + 1);
@@ -149,14 +151,21 @@ impl Metropolis {
     //   Works for both even and odd z.
 
     /// Single-coupling sign-branch table: entries for positive dE only.
+    // Exact memo-key equality is required: the NaN sentinel must force the
+    // first fill, and an epsilon compare would break that.
+    #[allow(clippy::float_cmp)]
     #[inline]
     fn ensure_table_sign(&mut self, beta: f64, coupling: f64, z: usize) {
         let key = beta * coupling;
         if key != self.cached_key_sign {
-            let n_entries = (z + 1) / 2;
+            let n_entries = z.div_ceil(2);
             for i in 0..n_entries {
                 // half_de values: 1,3,5,... (odd z) or 2,4,6,... (even z)
-                let half_de = if z % 2 == 0 { 2 * (i + 1) } else { 2 * i + 1 };
+                let half_de = if z.is_multiple_of(2) {
+                    2 * (i + 1)
+                } else {
+                    2 * i + 1
+                };
                 let de = 2.0 * half_de as f64;
                 self.table_sign[i] = (-beta * coupling * de).exp();
             }
@@ -165,11 +174,13 @@ impl Metropolis {
     }
 
     /// Field-only table: 2 entries [spin=-1, spin=+1].
+    // Exact memo-key equality: same NaN-sentinel contract as `ensure_table_sign`.
+    #[allow(clippy::float_cmp)]
     #[inline]
     fn ensure_table_field(&mut self, beta: f64, h: f64) {
         let key = beta * h;
         if key != self.cached_key_field {
-            self.table_field[0] = (2.0 * key).exp().min(1.0);  // spin=-1
+            self.table_field[0] = (2.0 * key).exp().min(1.0); // spin=-1
             self.table_field[1] = (-2.0 * key).exp().min(1.0); // spin=+1
             self.cached_key_field = key;
         }
@@ -291,7 +302,12 @@ impl Metropolis {
     /// J1 only: sign-branch table, skip RNG when dE ≤ 0.
     #[inline]
     fn sweep_j1<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j1: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j1: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let z = self.z_nn;
         self.ensure_table_sign(beta, j1, z);
@@ -299,8 +315,12 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sum: i32 = lattice.nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
+            let spin = i32::from(spins[idx]);
+            let sum: i32 = lattice
+                .nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
             let half_de = spin * sum;
             if half_de <= 0 {
                 spins[idx] = -spins[idx];
@@ -313,13 +333,21 @@ impl Metropolis {
                 }
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J2 only: sign-branch table on NNN.
     #[inline]
     fn sweep_j2<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j2: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j2: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let z = self.z_nnn;
         self.ensure_table_sign(beta, j2, z);
@@ -327,8 +355,12 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sum: i32 = lattice.next_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
+            let spin = i32::from(spins[idx]);
+            let sum: i32 = lattice
+                .next_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
             let half_de = spin * sum;
             if half_de <= 0 {
                 spins[idx] = -spins[idx];
@@ -341,13 +373,21 @@ impl Metropolis {
                 }
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J3 only: sign-branch table on TNN.
     #[inline]
     fn sweep_j3<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j3: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j3: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let z = self.z_tnn;
         self.ensure_table_sign(beta, j3, z);
@@ -355,8 +395,12 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sum: i32 = lattice.third_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
+            let spin = i32::from(spins[idx]);
+            let sum: i32 = lattice
+                .third_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
             let half_de = spin * sum;
             if half_de <= 0 {
                 spins[idx] = -spins[idx];
@@ -369,32 +413,49 @@ impl Metropolis {
                 }
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// H only: 2-entry table indexed by spin, no neighbor reads.
     #[inline]
     fn sweep_h<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, h: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        h: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         self.ensure_table_field(beta, h);
         let table = &self.table_field;
         let n = lattice.num_sites();
         let mut accepted = 0;
-        for idx in 0..n {
-            let spin_idx = ((spins[idx] as i32 + 1) >> 1) as usize;
+        for spin in spins.iter_mut().take(n) {
+            let spin_idx = ((i32::from(*spin) + 1) >> 1) as usize;
             if rng.gen::<f64>() < table[spin_idx] {
-                spins[idx] = -spins[idx];
+                *spin = -*spin;
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J1 + H: branchless coupling+field table on NN.
     #[inline]
     fn sweep_j1h<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j1: f64, h: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j1: f64,
+        h: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let z = self.z_nn;
         self.ensure_table_cf(beta, j1, h, z);
@@ -403,22 +464,35 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sum: i32 = lattice.nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
+            let spin = i32::from(spins[idx]);
+            let sum: i32 = lattice
+                .nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
             let spin_idx = ((spin + 1) >> 1) as usize;
-            let sum_idx = ((sum + z as i32) / 2) as usize;
+            let sum_idx = i32::midpoint(sum, z as i32) as usize;
             if rng.gen::<f64>() < table[spin_idx * zp1 + sum_idx] {
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J2 + H: branchless coupling+field table on NNN.
     #[inline]
     fn sweep_j2h<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j2: f64, h: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j2: f64,
+        h: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let z = self.z_nnn;
         self.ensure_table_cf(beta, j2, h, z);
@@ -427,22 +501,35 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sum: i32 = lattice.next_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
+            let spin = i32::from(spins[idx]);
+            let sum: i32 = lattice
+                .next_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
             let spin_idx = ((spin + 1) >> 1) as usize;
-            let sum_idx = ((sum + z as i32) / 2) as usize;
+            let sum_idx = i32::midpoint(sum, z as i32) as usize;
             if rng.gen::<f64>() < table[spin_idx * zp1 + sum_idx] {
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J3 + H: branchless coupling+field table on TNN.
     #[inline]
     fn sweep_j3h<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j3: f64, h: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j3: f64,
+        h: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let z = self.z_tnn;
         self.ensure_table_cf(beta, j3, h, z);
@@ -451,22 +538,35 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sum: i32 = lattice.third_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
+            let spin = i32::from(spins[idx]);
+            let sum: i32 = lattice
+                .third_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
             let spin_idx = ((spin + 1) >> 1) as usize;
-            let sum_idx = ((sum + z as i32) / 2) as usize;
+            let sum_idx = i32::midpoint(sum, z as i32) as usize;
             if rng.gen::<f64>() < table[spin_idx * zp1 + sum_idx] {
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J1 + J2: spin-symmetry two-coupling table on NN+NNN.
     #[inline]
     fn sweep_j1j2<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j1: f64, j2: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j1: f64,
+        j2: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let (za, zb) = (self.z_nn, self.z_nnn);
         self.ensure_table_2c(beta, j1, j2, za, zb);
@@ -476,11 +576,19 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sa: i32 = lattice.nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let sb: i32 = lattice.next_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let ai = ((sa + za as i32) / 2) as usize;
-            let bi = ((sb + zb as i32) / 2) as usize;
+            let spin = i32::from(spins[idx]);
+            let sa: i32 = lattice
+                .nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let sb: i32 = lattice
+                .next_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let ai = i32::midpoint(sa, za as i32) as usize;
+            let bi = i32::midpoint(sb, zb as i32) as usize;
             let base = ai * zbp1 + bi;
             let tidx = if spin > 0 { base } else { max_idx - base };
             if rng.gen::<f64>() < table[tidx] {
@@ -488,13 +596,22 @@ impl Metropolis {
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J1 + J3: spin-symmetry two-coupling table on NN+TNN.
     #[inline]
     fn sweep_j1j3<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j1: f64, j3: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j1: f64,
+        j3: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let (za, zb) = (self.z_nn, self.z_tnn);
         self.ensure_table_2c(beta, j1, j3, za, zb);
@@ -504,11 +621,19 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sa: i32 = lattice.nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let sb: i32 = lattice.third_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let ai = ((sa + za as i32) / 2) as usize;
-            let bi = ((sb + zb as i32) / 2) as usize;
+            let spin = i32::from(spins[idx]);
+            let sa: i32 = lattice
+                .nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let sb: i32 = lattice
+                .third_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let ai = i32::midpoint(sa, za as i32) as usize;
+            let bi = i32::midpoint(sb, zb as i32) as usize;
             let base = ai * zbp1 + bi;
             let tidx = if spin > 0 { base } else { max_idx - base };
             if rng.gen::<f64>() < table[tidx] {
@@ -516,13 +641,22 @@ impl Metropolis {
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J2 + J3: spin-symmetry two-coupling table on NNN+TNN.
     #[inline]
     fn sweep_j2j3<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j2: f64, j3: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j2: f64,
+        j3: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let (za, zb) = (self.z_nnn, self.z_tnn);
         self.ensure_table_2c(beta, j2, j3, za, zb);
@@ -532,11 +666,19 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sa: i32 = lattice.next_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let sb: i32 = lattice.third_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let ai = ((sa + za as i32) / 2) as usize;
-            let bi = ((sb + zb as i32) / 2) as usize;
+            let spin = i32::from(spins[idx]);
+            let sa: i32 = lattice
+                .next_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let sb: i32 = lattice
+                .third_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let ai = i32::midpoint(sa, za as i32) as usize;
+            let bi = i32::midpoint(sb, zb as i32) as usize;
             let base = ai * zbp1 + bi;
             let tidx = if spin > 0 { base } else { max_idx - base };
             if rng.gen::<f64>() < table[tidx] {
@@ -544,13 +686,23 @@ impl Metropolis {
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J1 + J2 + H: branchless two-coupling+field table on NN+NNN.
     #[inline]
     fn sweep_j1j2h<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j1: f64, j2: f64, h: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j1: f64,
+        j2: f64,
+        h: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let (za, zb) = (self.z_nn, self.z_nnn);
         self.ensure_table_2cf(beta, j1, j2, h, za, zb);
@@ -560,24 +712,42 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sa: i32 = lattice.nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let sb: i32 = lattice.next_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
+            let spin = i32::from(spins[idx]);
+            let sa: i32 = lattice
+                .nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let sb: i32 = lattice
+                .next_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
             let si = ((spin + 1) >> 1) as usize;
-            let ai = ((sa + za as i32) / 2) as usize;
-            let bi = ((sb + zb as i32) / 2) as usize;
+            let ai = i32::midpoint(sa, za as i32) as usize;
+            let bi = i32::midpoint(sb, zb as i32) as usize;
             if rng.gen::<f64>() < table[si * block + ai * zbp1 + bi] {
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J1 + J3 + H: branchless two-coupling+field table on NN+TNN.
     #[inline]
     fn sweep_j1j3h<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j1: f64, j3: f64, h: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j1: f64,
+        j3: f64,
+        h: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let (za, zb) = (self.z_nn, self.z_tnn);
         self.ensure_table_2cf(beta, j1, j3, h, za, zb);
@@ -587,24 +757,42 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sa: i32 = lattice.nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let sb: i32 = lattice.third_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
+            let spin = i32::from(spins[idx]);
+            let sa: i32 = lattice
+                .nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let sb: i32 = lattice
+                .third_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
             let si = ((spin + 1) >> 1) as usize;
-            let ai = ((sa + za as i32) / 2) as usize;
-            let bi = ((sb + zb as i32) / 2) as usize;
+            let ai = i32::midpoint(sa, za as i32) as usize;
+            let bi = i32::midpoint(sb, zb as i32) as usize;
             if rng.gen::<f64>() < table[si * block + ai * zbp1 + bi] {
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J2 + J3 + H: branchless two-coupling+field table on NNN+TNN.
     #[inline]
     fn sweep_j2j3h<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j2: f64, j3: f64, h: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j2: f64,
+        j3: f64,
+        h: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         let (za, zb) = (self.z_nnn, self.z_tnn);
         self.ensure_table_2cf(beta, j2, j3, h, za, zb);
@@ -614,24 +802,42 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sa: i32 = lattice.next_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let sb: i32 = lattice.third_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
+            let spin = i32::from(spins[idx]);
+            let sa: i32 = lattice
+                .next_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let sb: i32 = lattice
+                .third_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
             let si = ((spin + 1) >> 1) as usize;
-            let ai = ((sa + za as i32) / 2) as usize;
-            let bi = ((sb + zb as i32) / 2) as usize;
+            let ai = i32::midpoint(sa, za as i32) as usize;
+            let bi = i32::midpoint(sb, zb as i32) as usize;
             if rng.gen::<f64>() < table[si * block + ai * zbp1 + bi] {
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J1 + J2 + J3: spin-symmetry three-coupling table.
     #[inline]
     fn sweep_j1j2j3<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j1: f64, j2: f64, j3: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j1: f64,
+        j2: f64,
+        j3: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         self.ensure_table_3c(beta, j1, j2, j3);
         let table = &self.table_3c;
@@ -640,13 +846,25 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sa: i32 = lattice.nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let sb: i32 = lattice.next_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let sc: i32 = lattice.third_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let ai = ((sa + self.z_nn as i32) / 2) as usize;
-            let bi = ((sb + self.z_nnn as i32) / 2) as usize;
-            let ci = ((sc + self.z_tnn as i32) / 2) as usize;
+            let spin = i32::from(spins[idx]);
+            let sa: i32 = lattice
+                .nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let sb: i32 = lattice
+                .next_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let sc: i32 = lattice
+                .third_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let ai = i32::midpoint(sa, self.z_nn as i32) as usize;
+            let bi = i32::midpoint(sb, self.z_nnn as i32) as usize;
+            let ci = i32::midpoint(sc, self.z_tnn as i32) as usize;
             let base = ai * zbp1 * zcp1 + bi * zcp1 + ci;
             let tidx = if spin > 0 { base } else { max_idx - base };
             if rng.gen::<f64>() < table[tidx] {
@@ -654,13 +872,24 @@ impl Metropolis {
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 
     /// J1 + J2 + J3 + H: branchless three-coupling+field table.
     #[inline]
     fn sweep_j1j2j3h<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L, j1: f64, j2: f64, j3: f64, h: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j1: f64,
+        j2: f64,
+        j3: f64,
+        h: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         self.ensure_table_3cf(beta, j1, j2, j3, h);
         let table = &self.table_3cf;
@@ -669,27 +898,49 @@ impl Metropolis {
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
-            let spin = spins[idx] as i32;
-            let sa: i32 = lattice.nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let sb: i32 = lattice.next_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
-            let sc: i32 = lattice.third_nearest_neighbors(idx).iter().map(|&i| spins[i] as i32).sum();
+            let spin = i32::from(spins[idx]);
+            let sa: i32 = lattice
+                .nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let sb: i32 = lattice
+                .next_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
+            let sc: i32 = lattice
+                .third_nearest_neighbors(idx)
+                .iter()
+                .map(|&i| i32::from(spins[i]))
+                .sum();
             let si = ((spin + 1) >> 1) as usize;
-            let ai = ((sa + self.z_nn as i32) / 2) as usize;
-            let bi = ((sb + self.z_nnn as i32) / 2) as usize;
-            let ci = ((sc + self.z_tnn as i32) / 2) as usize;
+            let ai = i32::midpoint(sa, self.z_nn as i32) as usize;
+            let bi = i32::midpoint(sb, self.z_nnn as i32) as usize;
+            let ci = i32::midpoint(sc, self.z_tnn as i32) as usize;
             if rng.gen::<f64>() < table[si * block + ai * zbp1 * zcp1 + bi * zcp1 + ci] {
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
         }
-        SweepResult { accepted, attempted: n }
+        SweepResult {
+            accepted,
+            attempted: n,
+        }
     }
 }
 
 impl McAlgorithm for Metropolis {
     fn sweep<L: Lattice, R: Rng>(
-        &mut self, spins: &mut [i8], lattice: &L,
-        j1: f64, j2: f64, j3: f64, h: f64, beta: f64, rng: &mut R,
+        &mut self,
+        spins: &mut [i8],
+        lattice: &L,
+        j1: f64,
+        j2: f64,
+        j3: f64,
+        h: f64,
+        beta: f64,
+        rng: &mut R,
     ) -> SweepResult {
         match self.strategy {
             SweepStrategy::J1 => self.sweep_j1(spins, lattice, j1, beta, rng),
@@ -731,7 +982,14 @@ mod tests {
             .collect()
     }
 
-    fn compute_energy(spins: &[i8], lattice: &SquareLattice, j1: f64, j2: f64, j3: f64, h: f64) -> f64 {
+    fn compute_energy(
+        spins: &[i8],
+        lattice: &SquareLattice,
+        j1: f64,
+        j2: f64,
+        j3: f64,
+        h: f64,
+    ) -> f64 {
         crate::observables::energy_per_site(spins, lattice, j1, j2, j3, h)
     }
 
@@ -752,9 +1010,8 @@ mod tests {
         let lattice = SquareLattice::new(4).unwrap();
         let mut spins = all_up_spins(lattice.num_sites());
         let mut rng = create_rng(42);
-        let result = make_metro(1.0, 0.0, 0.0, 0.0).sweep(
-            &mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 1.0, &mut rng,
-        );
+        let result = make_metro(1.0, 0.0, 0.0, 0.0)
+            .sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 1.0, &mut rng);
         assert_eq!(result.attempted, 16);
         assert!(result.accepted <= result.attempted);
     }
@@ -772,21 +1029,66 @@ mod tests {
         assert_eq!(spins1, spins2);
     }
 
-    #[test] fn test_deterministic_j1()      { assert_deterministic(1.0, 0.0, 0.0, 0.0); }
-    #[test] fn test_deterministic_j2()      { assert_deterministic(0.0, 0.5, 0.0, 0.0); }
-    #[test] fn test_deterministic_j3()      { assert_deterministic(0.0, 0.0, 0.5, 0.0); }
-    #[test] fn test_deterministic_h()       { assert_deterministic(0.0, 0.0, 0.0, 0.5); }
-    #[test] fn test_deterministic_j1h()     { assert_deterministic(1.0, 0.0, 0.0, 0.5); }
-    #[test] fn test_deterministic_j2h()     { assert_deterministic(0.0, 0.5, 0.0, 0.3); }
-    #[test] fn test_deterministic_j3h()     { assert_deterministic(0.0, 0.0, 0.5, 0.3); }
-    #[test] fn test_deterministic_j1j2()    { assert_deterministic(1.0, 0.3, 0.0, 0.0); }
-    #[test] fn test_deterministic_j1j3()    { assert_deterministic(1.0, 0.0, 0.3, 0.0); }
-    #[test] fn test_deterministic_j2j3()    { assert_deterministic(0.0, 0.5, 0.3, 0.0); }
-    #[test] fn test_deterministic_j1j2h()   { assert_deterministic(1.0, 0.3, 0.0, 0.5); }
-    #[test] fn test_deterministic_j1j3h()   { assert_deterministic(1.0, 0.0, 0.3, 0.5); }
-    #[test] fn test_deterministic_j2j3h()   { assert_deterministic(0.0, 0.5, 0.3, 0.5); }
-    #[test] fn test_deterministic_j1j2j3()  { assert_deterministic(1.0, 0.3, 0.2, 0.0); }
-    #[test] fn test_deterministic_j1j2j3h() { assert_deterministic(1.0, 0.3, 0.2, 0.5); }
+    #[test]
+    fn test_deterministic_j1() {
+        assert_deterministic(1.0, 0.0, 0.0, 0.0);
+    }
+    #[test]
+    fn test_deterministic_j2() {
+        assert_deterministic(0.0, 0.5, 0.0, 0.0);
+    }
+    #[test]
+    fn test_deterministic_j3() {
+        assert_deterministic(0.0, 0.0, 0.5, 0.0);
+    }
+    #[test]
+    fn test_deterministic_h() {
+        assert_deterministic(0.0, 0.0, 0.0, 0.5);
+    }
+    #[test]
+    fn test_deterministic_j1h() {
+        assert_deterministic(1.0, 0.0, 0.0, 0.5);
+    }
+    #[test]
+    fn test_deterministic_j2h() {
+        assert_deterministic(0.0, 0.5, 0.0, 0.3);
+    }
+    #[test]
+    fn test_deterministic_j3h() {
+        assert_deterministic(0.0, 0.0, 0.5, 0.3);
+    }
+    #[test]
+    fn test_deterministic_j1j2() {
+        assert_deterministic(1.0, 0.3, 0.0, 0.0);
+    }
+    #[test]
+    fn test_deterministic_j1j3() {
+        assert_deterministic(1.0, 0.0, 0.3, 0.0);
+    }
+    #[test]
+    fn test_deterministic_j2j3() {
+        assert_deterministic(0.0, 0.5, 0.3, 0.0);
+    }
+    #[test]
+    fn test_deterministic_j1j2h() {
+        assert_deterministic(1.0, 0.3, 0.0, 0.5);
+    }
+    #[test]
+    fn test_deterministic_j1j3h() {
+        assert_deterministic(1.0, 0.0, 0.3, 0.5);
+    }
+    #[test]
+    fn test_deterministic_j2j3h() {
+        assert_deterministic(0.0, 0.5, 0.3, 0.5);
+    }
+    #[test]
+    fn test_deterministic_j1j2j3() {
+        assert_deterministic(1.0, 0.3, 0.2, 0.0);
+    }
+    #[test]
+    fn test_deterministic_j1j2j3h() {
+        assert_deterministic(1.0, 0.3, 0.2, 0.5);
+    }
 
     // ── Physics tests ─────────────────────────────────────────────────
 
@@ -799,28 +1101,56 @@ mod tests {
             make_metro(j1, j2, j3, h).sweep(&mut spins, &lattice, j1, j2, j3, h, 1e10, &mut rng);
         }
         let energy_after = compute_energy(&spins, &lattice, j1, j2, j3, h);
-        assert!(energy_after <= energy_before + 1e-10,
-            "Energy should not increase at T=0: before={energy_before}, after={energy_after}");
+        assert!(
+            energy_after <= energy_before + 1e-10,
+            "Energy should not increase at T=0: before={energy_before}, after={energy_after}"
+        );
     }
 
-    #[test] fn test_energy_decreases_j1()      { assert_energy_decreases_at_zero_t(1.0, 0.0, 0.0, 0.0); }
-    #[test] fn test_energy_decreases_j2()      { assert_energy_decreases_at_zero_t(0.0, 1.0, 0.0, 0.0); }
-    #[test] fn test_energy_decreases_j3()      { assert_energy_decreases_at_zero_t(0.0, 0.0, 1.0, 0.0); }
-    #[test] fn test_energy_decreases_j1h()     { assert_energy_decreases_at_zero_t(1.0, 0.0, 0.0, 0.5); }
-    #[test] fn test_energy_decreases_j2h()     { assert_energy_decreases_at_zero_t(0.0, 0.5, 0.0, 0.3); }
-    #[test] fn test_energy_decreases_j1j2()    { assert_energy_decreases_at_zero_t(1.0, 0.5, 0.0, 0.0); }
-    #[test] fn test_energy_decreases_j1j3()    { assert_energy_decreases_at_zero_t(1.0, 0.0, 0.5, 0.0); }
-    #[test] fn test_energy_decreases_j1j2j3()  { assert_energy_decreases_at_zero_t(1.0, 0.3, 0.2, 0.0); }
-    #[test] fn test_energy_decreases_j1j2j3h() { assert_energy_decreases_at_zero_t(1.0, 0.3, 0.2, 0.5); }
+    #[test]
+    fn test_energy_decreases_j1() {
+        assert_energy_decreases_at_zero_t(1.0, 0.0, 0.0, 0.0);
+    }
+    #[test]
+    fn test_energy_decreases_j2() {
+        assert_energy_decreases_at_zero_t(0.0, 1.0, 0.0, 0.0);
+    }
+    #[test]
+    fn test_energy_decreases_j3() {
+        assert_energy_decreases_at_zero_t(0.0, 0.0, 1.0, 0.0);
+    }
+    #[test]
+    fn test_energy_decreases_j1h() {
+        assert_energy_decreases_at_zero_t(1.0, 0.0, 0.0, 0.5);
+    }
+    #[test]
+    fn test_energy_decreases_j2h() {
+        assert_energy_decreases_at_zero_t(0.0, 0.5, 0.0, 0.3);
+    }
+    #[test]
+    fn test_energy_decreases_j1j2() {
+        assert_energy_decreases_at_zero_t(1.0, 0.5, 0.0, 0.0);
+    }
+    #[test]
+    fn test_energy_decreases_j1j3() {
+        assert_energy_decreases_at_zero_t(1.0, 0.0, 0.5, 0.0);
+    }
+    #[test]
+    fn test_energy_decreases_j1j2j3() {
+        assert_energy_decreases_at_zero_t(1.0, 0.3, 0.2, 0.0);
+    }
+    #[test]
+    fn test_energy_decreases_j1j2j3h() {
+        assert_energy_decreases_at_zero_t(1.0, 0.3, 0.2, 0.5);
+    }
 
     #[test]
     fn test_high_temperature_high_acceptance() {
         let lattice = SquareLattice::new(8).unwrap();
         let mut spins = all_up_spins(lattice.num_sites());
         let mut rng = create_rng(42);
-        let result = make_metro(1.0, 0.0, 0.0, 0.0).sweep(
-            &mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 0.001, &mut rng,
-        );
+        let result = make_metro(1.0, 0.0, 0.0, 0.0)
+            .sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 0.001, &mut rng);
         assert!(result.acceptance_rate() > 0.5);
     }
 
@@ -830,10 +1160,14 @@ mod tests {
         let mut spins = all_up_spins(lattice.num_sites());
         let mut rng = create_rng(42);
         for _ in 0..10 {
-            make_metro(1.0, 0.0, 0.0, 0.0).sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 10.0, &mut rng);
+            make_metro(1.0, 0.0, 0.0, 0.0)
+                .sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 10.0, &mut rng);
         }
         let mag: f64 = spins.iter().map(|&s| f64::from(s)).sum::<f64>() / spins.len() as f64;
-        assert!(mag > 0.9, "Ground state should remain magnetized, got m={mag}");
+        assert!(
+            mag > 0.9,
+            "Ground state should remain magnetized, got m={mag}"
+        );
     }
 
     #[test]
@@ -842,10 +1176,14 @@ mod tests {
         let mut rng = create_rng(42);
         let mut spins = random_spins(&lattice, &mut rng);
         for _ in 0..200 {
-            make_metro(0.0, 0.0, 0.0, 1.0).sweep(&mut spins, &lattice, 0.0, 0.0, 0.0, 1.0, 100.0, &mut rng);
+            make_metro(0.0, 0.0, 0.0, 1.0)
+                .sweep(&mut spins, &lattice, 0.0, 0.0, 0.0, 1.0, 100.0, &mut rng);
         }
         let mag: f64 = spins.iter().map(|&s| f64::from(s)).sum::<f64>() / spins.len() as f64;
-        assert!(mag > 0.99, "Field-only at low T should align spins: got m={mag}");
+        assert!(
+            mag > 0.99,
+            "Field-only at low T should align spins: got m={mag}"
+        );
     }
 
     #[test]
@@ -867,8 +1205,14 @@ mod tests {
     // ── Cross-lattice tests (non-square coordination numbers) ────────
 
     fn assert_energy_decreases_on_lattice<L: Lattice>(
-        lattice: &L, j1: f64, j2: f64, j3: f64, h: f64,
-        z_nn: usize, z_nnn: usize, z_tnn: usize,
+        lattice: &L,
+        j1: f64,
+        j2: f64,
+        j3: f64,
+        h: f64,
+        z_nn: usize,
+        z_nnn: usize,
+        z_tnn: usize,
     ) {
         let mut rng = create_rng(42);
         let mut spins: Vec<i8> = (0..lattice.num_sites())
@@ -880,8 +1224,10 @@ mod tests {
             metro.sweep(&mut spins, lattice, j1, j2, j3, h, 1e10, &mut rng);
         }
         let e_after = crate::observables::energy_per_site(&spins, lattice, j1, j2, j3, h);
-        assert!(e_after <= e_before + 1e-10,
-            "Energy should decrease: {e_before} -> {e_after}");
+        assert!(
+            e_after <= e_before + 1e-10,
+            "Energy should decrease: {e_before} -> {e_after}"
+        );
     }
 
     #[test]
