@@ -164,11 +164,11 @@ mod tests {
         // Interaction: -J1 * (-1) * 4 * 16 / 2 / 16 = +2.0
         let lattice = SquareLattice::new(4).unwrap();
         let mut spins = vec![1i8; 16];
-        for idx in 0..16 {
+        for (idx, spin) in spins.iter_mut().enumerate().take(16) {
             let row = idx / 4;
             let col = idx % 4;
             if (row + col) % 2 == 1 {
-                spins[idx] = -1;
+                *spin = -1;
             }
         }
         let e = energy_per_site(&spins, &lattice, 1.0, 0.0, 0.0, 0.0);
@@ -193,11 +193,11 @@ mod tests {
     #[test]
     fn test_magnetization_checkerboard() {
         let mut spins = vec![1i8; 16];
-        for idx in 0..16 {
+        for (idx, spin) in spins.iter_mut().enumerate().take(16) {
             let row = idx / 4;
             let col = idx % 4;
             if (row + col) % 2 == 1 {
-                spins[idx] = -1;
+                *spin = -1;
             }
         }
         assert!((magnetization_per_site(&spins)).abs() < 1e-10);
@@ -229,6 +229,8 @@ mod tests {
     }
 
     #[test]
+    // 0.0 is the exact early-return value, not a computed float.
+    #[allow(clippy::float_cmp)]
     fn test_correlation_length_zero_for_uncorrelated() {
         // If all correlations are zero or negative, xi should be 0
         let correlations = vec![0.0, 0.0, -0.1];

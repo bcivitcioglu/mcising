@@ -45,18 +45,21 @@ impl SwendsenWang {
         if ra == rb {
             return;
         }
-        if self.rank[ra] < self.rank[rb] {
-            self.parent[ra] = rb;
-        } else if self.rank[ra] > self.rank[rb] {
-            self.parent[rb] = ra;
-        } else {
-            self.parent[rb] = ra;
-            self.rank[ra] += 1;
+        match self.rank[ra].cmp(&self.rank[rb]) {
+            std::cmp::Ordering::Less => self.parent[ra] = rb,
+            std::cmp::Ordering::Greater => self.parent[rb] = ra,
+            std::cmp::Ordering::Equal => {
+                self.parent[rb] = ra;
+                self.rank[ra] += 1;
+            }
         }
     }
 }
 
 impl McAlgorithm for SwendsenWang {
+    // `_j2`/`_j3` are read only by the debug_assert; that assert becomes a
+    // real boundary error in P04 (B1).
+    #[allow(clippy::used_underscore_binding)]
     fn sweep<L: Lattice, R: Rng>(
         &mut self,
         spins: &mut [i8],
@@ -107,7 +110,7 @@ impl McAlgorithm for SwendsenWang {
 
         let mut total_flipped = 0;
 
-        for i in 0..n {
+        for (i, spin) in spins.iter_mut().enumerate().take(n) {
             let root = self.find(i);
 
             // Decide for this cluster if not yet decided
@@ -117,7 +120,7 @@ impl McAlgorithm for SwendsenWang {
 
             // Apply flip decision
             if self.rank[root] == 2 {
-                spins[i] = -spins[i];
+                *spin = -*spin;
                 total_flipped += 1;
             }
         }
@@ -190,7 +193,9 @@ mod tests {
         // At low T with all-up, the entire lattice is one cluster.
         // It flips with p=0.5, so |m| should remain 1.0.
         for _ in 0..10 {
-            sw.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, beta_large, &mut rng);
+            sw.sweep(
+                &mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, beta_large, &mut rng,
+            );
         }
 
         let mag: f64 = spins.iter().map(|&s| f64::from(s)).sum::<f64>() / spins.len() as f64;

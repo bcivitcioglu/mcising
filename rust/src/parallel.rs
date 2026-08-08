@@ -20,6 +20,9 @@ struct TempResult {
     energies: Vec<f64>,
     magnetizations: Vec<f64>,
     configs: Option<Vec<i8>>,
+    // Not yet surfaced to Python; kept so parallel modes can report the true
+    // site count when B11 is fixed (P08).
+    #[allow(dead_code)]
     num_sites: usize,
     shape: Vec<usize>,
 }
@@ -32,12 +35,25 @@ struct TempResult {
 ///
 /// Returns a list of dicts, one per temperature, containing energy and
 /// magnetization arrays.
+///
+/// # Errors
+///
+/// Returns an error if `algorithm` or `lattice_type` is not recognized or
+/// the lattice cannot be constructed at `lattice_size`.
+///
+/// # Panics
+///
+/// Panics if stored configurations cannot be reshaped to the lattice shape
+/// (B5; becomes a boundary error in P06).
 #[pyfunction]
 #[pyo3(signature = (
     lattice_size, j1, j2, j3, h, base_seed, algorithm, lattice_type,
     temperatures, n_thermalization, n_sweeps, measurement_interval,
     store_configs = false, compute_correlation = false
 ))]
+// `compute_correlation` is accepted but not yet honored in this mode (B8);
+// the wiring lands in P06.
+#[allow(unused_variables)]
 pub fn run_independent_temperatures<'py>(
     py: Python<'py>,
     lattice_size: usize,
@@ -72,7 +88,14 @@ pub fn run_independent_temperatures<'py>(
 
                 // Each thread gets its own simulation — no shared state.
                 let mut sim = IsingSimulation::new_internal(
-                    lattice_size, j1, j2, j3, h, seed, &algo, &lat_type,
+                    lattice_size,
+                    j1,
+                    j2,
+                    j3,
+                    h,
+                    seed,
+                    &algo,
+                    &lat_type,
                 )
                 .expect("simulation creation should not fail with validated params");
 
@@ -121,11 +144,11 @@ pub fn run_independent_temperatures<'py>(
 }
 
 /// Convert TempResult Vec to Python list of dicts.
-fn convert_results_to_py<'py>(
-    py: Python<'py>,
+fn convert_results_to_py(
+    py: Python<'_>,
     results: Vec<TempResult>,
     n_measurements: usize,
-) -> PyResult<Vec<Bound<'py, PyDict>>> {
+) -> PyResult<Vec<Bound<'_, PyDict>>> {
     let mut py_results = Vec::with_capacity(results.len());
     for r in results {
         let dict = PyDict::new(py);
@@ -159,6 +182,16 @@ fn convert_results_to_py<'py>(
 ///   P(swap i,j) = min(1, exp((β_i - β_j) × (E_i - E_j)))
 ///
 /// Even/odd alternation ensures all adjacent pairs get swap opportunities.
+///
+/// # Errors
+///
+/// Returns an error if `algorithm` or `lattice_type` is not recognized or
+/// the lattice cannot be constructed at `lattice_size`.
+///
+/// # Panics
+///
+/// Panics when `swap_interval` does not divide `measurement_interval`
+/// (measurement-count reshape; B5) — becomes a boundary error in P06.
 #[pyfunction]
 #[pyo3(signature = (
     lattice_size, j1, j2, j3, h, base_seed, algorithm, lattice_type,
@@ -198,9 +231,14 @@ pub fn run_parallel_tempering<'py>(
         let mut replicas: Vec<IsingSimulation> = (0..n_temps)
             .map(|i| {
                 IsingSimulation::new_internal(
-                    lattice_size, j1, j2, j3, h,
+                    lattice_size,
+                    j1,
+                    j2,
+                    j3,
+                    h,
                     base_seed.wrapping_add(i as u64),
-                    &algo, &lat_type,
+                    &algo,
+                    &lat_type,
                 )
                 .expect("simulation creation should not fail with validated params")
             })
@@ -215,9 +253,7 @@ pub fn run_parallel_tempering<'py>(
         });
 
         // Separate RNG for swap decisions (deterministic, independent of replica RNGs).
-        let mut swap_rng = crate::rng::create_rng(
-            base_seed.wrapping_add(n_temps as u64 + 1000),
-        );
+        let mut swap_rng = crate::rng::create_rng(base_seed.wrapping_add(n_temps as u64 + 1000));
 
         // Pre-allocate result storage.
         let mut temp_results: Vec<TempResult> = sorted_temps
@@ -265,18 +301,15 @@ pub fn run_parallel_tempering<'py>(
             }
 
             // b. Swap attempts (even/odd alternation).
-            let offset = if round % 2 == 0 { 0 } else { 1 };
+            let offset = usize::from(!round.is_multiple_of(2));
             for i in (offset..n_temps.saturating_sub(1)).step_by(2) {
                 let j = i + 1;
                 // Standard PT acceptance: P = min(1, exp(delta))
                 // where delta = (β_i - β_j) * (E_i - E_j) * N
                 // β sorted descending (β_i > β_j), so if E_i < E_j
                 // (low-T replica has lower energy), delta > 0 → always accept.
-                let delta = (betas[i] - betas[j])
-                    * (energies[i] - energies[j])
-                    * num_sites as f64;
-                let accept = delta >= 0.0
-                    || swap_rng.gen::<f64>() < delta.exp();
+                let delta = (betas[i] - betas[j]) * (energies[i] - energies[j]) * num_sites as f64;
+                let accept = delta >= 0.0 || swap_rng.gen::<f64>() < delta.exp();
                 if accept {
                     // O(1) pointer swap of spin Vecs.
                     let (left, right) = replicas.split_at_mut(j);
@@ -288,12 +321,12 @@ pub fn run_parallel_tempering<'py>(
             round += 1;
 
             // c. Collect measurements at the right intervals.
-            if sweep_count % measurement_interval == 0 {
+            if sweep_count.is_multiple_of(measurement_interval) {
                 for (i, sim) in replicas.iter().enumerate() {
                     temp_results[i].energies.push(energies[i]);
-                    temp_results[i].magnetizations.push(
-                        observables::magnetization_per_site(&sim.spins),
-                    );
+                    temp_results[i]
+                        .magnetizations
+                        .push(observables::magnetization_per_site(&sim.spins));
                     if let Some(ref mut c) = temp_results[i].configs {
                         c.extend_from_slice(&sim.spins);
                     }

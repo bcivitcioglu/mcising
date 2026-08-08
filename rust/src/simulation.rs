@@ -1,6 +1,6 @@
 use numpy::{
-    IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1,
-    PyReadonlyArrayDyn, PyUntypedArrayMethods,
+    IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArrayDyn,
+    PyUntypedArrayMethods,
 };
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -39,9 +39,21 @@ pub struct IsingSimulation {
     swendsen_wang: Option<SwendsenWang>,
 }
 
+/// Per-run measurement arrays: (energies, magnetizations, optional configs).
+type SweepMeasurements<'py> = (
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    Option<PyObject>,
+);
+
 impl IsingSimulation {
     /// Create a new simulation (pure Rust, no PyO3 dependency).
     /// Used by both the PyO3 `__new__` and the parallel runner.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `algorithm` or `lattice_type` is not recognized
+    /// or the lattice cannot be constructed at `lattice_size`.
     pub fn new_internal(
         lattice_size: usize,
         j1: f64,
@@ -77,12 +89,14 @@ impl IsingSimulation {
 
         if j2 != 0.0 && lattice.nnn_coordination_number() == 0 {
             return Err(MCIsingError::InvalidCoupling(
-                "j2 (no NNN defined for this lattice)", j2,
+                "j2 (no NNN defined for this lattice)",
+                j2,
             ));
         }
         if j3 != 0.0 && lattice.tnn_coordination_number() == 0 {
             return Err(MCIsingError::InvalidCoupling(
-                "j3 (no TNN defined for this lattice)", j3,
+                "j3 (no TNN defined for this lattice)",
+                j3,
             ));
         }
 
@@ -127,7 +141,10 @@ impl IsingSimulation {
 
     /// Perform sweeps (pure Rust, no PyO3). Used by parallel runner.
     pub fn sweep_internal(&mut self, n_sweeps: usize, beta: f64) -> SweepResult {
-        let mut total = SweepResult { accepted: 0, attempted: 0 };
+        let mut total = SweepResult {
+            accepted: 0,
+            attempted: 0,
+        };
         for _ in 0..n_sweeps {
             let r = self.dispatch_sweep(beta);
             total.accepted += r.accepted;
@@ -153,7 +170,7 @@ impl IsingSimulation {
         lattice_type: &str,
     ) -> PyResult<Self> {
         Self::new_internal(lattice_size, j1, j2, j3, h, seed, algorithm, lattice_type)
-            .map_err(|e| e.into())
+            .map_err(std::convert::Into::into)
     }
 
     /// Perform MC sweeps at the given inverse temperature.
@@ -182,11 +199,7 @@ impl IsingSimulation {
     }
 
     /// Perform MC sweeps while accumulating observable averages.
-    fn sweep_measured(
-        &mut self,
-        n_sweeps: usize,
-        beta: f64,
-    ) -> PyResult<(f64, f64, usize, usize)> {
+    fn sweep_measured(&mut self, n_sweeps: usize, beta: f64) -> PyResult<(f64, f64, usize, usize)> {
         if !beta.is_finite() || beta < 0.0 {
             return Err(MCIsingError::InvalidTemperature(if beta == 0.0 {
                 0.0
@@ -227,13 +240,13 @@ impl IsingSimulation {
     }
 
     /// Return the spin configuration as a NumPy array with lattice shape.
-    fn get_spins<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
+    fn get_spins(&self, py: Python<'_>) -> PyResult<PyObject> {
         let flat = numpy::PyArray1::from_vec(py, self.spins.clone());
         let shape: Vec<usize> = self.shape.clone();
-        let reshaped = flat.reshape(shape).map_err(|e| {
-            MCIsingError::InvalidSpinConfiguration(format!("reshape failed: {e}"))
-        })?;
-        Ok(reshaped.into_py(py))
+        let reshaped = flat
+            .reshape(shape)
+            .map_err(|e| MCIsingError::InvalidSpinConfiguration(format!("reshape failed: {e}")))?;
+        Ok(reshaped.into_any().unbind())
     }
 
     /// Set the spin configuration from a NumPy array.
@@ -371,7 +384,7 @@ impl IsingSimulation {
         &mut self,
         py: Python<'py>,
         temp_schedule: Vec<f64>,
-    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    ) -> Bound<'py, PyArray1<f64>> {
         let mut energies = Vec::with_capacity(temp_schedule.len());
         for temp in &temp_schedule {
             if *temp <= 0.0 {
@@ -381,7 +394,7 @@ impl IsingSimulation {
             self.dispatch_sweep(beta);
             energies.push(self.compute_energy());
         }
-        Ok(energies.into_pyarray(py))
+        energies.into_pyarray(py)
     }
 
     fn extend_thermalization<'py>(
@@ -434,11 +447,7 @@ impl IsingSimulation {
         interval: usize,
         beta: f64,
         store_configs: bool,
-    ) -> PyResult<(
-        Bound<'py, PyArray1<f64>>,
-        Bound<'py, PyArray1<f64>>,
-        Option<PyObject>,
-    )> {
+    ) -> PyResult<SweepMeasurements<'py>> {
         if !beta.is_finite() || beta <= 0.0 {
             return Err(MCIsingError::InvalidTemperature(if beta == 0.0 {
                 0.0
@@ -475,7 +484,8 @@ impl IsingSimulation {
             reshape_dims.extend_from_slice(&self.shape);
             flat.reshape(reshape_dims)
                 .expect("reshape should not fail for correct dimensions")
-                .into_py(py)
+                .into_any()
+                .unbind()
         });
 
         Ok((py_energies, py_mags, py_configs))

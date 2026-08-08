@@ -21,6 +21,8 @@ mod tests {
     }
 
     #[test]
+    // Inequality of raw draws is the point of the test; no tolerance applies.
+    #[allow(clippy::float_cmp)]
     fn test_different_seeds_differ() {
         let mut rng1 = create_rng(42);
         let mut rng2 = create_rng(43);

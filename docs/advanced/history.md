@@ -1,4 +1,10 @@
-# mcising v1.0 - Transformation Plan
+# Project history: the v0.13 → v0.21 transformation plan
+
+!!! note
+    This is the original development roadmap that guided mcising's transformation
+    from a pure-Python prototype (v0.13, 2024) to the Rust-core library it is today.
+    It is preserved here as a historical record; some claims and plans reflect the
+    state of the project in early 2026 and are superseded by the current documentation.
 
 ## Context
 

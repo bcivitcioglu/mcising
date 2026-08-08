@@ -49,19 +49,19 @@ impl TriangularLattice {
 
             // NN: 6 nearest neighbors
             // Shared by all rows: up, down, left, right
-            nn_table.push(up * size + col);    // up
-            nn_table.push(down * size + col);  // down
-            nn_table.push(row * size + left);  // left
+            nn_table.push(up * size + col); // up
+            nn_table.push(down * size + col); // down
+            nn_table.push(row * size + left); // left
             nn_table.push(row * size + right); // right
 
-            if row % 2 == 0 {
+            if row.is_multiple_of(2) {
                 // Even row: extra diagonals go left
-                nn_table.push(up * size + left);   // up-left
-                nn_table.push(down * size + left);  // down-left
+                nn_table.push(up * size + left); // up-left
+                nn_table.push(down * size + left); // down-left
             } else {
                 // Odd row: extra diagonals go right
-                nn_table.push(up * size + right);   // up-right
-                nn_table.push(down * size + right);  // down-right
+                nn_table.push(up * size + right); // up-right
+                nn_table.push(down * size + right); // down-right
             }
 
             // NNN: 6 next-nearest neighbors (at distance √3 in real space)
@@ -72,17 +72,17 @@ impl TriangularLattice {
             let up2 = (row + size - 2) % size;
             let down2 = (row + 2) % size;
 
-            if row % 2 == 0 {
+            if row.is_multiple_of(2) {
                 // Even row NNN
-                nnn_table.push(up * size + right);    // up-right
-                nnn_table.push(down * size + right);   // down-right
-                nnn_table.push(up2 * size + col);      // up 2
-                nnn_table.push(down2 * size + col);    // down 2
-                nnn_table.push(up * size + left2);     // up-left-left (via offset)
-                // Actually, let me be more careful about NNN on triangular.
-                // For a proper triangular lattice with offset coords:
-                // NNN are at distance 2 (in lattice-spacing units).
-                // Let me just use the second-neighbor shell.
+                nnn_table.push(up * size + right); // up-right
+                nnn_table.push(down * size + right); // down-right
+                nnn_table.push(up2 * size + col); // up 2
+                nnn_table.push(down2 * size + col); // down 2
+                nnn_table.push(up * size + left2); // up-left-left (via offset)
+                                                   // Actually, let me be more careful about NNN on triangular.
+                                                   // For a proper triangular lattice with offset coords:
+                                                   // NNN are at distance 2 (in lattice-spacing units).
+                                                   // Let me just use the second-neighbor shell.
                 nnn_table.push(down * size + left2);
             } else {
                 // Odd row NNN
@@ -95,11 +95,11 @@ impl TriangularLattice {
             }
 
             // TNN: 6 third-nearest neighbors (at distance 2 along lattice directions)
-            if row % 2 == 0 {
-                tnn_table.push(row * size + left2);    // left 2
-                tnn_table.push(row * size + right2);   // right 2
-                tnn_table.push(up2 * size + left);     // up2-left
-                tnn_table.push(up2 * size + col);      // Hmm, this overlaps with NNN
+            if row.is_multiple_of(2) {
+                tnn_table.push(row * size + left2); // left 2
+                tnn_table.push(row * size + right2); // right 2
+                tnn_table.push(up2 * size + left); // up2-left
+                tnn_table.push(up2 * size + col); // Hmm, this overlaps with NNN
                 tnn_table.push(down2 * size + left);
                 tnn_table.push(down2 * size + col);
             } else {
@@ -229,13 +229,22 @@ mod tests {
         let lattice = TriangularLattice::new(8).unwrap();
         for idx in 0..lattice.num_sites() {
             for &nbr in lattice.nearest_neighbors(idx) {
-                assert!(nbr < lattice.num_sites(), "NN {nbr} out of bounds for site {idx}");
+                assert!(
+                    nbr < lattice.num_sites(),
+                    "NN {nbr} out of bounds for site {idx}"
+                );
             }
             for &nbr in lattice.next_nearest_neighbors(idx) {
-                assert!(nbr < lattice.num_sites(), "NNN {nbr} out of bounds for site {idx}");
+                assert!(
+                    nbr < lattice.num_sites(),
+                    "NNN {nbr} out of bounds for site {idx}"
+                );
             }
             for &nbr in lattice.third_nearest_neighbors(idx) {
-                assert!(nbr < lattice.num_sites(), "TNN {nbr} out of bounds for site {idx}");
+                assert!(
+                    nbr < lattice.num_sites(),
+                    "TNN {nbr} out of bounds for site {idx}"
+                );
             }
         }
     }
@@ -244,9 +253,18 @@ mod tests {
     fn test_no_self_neighbors() {
         let lattice = TriangularLattice::new(8).unwrap();
         for idx in 0..lattice.num_sites() {
-            assert!(!lattice.nearest_neighbors(idx).contains(&idx), "Site {idx} is its own NN");
-            assert!(!lattice.next_nearest_neighbors(idx).contains(&idx), "Site {idx} is its own NNN");
-            assert!(!lattice.third_nearest_neighbors(idx).contains(&idx), "Site {idx} is its own TNN");
+            assert!(
+                !lattice.nearest_neighbors(idx).contains(&idx),
+                "Site {idx} is its own NN"
+            );
+            assert!(
+                !lattice.next_nearest_neighbors(idx).contains(&idx),
+                "Site {idx} is its own NNN"
+            );
+            assert!(
+                !lattice.third_nearest_neighbors(idx).contains(&idx),
+                "Site {idx} is its own TNN"
+            );
         }
     }
 
@@ -270,7 +288,7 @@ mod tests {
         for idx in 0..lattice.num_sites() {
             let nn = lattice.nearest_neighbors(idx);
             let mut sorted = nn.to_vec();
-            sorted.sort();
+            sorted.sort_unstable();
             sorted.dedup();
             assert_eq!(sorted.len(), 6, "Site {idx} has duplicate NN");
         }
@@ -298,7 +316,7 @@ mod tests {
         let nn = lattice.nearest_neighbors(0);
         assert_eq!(nn.len(), 6);
         let mut unique: Vec<usize> = nn.to_vec();
-        unique.sort();
+        unique.sort_unstable();
         unique.dedup();
         assert_eq!(unique.len(), 6, "Site 0 should have 6 unique NN");
     }
@@ -311,7 +329,7 @@ mod tests {
         let nn = lattice.nearest_neighbors(idx);
         assert_eq!(nn.len(), 6);
         let mut unique: Vec<usize> = nn.to_vec();
-        unique.sort();
+        unique.sort_unstable();
         unique.dedup();
         assert_eq!(unique.len(), 6, "Site {idx} should have 6 unique NN");
     }

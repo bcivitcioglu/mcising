@@ -1,11 +1,12 @@
-/// Autocorrelation analysis and thermalization detection.
-///
-/// Provides:
-/// - MSER (Marginal Standard Error Rule) for detecting when a time series
-///   has reached stationarity (thermalization).
-/// - Sokal's automatic windowing method for estimating the integrated
-///   autocorrelation time of a stationary time series.
-/// - Combined analysis that runs MSER first, then Sokal on the stationary tail.
+//! Autocorrelation analysis and thermalization detection.
+//!
+//! Provides:
+//! - MSER (Marginal Standard Error Rule) for detecting when a time series
+//!   has reached stationarity (thermalization).
+//! - Sokal's automatic windowing method for estimating the integrated
+//!   autocorrelation time of a stationary time series.
+//! - Combined analysis that runs MSER first, then Sokal on the stationary
+//!   tail.
 
 /// Result of MSER thermalization detection.
 #[derive(Debug, Clone)]
@@ -177,9 +178,7 @@ pub fn analyze_thermalization(
         }
     };
 
-    let recommended_interval = (tau_multiplier * autocorr.tau_int)
-        .round()
-        .max(1.0) as usize;
+    let recommended_interval = (tau_multiplier * autocorr.tau_int).round().max(1.0) as usize;
 
     ThermalizationAnalysis {
         thermalization: therm,
@@ -196,8 +195,8 @@ mod tests {
     fn test_white_noise_tau_near_half() {
         // Uncorrelated white noise should have tau_int ~ 0.5
         use rand::Rng;
-        use rand_xoshiro::Xoshiro256StarStar;
         use rand::SeedableRng;
+        use rand_xoshiro::Xoshiro256StarStar;
 
         let mut rng = Xoshiro256StarStar::seed_from_u64(42);
         let series: Vec<f64> = (0..10_000).map(|_| rng.gen::<f64>()).collect();
@@ -216,8 +215,8 @@ mod tests {
         // Theoretical tau_int = (1 + phi) / (2 * (1 - phi))
         // For phi=0.9: tau_int = 1.9 / 0.2 = 9.5
         use rand::Rng;
-        use rand_xoshiro::Xoshiro256StarStar;
         use rand::SeedableRng;
+        use rand_xoshiro::Xoshiro256StarStar;
 
         let phi = 0.9;
         let mut rng = Xoshiro256StarStar::seed_from_u64(42);
@@ -242,14 +241,17 @@ mod tests {
     fn test_mser_detects_stationary_series() {
         // Already stationary series — truncation point should be near 0
         use rand::Rng;
-        use rand_xoshiro::Xoshiro256StarStar;
         use rand::SeedableRng;
+        use rand_xoshiro::Xoshiro256StarStar;
 
         let mut rng = Xoshiro256StarStar::seed_from_u64(42);
         let series: Vec<f64> = (0..1000).map(|_| rng.gen::<f64>()).collect();
 
         let result = detect_thermalization(&series);
-        assert!(result.is_thermalized, "Stationary series should be detected as thermalized");
+        assert!(
+            result.is_thermalized,
+            "Stationary series should be detected as thermalized"
+        );
         assert!(
             result.truncation_point < 100,
             "Truncation point should be near start for stationary data, got {}",
@@ -263,14 +265,17 @@ mod tests {
         let mut series = Vec::with_capacity(1000);
         for i in 0..1000 {
             if i < 200 {
-                series.push(10.0 - (i as f64) * 0.05); // Decaying from 10 to 0
+                series.push(10.0 - f64::from(i) * 0.05); // Decaying from 10 to 0
             } else {
-                series.push(0.1 * ((i as f64) * 0.01).sin()); // Small fluctuations around 0
+                series.push(0.1 * (f64::from(i) * 0.01).sin()); // Small fluctuations around 0
             }
         }
 
         let result = detect_thermalization(&series);
-        assert!(result.is_thermalized, "Series with transient + stationary tail should be thermalized");
+        assert!(
+            result.is_thermalized,
+            "Series with transient + stationary tail should be thermalized"
+        );
         // Truncation point should be somewhere around 150-250
         assert!(
             result.truncation_point >= 100 && result.truncation_point <= 350,
@@ -282,7 +287,7 @@ mod tests {
     #[test]
     fn test_mser_not_thermalized_all_drift() {
         // Monotonically drifting series — never thermalized
-        let series: Vec<f64> = (0..1000).map(|i| i as f64).collect();
+        let series: Vec<f64> = (0..1000).map(f64::from).collect();
         let result = detect_thermalization(&series);
         // For monotonic drift, the best truncation point is near the end
         // because variance is minimized when we take the shortest tail
@@ -297,8 +302,8 @@ mod tests {
     fn test_analyze_combined() {
         // Stationary series — should detect thermalization and estimate tau
         use rand::Rng;
-        use rand_xoshiro::Xoshiro256StarStar;
         use rand::SeedableRng;
+        use rand_xoshiro::Xoshiro256StarStar;
 
         let mut rng = Xoshiro256StarStar::seed_from_u64(42);
         let series: Vec<f64> = (0..5000).map(|_| rng.gen::<f64>()).collect();
@@ -310,6 +315,8 @@ mod tests {
     }
 
     #[test]
+    // tau_int == 0.5 is an exact literal returned by the degenerate path.
+    #[allow(clippy::float_cmp)]
     fn test_short_series_does_not_panic() {
         let series = vec![1.0, 2.0];
         let result = analyze_thermalization(&series, 6.0, 2.0);
@@ -318,9 +325,11 @@ mod tests {
     }
 
     #[test]
+    // tau_int == 0.5 is an exact literal returned by the zero-variance path.
+    #[allow(clippy::float_cmp)]
     fn test_constant_series() {
         // All identical values — zero variance, tau should be 0.5
-        let series = vec![3.14; 1000];
+        let series = vec![42.0; 1000];
         let result = integrated_autocorrelation_time(&series, 6.0);
         assert_eq!(result.tau_int, 0.5, "Constant series should have tau=0.5");
     }

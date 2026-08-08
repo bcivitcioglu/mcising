@@ -33,6 +33,9 @@ impl Wolff {
 }
 
 impl McAlgorithm for Wolff {
+    // `_j2`/`_j3` are read only by the debug_assert; that assert becomes a
+    // real boundary error in P04 (B1).
+    #[allow(clippy::used_underscore_binding)]
     fn sweep<L: Lattice, R: Rng>(
         &mut self,
         spins: &mut [i8],
@@ -66,10 +69,7 @@ impl McAlgorithm for Wolff {
         // Grow cluster via DFS
         while let Some(site) = self.stack.pop() {
             for &nbr in lattice.nearest_neighbors(site) {
-                if !self.visited[nbr]
-                    && spins[nbr] == cluster_spin
-                    && rng.gen::<f64>() < p_add
-                {
+                if !self.visited[nbr] && spins[nbr] == cluster_spin && rng.gen::<f64>() < p_add {
                     self.visited[nbr] = true;
                     self.stack.push(nbr);
                     self.cluster.push(nbr);
@@ -139,10 +139,7 @@ mod tests {
         for _ in 0..20 {
             let result = wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng);
             assert!(result.accepted >= 1, "Cluster must have at least 1 site");
-            assert!(
-                result.accepted <= n,
-                "Cluster cannot exceed lattice size"
-            );
+            assert!(result.accepted <= n, "Cluster cannot exceed lattice size");
             assert_eq!(result.attempted, n);
         }
     }
@@ -175,7 +172,9 @@ mod tests {
         // Since all spins are aligned, the cluster = entire lattice, and it flips
         // back and forth. Magnetization magnitude should stay 1.0.
         for _ in 0..10 {
-            wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, beta_large, &mut rng);
+            wolff.sweep(
+                &mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, beta_large, &mut rng,
+            );
         }
 
         let mag: f64 = spins.iter().map(|&s| f64::from(s)).sum::<f64>() / spins.len() as f64;
@@ -199,10 +198,12 @@ mod tests {
         let mut total_cluster_size = 0;
         let n_sweeps = 100;
         for _ in 0..n_sweeps {
-            let result = wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, beta_small, &mut rng);
+            let result = wolff.sweep(
+                &mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, beta_small, &mut rng,
+            );
             total_cluster_size += result.accepted;
         }
-        let avg_cluster_size = total_cluster_size as f64 / n_sweeps as f64;
+        let avg_cluster_size = total_cluster_size as f64 / f64::from(n_sweeps);
         assert!(
             avg_cluster_size < n as f64 / 2.0,
             "At high T, average cluster size should be small, got {avg_cluster_size}"

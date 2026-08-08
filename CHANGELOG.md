@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- CI builds the Rust extension in release mode, measures Python test coverage
+  with a ratchet (`--cov-fail-under=39`), and builds the documentation with
+  `mkdocs build --strict`.
+- Documentation deploys to GitHub Pages automatically on every push to master
+  (`.github/workflows/docs.yml`).
+- Dependabot updates for pip, cargo, and GitHub Actions dependencies.
+- LaTeX in the documentation now renders, via MathJax
+  (`pymdownx.arithmatex`); the physics background page displays its equations
+  correctly.
+- The original v0.13 → v0.21 transformation roadmap is preserved as
+  `docs/advanced/history.md`.
+- `Cargo.lock` and `uv.lock` are committed for reproducible developer and CI
+  environments.
+
+### Fixed
+
+- Rust sources pass `cargo fmt --check` and
+  `cargo clippy --all-targets -- -D warnings` (135 lint errors resolved).
+  Sites belonging to known open bugs (B1, B2, B5, B8, B11) are preserved
+  behind documented `#[allow]`s so the owning fixes remain visible.
+- `mypy python/mcising/` passes: mypy now targets Python 3.12 (numpy's stubs
+  use PEP 695 syntax rejected under older targets) and `peapods` is ignored
+  via a mypy override instead of a mismatched inline ignore code.
+
+### Removed
+
+- 70 built HTML files (`site/`), the pre-Rust `_legacy/` package, and
+  `.DS_Store` files are no longer tracked in the repository.
+- The unused `mike` version-provider entry in `mkdocs.yml` (docs deploy as a
+  single version).
+
 ### Changed
 
 - Test suite hardened for seed robustness: statistical assertions now use
