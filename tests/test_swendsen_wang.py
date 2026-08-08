@@ -6,6 +6,8 @@ from mcising import Simulation, SimulationConfig
 from mcising.config import AdaptiveConfig, Algorithm, LatticeConfig
 from mcising.exceptions import ConfigurationError
 
+from tests._stats import DEFAULT_SEEDS, assert_samples_agree
+
 
 class TestSwendsenWangConfig:
     """Test Swendsen-Wang algorithm constraint enforcement."""
@@ -63,47 +65,54 @@ class TestSwendsenWangSimulation:
         assert "magnetization" in result
         assert "acceptance_rate" in result
 
-    def test_metropolis_agreement(self) -> None:
-        """SW and Metropolis should produce statistically consistent results."""
+    @pytest.mark.statistical
+    @pytest.mark.parametrize("seed", DEFAULT_SEEDS)
+    def test_metropolis_agreement(self, seed: int) -> None:
+        """SW and Metropolis sample the same equilibrium ensemble at T=2.
+
+        Metropolis gets a cool-down ladder: a single-temperature config
+        ramps from INF_TEMP in ~1 sweep below Tc, so it can sit in a
+        stripe state for hundreds of production sweeps and bias <E> by
+        up to +0.25/site. Swendsen-Wang decorrelates in O(1) cluster
+        updates and needs no ladder. Comparison uses blocking standard
+        errors (autocorrelation-aware), plus an absolute floor so the
+        test cannot pass vacuously if one run's error estimate explodes.
+        """
         lattice = LatticeConfig(size=16, j1=1.0, j2=0.0, h=0.0)
+        metro_results = Simulation(
+            SimulationConfig(
+                lattice=lattice,
+                algorithm=Algorithm.METROPOLIS,
+                temperatures=(3.0, 2.5, 2.0),
+                n_sweeps=3000,
+                n_thermalization=500,
+                measurement_interval=10,
+                seed=seed,
+            )
+        ).run(show_progress=False)
+        sw_results = Simulation(
+            SimulationConfig(
+                lattice=lattice,
+                algorithm=Algorithm.SWENDSEN_WANG,
+                temperatures=(2.0,),
+                n_sweeps=2000,
+                n_thermalization=200,
+                measurement_interval=5,
+                seed=seed + 1,  # independent xoshiro stream
+            )
+        ).run(show_progress=False)
 
-        # Run Metropolis
-        metro_config = SimulationConfig(
-            lattice=lattice,
-            algorithm=Algorithm.METROPOLIS,
-            temperatures=(2.0,),
-            n_sweeps=5000,
-            n_thermalization=500,
-            measurement_interval=10,
-            seed=42,
+        assert_samples_agree(
+            metro_results.energy[2.0],
+            sw_results.energy[2.0],
+            label_a=f"Metropolis <E> (seed={seed})",
+            label_b=f"SW <E> (seed={seed + 1})",
         )
-        metro_results = Simulation(metro_config).run(show_progress=False)
-
-        # Run Swendsen-Wang
-        sw_config = SimulationConfig(
-            lattice=lattice,
-            algorithm=Algorithm.SWENDSEN_WANG,
-            temperatures=(2.0,),
-            n_sweeps=2000,
-            n_thermalization=200,
-            measurement_interval=5,
-            seed=123,
-        )
-        sw_results = Simulation(sw_config).run(show_progress=False)
-
-        # Compare mean energies
-        metro_e = np.mean(metro_results.energy[2.0])
-        sw_e = np.mean(sw_results.energy[2.0])
-        metro_se = np.std(metro_results.energy[2.0]) / np.sqrt(
-            len(metro_results.energy[2.0])
-        )
-        sw_se = np.std(sw_results.energy[2.0]) / np.sqrt(len(sw_results.energy[2.0]))
-        combined_se = np.sqrt(metro_se**2 + sw_se**2)
-
-        assert abs(metro_e - sw_e) < 5 * combined_se, (
-            f"Energy disagreement: Metropolis={metro_e:.4f}, SW={sw_e:.4f}, "
-            f"5σ={5 * combined_se:.4f}"
-        )
+        # Power floor: ~3% of |E|/site at T=2 and ~10x the expected
+        # combined error — catches vacuous sigma-passes.
+        metro_e = float(np.mean(metro_results.energy[2.0]))
+        sw_e = float(np.mean(sw_results.energy[2.0]))
+        assert abs(metro_e - sw_e) < 0.04
 
     def test_sw_adaptive(self) -> None:
         config = SimulationConfig(

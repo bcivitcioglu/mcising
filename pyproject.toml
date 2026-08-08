@@ -69,7 +69,11 @@ features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "slow: takes seconds-to-minutes; excluded by the canonical gate (-m 'not slow')",
+    "statistical: asserts on Monte Carlo estimates; runs over every seed in tests._stats.DEFAULT_SEEDS",
+]
 
 [tool.ruff]
 target-version = "py310"

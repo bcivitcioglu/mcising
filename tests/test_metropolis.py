@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 from mcising._core import IsingSimulation
 
+from tests._stats import DEFAULT_SEEDS, assert_mean_above, assert_over_seeds
+
 
 class TestMetropolisSweep:
     def test_sweep_returns_accepted_attempted(self) -> None:
@@ -19,20 +21,43 @@ class TestMetropolisSweep:
         accepted, attempted = sim.sweep(5, 1.0)
         assert attempted == 80  # 5 sweeps * 16 sites
 
+    @pytest.mark.statistical
     def test_high_temp_high_acceptance(self) -> None:
-        """At very high T (small beta), almost all moves accepted."""
-        sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42)
-        accepted, attempted = sim.sweep(100, 0.001)  # beta ~ 0
-        assert accepted / attempted > 0.95
+        """At beta=0.001 the analytic acceptance floor is exp(-8*beta) = 0.992.
 
-    def test_low_temp_energy_decreases(self) -> None:
-        """At very low T, energy should decrease or stay at ground state."""
-        sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42)
-        # Run many sweeps at low T (high beta)
-        sim.sweep(500, 10.0)
+        The worst case on a J1-only square lattice is flipping a fully
+        aligned spin, dE = 8*J1, accepted with exp(-beta*dE); every other
+        move is at least as likely. The 0.95 threshold sits well below
+        that floor.
+        """
+
+        def check(seed: int) -> None:
+            sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, seed)
+            rates = np.empty(100)
+            for i in range(100):
+                accepted, attempted = sim.sweep(1, 0.001)
+                rates[i] = accepted / attempted
+            assert_mean_above(rates, 0.95, label=f"acceptance (seed={seed})")
+
+        assert_over_seeds(check)
+
+    @pytest.mark.statistical
+    @pytest.mark.parametrize("seed", DEFAULT_SEEDS)
+    def test_low_temp_energy_approaches_ground_state(self, seed: int) -> None:
+        """Annealed to T->0 the system orders: E/site -> -2.
+
+        A direct quench to beta=10 freezes a sizeable fraction of runs
+        into a two-domain-wall stripe at exactly E/site = -1.5 (16 broken
+        bonds on an 8x8 torus) — physics, not a bug. Anneal instead, and
+        put the threshold at -1.75, between the stripe plateau (-1.5) and
+        the ground state (-2.0); at beta=10 no other energies are
+        thermally accessible.
+        """
+        sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, seed)
+        for beta in (0.2, 0.3, 0.4, 0.44, 0.5, 0.6, 0.8, 1.0, 2.0, 10.0):
+            sim.sweep(200, beta)
         energy = sim.energy()
-        # Ground state energy is -2.0 per site
-        assert energy < -1.5
+        assert energy < -1.75, f"E/site={energy:.4f} after anneal (seed={seed})"
 
     def test_ground_state_stability(self) -> None:
         """Starting from ground state at T=0 (large beta), system stays."""
