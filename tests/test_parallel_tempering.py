@@ -96,12 +96,8 @@ class TestPTDeterminism:
             measurement_interval=10,
             mode=ExecutionMode.PARALLEL_TEMPERING,
         )
-        r1 = Simulation(SimulationConfig(**base, seed=1)).run(
-            show_progress=False
-        )
-        r2 = Simulation(SimulationConfig(**base, seed=999)).run(
-            show_progress=False
-        )
+        r1 = Simulation(SimulationConfig(**base, seed=1)).run(show_progress=False)
+        r2 = Simulation(SimulationConfig(**base, seed=999)).run(show_progress=False)
         assert not np.array_equal(r1.energy[2.0], r2.energy[2.0])
 
 
@@ -147,9 +143,7 @@ class TestPTLattices:
 
     def test_triangular(self) -> None:
         config = SimulationConfig(
-            lattice=LatticeConfig(
-                lattice_type=LatticeType.TRIANGULAR, size=8
-            ),
+            lattice=LatticeConfig(lattice_type=LatticeType.TRIANGULAR, size=8),
             temperatures=(4.0, 3.641, 3.0),
             n_sweeps=50,
             measurement_interval=10,
@@ -160,9 +154,7 @@ class TestPTLattices:
 
     def test_cubic(self) -> None:
         config = SimulationConfig(
-            lattice=LatticeConfig(
-                lattice_type=LatticeType.CUBIC, size=4
-            ),
+            lattice=LatticeConfig(lattice_type=LatticeType.CUBIC, size=4),
             temperatures=(5.0, 4.5),
             n_sweeps=50,
             measurement_interval=10,
@@ -173,9 +165,7 @@ class TestPTLattices:
 
     def test_honeycomb(self) -> None:
         config = SimulationConfig(
-            lattice=LatticeConfig(
-                lattice_type=LatticeType.HONEYCOMB, size=6
-            ),
+            lattice=LatticeConfig(lattice_type=LatticeType.HONEYCOMB, size=6),
             temperatures=(2.0, 1.519),
             n_sweeps=50,
             measurement_interval=10,

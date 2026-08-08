@@ -266,7 +266,11 @@ def benchmark(
     )
 
     def _run(
-        label: str, lt: str, alg: str, sz: int, temp: float,
+        label: str,
+        lt: str,
+        alg: str,
+        sz: int,
+        temp: float,
     ) -> BenchmarkResult:
         return bench_mcising(sz, n_sweeps, seed, alg, lt, temp)
 
@@ -281,8 +285,12 @@ def benchmark(
 
     metro_cases = [
         (f"Square {lattice_size}x{lattice_size}", "square", lattice_size, 2.269),
-        (f"Triangular {lattice_size}x{lattice_size}",
-         "triangular", lattice_size, 3.641),
+        (
+            f"Triangular {lattice_size}x{lattice_size}",
+            "triangular",
+            lattice_size,
+            3.641,
+        ),
         (f"Honeycomb {lattice_size}x{lattice_size}", "honeycomb", lattice_size, 1.519),
         (f"Chain ({chain_size})", "chain", chain_size, 1.0),
         (f"Cubic {cubic_size}^3", "cubic", cubic_size, 4.5115),
@@ -302,8 +310,7 @@ def benchmark(
 
     # ── Table 2: Cluster algorithms ───────────────────────────────
     console.print(
-        f"\n[bold]Cluster Algorithms"
-        f" (Square {lattice_size}x{lattice_size})[/bold]"
+        f"\n[bold]Cluster Algorithms (Square {lattice_size}x{lattice_size})[/bold]"
     )
     cluster_table = Table(border_style="green")
     cluster_table.add_column("Algorithm", style="bold")
@@ -324,8 +331,7 @@ def benchmark(
 
     # ── Table 3: Coupling strategies ──────────────────────────────
     console.print(
-        f"\n[bold]Coupling Strategies"
-        f" (Square {lattice_size}x{lattice_size})[/bold]"
+        f"\n[bold]Coupling Strategies (Square {lattice_size}x{lattice_size})[/bold]"
     )
     coupling_table = Table(border_style="green")
     coupling_table.add_column("Strategy", style="bold")
@@ -348,7 +354,14 @@ def benchmark(
     with console.status("[bold blue]Coupling benchmarks..."):
         for label, j1, j2, j3, h in coupling_cases:
             sim = IsingSimulation(
-                lattice_size, j1, j2, j3, h, seed, "metropolis", "square",
+                lattice_size,
+                j1,
+                j2,
+                j3,
+                h,
+                seed,
+                "metropolis",
+                "square",
             )
             sim.sweep(100, beta)
             start = _time.perf_counter()
@@ -453,9 +466,7 @@ def _run_scaling_benchmark(seed: int, compare: bool) -> None:
                 rust_ups = row_results["mcising (Rust)"].updates_per_sec
                 python_ups = row_results.get("Pure Python")
                 if python_ups and python_ups.updates_per_sec > 0:
-                    row.append(
-                        f"{rust_ups / python_ups.updates_per_sec:,.0f}x"
-                    )
+                    row.append(f"{rust_ups / python_ups.updates_per_sec:,.0f}x")
                 else:
                     row.append("-")
                 if has_peapods:
@@ -476,8 +487,6 @@ def _run_scaling_benchmark(seed: int, compare: bool) -> None:
         )
 
 
-
-
 def _parse_t_range(value: str) -> tuple[float, ...]:
     """Parse a 'start:stop:step' string into a temperature tuple."""
     import numpy as np
@@ -490,9 +499,7 @@ def _parse_t_range(value: str) -> tuple[float, ...]:
     try:
         start, stop, step = float(parts[0]), float(parts[1]), float(parts[2])
     except ValueError:
-        raise typer.BadParameter(
-            f"--T-range values must be numbers, got '{value}'"
-        )
+        raise typer.BadParameter(f"--T-range values must be numbers, got '{value}'")
     if step <= 0:
         raise typer.BadParameter(f"step must be positive, got {step}")
     if start <= 0 or stop <= 0:
@@ -504,9 +511,7 @@ def _parse_t_range(value: str) -> tuple[float, ...]:
         temps = np.arange(start, stop + 1e-10, step)
 
     if len(temps) == 0:
-        raise typer.BadParameter(
-            f"--T-range produced no temperatures: '{value}'"
-        )
+        raise typer.BadParameter(f"--T-range produced no temperatures: '{value}'")
 
     return tuple(float(t) for t in temps)
 
@@ -657,9 +662,7 @@ def _save_plot(fig: object, output: Path, dpi: int) -> None:
 
 @plot_app.command("energy")
 def plot_energy_cmd(
-    file: Annotated[
-        list[Path], typer.Argument(help="HDF5 file(s).")
-    ],
+    file: Annotated[list[Path], typer.Argument(help="HDF5 file(s).")],
     output: Annotated[Path, typer.Option("-o", help="Output image.")],
     dpi: Annotated[int, typer.Option(help="DPI.")] = 150,
 ) -> None:
@@ -673,9 +676,7 @@ def plot_energy_cmd(
 
 @plot_app.command("magnetization")
 def plot_magnetization_cmd(
-    file: Annotated[
-        list[Path], typer.Argument(help="HDF5 file(s).")
-    ],
+    file: Annotated[list[Path], typer.Argument(help="HDF5 file(s).")],
     output: Annotated[Path, typer.Option("-o", help="Output image.")],
     dpi: Annotated[int, typer.Option(help="DPI.")] = 150,
 ) -> None:
@@ -689,9 +690,7 @@ def plot_magnetization_cmd(
 
 @plot_app.command("specific-heat")
 def plot_specific_heat_cmd(
-    file: Annotated[
-        list[Path], typer.Argument(help="HDF5 file(s).")
-    ],
+    file: Annotated[list[Path], typer.Argument(help="HDF5 file(s).")],
     output: Annotated[Path, typer.Option("-o", help="Output image.")],
     dpi: Annotated[int, typer.Option(help="DPI.")] = 150,
 ) -> None:
@@ -705,9 +704,7 @@ def plot_specific_heat_cmd(
 
 @plot_app.command("susceptibility")
 def plot_susceptibility_cmd(
-    file: Annotated[
-        list[Path], typer.Argument(help="HDF5 file(s).")
-    ],
+    file: Annotated[list[Path], typer.Argument(help="HDF5 file(s).")],
     output: Annotated[Path, typer.Option("-o", help="Output image.")],
     dpi: Annotated[int, typer.Option(help="DPI.")] = 150,
 ) -> None:
@@ -754,9 +751,7 @@ def plot_timeseries_cmd(
     """Plot energy time series at a temperature."""
     from mcising.plotting import plot_energy_timeseries
 
-    _save_plot(
-        plot_energy_timeseries(str(file), temperature), output, dpi
-    )
+    _save_plot(plot_energy_timeseries(str(file), temperature), output, dpi)
 
 
 @plot_app.command("histogram")

@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-08-08
+
 ### Added
 
+- Community and citation files: `CODE_OF_CONDUCT.md` (Contributor Covenant
+  2.1), `CITATION.cff`, and a pull-request template with a gates checklist.
+- Public issue backlog: all 12 known defects from the pre-1.0 audit are filed
+  as GitHub issues (#12–#23) with file:line evidence, ahead of their fixes.
+- `pre-commit` added to the dev dependency group; CONTRIBUTING now documents
+  support pathways (questions, bug reports, feature proposals) and targets
+  `master` instead of the retired `dev` branch.
+- Retroactive changelog entries for 0.2.0 through 0.21.0, reconstructed from
+  commit messages.
 - CI builds the Rust extension in release mode, measures Python test coverage
   with a ratchet (`--cov-fail-under=39`), and builds the documentation with
   `mkdocs build --strict`.
@@ -42,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Development-status classifier promoted from Alpha to Beta; license metadata
+  expressed as an SPDX string (PEP 639); build requires maturin ≥ 1.8.
 - Test suite hardened for seed robustness: statistical assertions now use
   autocorrelation-aware blocking standard errors (`tests/_stats.py`) and run
   over five fixed seeds instead of one, with thresholds anchored to analytic
@@ -54,3 +67,143 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the wall-clock performance assertion in the independent-mode test was
   replaced with correctness and cross-mode consistency checks and marked
   `slow`.
+
+<!-- Versions below this line predate tagging and publication. They were
+     reconstructed retroactively from the commit messages; dates are commit
+     dates. Version numbers 0.4–0.7 and 0.16 were never used. -->
+
+## [0.21.0] - 2026-04-11
+
+### Changed
+
+- Improved CLI export progress information.
+
+## [0.20.0] - 2026-04-11
+
+### Changed
+
+- Improved the CLI.
+
+## [0.19.0] - 2026-04-10
+
+### Changed
+
+- Improved plotting functionality and post-processing.
+
+## [0.18.0] - 2026-04-09
+
+### Added
+
+- Documentation site built with MkDocs.
+
+## [0.17.0] - 2026-04-08
+
+### Added
+
+- Parallel tempering and independent-run execution modes.
+
+## [0.15.0] - 2026-04-07
+
+### Changed
+
+- Proper benchmarking; comparative benchmarking separated into the README and
+  a dedicated script.
+
+## [0.14.0] - 2026-04-07
+
+### Added
+
+- Full comparative benchmarking.
+
+## [0.13.0] - 2026-04-07
+
+### Added
+
+- Full cross-lattice test coverage.
+
+## [0.12.0] - 2026-04-07
+
+### Added
+
+- Triangular, cubic, and honeycomb lattices, and the 1D chain.
+
+## [0.11.2] - 2026-04-07
+
+- Maintenance release; the commit message records no details.
+
+## [0.11.0] - 2026-04-03
+
+### Added
+
+- Third-neighbor coupling (J3) support.
+
+## [0.10.0] - 2026-04-03
+
+### Changed
+
+- Speed optimization.
+
+## [0.9.0] - 2026-04-02
+
+### Changed
+
+- Energy benchmarking aligned with the other libraries.
+
+## [0.8.0] - 2026-04-02
+
+### Added
+
+- Sequential Metropolis sweep; `--T-range` option in the CLI.
+
+### Changed
+
+- Optimized for speed.
+
+## [0.3.0] - 2026-04-02
+
+### Added
+
+- Benchmarking.
+
+## [0.2.6] - 2026-04-01
+
+### Added
+
+- Adaptive thermalization.
+
+## [0.2.5] - 2026-03-31
+
+### Fixed
+
+- CI/CD corrections.
+
+## [0.2.4] - 2026-03-31
+
+### Added
+
+- CI/CD.
+
+## [0.2.3] - 2026-03-31
+
+### Added
+
+- Restore-and-continue logic.
+
+## [0.2.2] - 2026-03-31
+
+### Added
+
+- CLI rich output and visualizations.
+
+## [0.2.1] - 2026-03-31
+
+### Changed
+
+- mypy, ruff, and black all passing.
+
+## [0.2.0] - 2026-03-31
+
+### Changed
+
+- Rust core implemented for the new mcising — a complete rewrite of the
+  original pure-Python package (June 2024, preserved in the git history).

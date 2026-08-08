@@ -2,6 +2,19 @@
 
 Thanks for your interest in contributing to mcising!
 
+## Getting Help
+
+- **Questions and usage help:** open a
+  [GitHub issue](https://github.com/bcivitcioglu/mcising/issues) — questions
+  are welcome there; there is no separate forum.
+- **Bug reports:** use the bug-report issue template and include the mcising
+  version, your platform, and a minimal script that reproduces the problem.
+- **Feature proposals:** open an issue describing the use case first, so the
+  design can be discussed before any code is written.
+- **Private matters:** email bcivitcioglu@gmail.com.
+
+All interactions are covered by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Development Setup
 
 1. Clone the repository:
@@ -41,17 +54,19 @@ cargo clippy -- -D warnings
 
 ## Pre-commit Hooks
 
-Install pre-commit hooks to run checks automatically on each commit:
+`pre-commit` is part of the dev dependency group (installed by `uv sync`).
+Install the hooks to run checks automatically on each commit:
 ```bash
 uv run pre-commit install
 ```
 
 ## Pull Requests
 
-1. Create a feature branch from `dev`.
-2. Make your changes with tests.
-3. Ensure all checks pass (pytest, ruff, mypy, cargo test).
-4. Open a PR against `dev`.
+1. Create a feature branch from `master`.
+2. Make your changes with tests, and note user-visible changes in
+   `CHANGELOG.md` under `[Unreleased]`.
+3. Ensure all checks pass (pytest, ruff, mypy, cargo test, clippy).
+4. Open a PR against `master` and fill in the pull-request template.
 
 ## Running Tests
 

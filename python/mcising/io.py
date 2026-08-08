@@ -57,9 +57,7 @@ def save_hdf5(results: SimulationResults, path: str | Path) -> None:
             _write_temperature_group(f, temp, results)
 
 
-def init_checkpoint_file(
-    path: str | Path, results: SimulationResults
-) -> None:
+def init_checkpoint_file(path: str | Path, results: SimulationResults) -> None:
     """Create an HDF5 checkpoint file with only the metadata group.
 
     Parameters
@@ -227,9 +225,9 @@ def checkpoint_run(
             ):
                 if results.correlation_length is None:
                     results.correlation_length = {}
-                results.correlation_length[temp] = (
-                    resumed_results.correlation_length[temp]
-                )
+                results.correlation_length[temp] = resumed_results.correlation_length[
+                    temp
+                ]
         # Re-sort temperatures descending
         results.temperatures.sort(reverse=True)
 
@@ -241,9 +239,7 @@ def checkpoint_run(
         if resumed_results is not None and "elapsed_seconds" in (
             resumed_results.metadata
         ):
-            elapsed += float(
-                cast(float, resumed_results.metadata["elapsed_seconds"])
-            )
+            elapsed += float(cast(float, resumed_results.metadata["elapsed_seconds"]))
             results.metadata["elapsed_seconds"] = elapsed
         with h5py.File(path, "a") as f:
             if "metadata" in f:
@@ -391,9 +387,7 @@ def _save_simulation_state(path: str | Path, sim: Simulation) -> None:
         state = f.create_group("sim_state")
         state.create_dataset("spins", data=sim.spins)
         rng_bytes = bytes(sim._core.get_rng_state())
-        state.create_dataset(
-            "rng_state", data=np.frombuffer(rng_bytes, dtype=np.uint8)
-        )
+        state.create_dataset("rng_state", data=np.frombuffer(rng_bytes, dtype=np.uint8))
 
 
 def _restore_simulation_state(path: str | Path, sim: Simulation) -> None:
@@ -420,9 +414,7 @@ def _write_metadata(f: Any, results: SimulationResults) -> None:
         meta.attrs["elapsed_seconds"] = results.metadata["elapsed_seconds"]
 
 
-def _write_temperature_group(
-    f: Any, temp: float, results: SimulationResults
-) -> None:
+def _write_temperature_group(f: Any, temp: float, results: SimulationResults) -> None:
     """Write a single temperature group to an HDF5 file handle."""
     group_name = f"T={temp:.6f}"
     grp = f.create_group(group_name)
@@ -448,13 +440,8 @@ def _write_temperature_group(
         grp.create_dataset("correlation_distances", data=distances)
         grp.create_dataset("correlation_function", data=correlations)
 
-    if (
-        results.correlation_length is not None
-        and temp in results.correlation_length
-    ):
-        grp.create_dataset(
-            "correlation_length", data=results.correlation_length[temp]
-        )
+    if results.correlation_length is not None and temp in results.correlation_length:
+        grp.create_dataset("correlation_length", data=results.correlation_length[temp])
 
     if (
         results.adaptive_diagnostics is not None
