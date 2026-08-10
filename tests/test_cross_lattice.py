@@ -45,9 +45,9 @@ def _expected_allup_energy(
     return -(j1 * z_nn + j2 * z_nnn + j3 * z_tnn) / 2.0 - h
 
 
-def _make_energy_params() -> (
-    list[tuple[str, str, int, float, float, float, float, float]]
-):
+def _make_energy_params() -> list[
+    tuple[str, str, int, float, float, float, float, float]
+]:
     """Generate (id, lattice_type, size, j1, j2, j3, h, expected_E) tuples."""
     params = []
     for lt, sz, z_nn, z_nnn, z_tnn in LATTICES:
@@ -58,9 +58,7 @@ def _make_energy_params() -> (
     return params
 
 
-def _make_dynamics_params() -> (
-    list[tuple[str, str, int, float, float, float, float]]
-):
+def _make_dynamics_params() -> list[tuple[str, str, int, float, float, float, float]]:
     """Generate (id, lattice_type, size, j1, j2, j3, h) for energy-decrease tests."""
     single_couplings = [
         ("J1", 1.0, 0.0, 0.0, 0.0),
@@ -100,9 +98,7 @@ class TestAllUpEnergy:
         h: float,
         expected_e: float,
     ) -> None:
-        sim = IsingSimulation(
-            size, j1, j2, j3, h, 42, "metropolis", lattice_type
-        )
+        sim = IsingSimulation(size, j1, j2, j3, h, 42, "metropolis", lattice_type)
         shape = sim.get_spins().shape
         sim.set_spins(np.ones(shape, dtype=np.int8))
         actual = sim.energy()
@@ -134,15 +130,12 @@ class TestEnergyDecrease:
         j3: float,
         h: float,
     ) -> None:
-        sim = IsingSimulation(
-            size, j1, j2, j3, h, 42, "metropolis", lattice_type
-        )
+        sim = IsingSimulation(size, j1, j2, j3, h, 42, "metropolis", lattice_type)
         e_before = sim.energy()
         sim.sweep(200, 100.0)
         e_after = sim.energy()
         assert e_after <= e_before + 1e-10, (
-            f"{test_id}: energy increased at low T: "
-            f"{e_before:.6f} → {e_after:.6f}"
+            f"{test_id}: energy increased at low T: {e_before:.6f} → {e_after:.6f}"
         )
 
 
@@ -159,9 +152,7 @@ class TestCrossLatticeDeterminism:
         [(lt, sz) for lt, sz, *_ in LATTICES],
         ids=[lt for lt, *_ in LATTICES],
     )
-    def test_deterministic_j1j2j3h(
-        self, lattice_type: str, size: int
-    ) -> None:
+    def test_deterministic_j1j2j3h(self, lattice_type: str, size: int) -> None:
         sim1 = IsingSimulation(
             size, 1.0, 0.5, 0.3, 0.5, 123, "metropolis", lattice_type
         )
