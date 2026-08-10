@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Antiferromagnetic (J<0) single-coupling Metropolis now samples the
+  Boltzmann distribution. The J1-, J2-, and J3-only sweep strategies branched
+  on the neighbor-sum sign instead of the energy sign, so every proposed flip
+  was accepted and any single-coupling J<0 simulation silently sampled T=∞
+  configurations at every requested temperature. Acceptance tables are now
+  keyed on |β·J| with the coupling sign folded into the energy branch;
+  ferromagnetic (J>0) runs are bit-for-bit unchanged. A new antiferromagnetic
+  regression suite covers Néel ground-state energies, low-temperature
+  acceptance, and single- vs multi-coupling path agreement.
 - The release workflow now builds wheels for every supported CPython
   (3.10–3.13) on all platforms. Previously the Linux jobs failed outright
   (no interpreter visible inside the manylinux container) and macOS/Windows
