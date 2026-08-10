@@ -22,10 +22,10 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          # The manylinux container cannot see a host interpreter; let
-          # maturin discover the container's /opt/python interpreters
-          # (filtered by requires-python >= 3.10).
-          args: --release --out dist --find-interpreter
+          # The manylinux container cannot see a host interpreter, so the
+          # supported CPythons are named explicitly. Not --find-interpreter:
+          # the image also ships CPython 3.14, which pyo3 0.23 cannot build.
+          args: --release --out dist -i python3.10 -i python3.11 -i python3.12 -i python3.13
           manylinux: auto
       - uses: actions/upload-artifact@v4
         with:
