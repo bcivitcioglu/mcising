@@ -146,17 +146,20 @@ impl Metropolis {
     //   sum_idx = (sum + z) / 2  → range [0, z]
     //
     // Sign-branch tables store only positive-dE entries:
-    //   half_de = spin * sum (positive in the else branch)
+    //   half_de = sign(coupling) * spin * sum (positive in the else branch),
+    //   so dE = 2 * |coupling| * half_de and entries are exp(-2|β·coupling|·half_de)
     //   table_idx = (half_de - 1) / 2  → range [0, ceil(z/2)-1]
     //   Works for both even and odd z.
 
     /// Single-coupling sign-branch table: entries for positive dE only.
+    /// Keyed on |β·coupling|; the coupling sign is folded into the sweep's
+    /// half_de (see `sweep_j1`), so both signs share the same table.
     // Exact memo-key equality is required: the NaN sentinel must force the
     // first fill, and an epsilon compare would break that.
     #[allow(clippy::float_cmp)]
     #[inline]
     fn ensure_table_sign(&mut self, beta: f64, coupling: f64, z: usize) {
-        let key = beta * coupling;
+        let key = (beta * coupling).abs();
         if key != self.cached_key_sign {
             let n_entries = z.div_ceil(2);
             for i in 0..n_entries {
@@ -167,7 +170,7 @@ impl Metropolis {
                     2 * i + 1
                 };
                 let de = 2.0 * half_de as f64;
-                self.table_sign[i] = (-beta * coupling * de).exp();
+                self.table_sign[i] = (-key * de).exp();
             }
             self.cached_key_sign = key;
         }
@@ -312,6 +315,10 @@ impl Metropolis {
         let z = self.z_nn;
         self.ensure_table_sign(beta, j1, z);
         let table = &self.table_sign;
+        // dE = 2·J·spin·sum: fold sign(J) into half_de so the branch below
+        // tests the energy sign (not the neighbor-sum sign) and half_de is
+        // positive in the else branch for table indexing.
+        let coupling_sign: i32 = if j1 < 0.0 { -1 } else { 1 };
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
@@ -321,7 +328,7 @@ impl Metropolis {
                 .iter()
                 .map(|&i| i32::from(spins[i]))
                 .sum();
-            let half_de = spin * sum;
+            let half_de = coupling_sign * spin * sum;
             if half_de <= 0 {
                 spins[idx] = -spins[idx];
                 accepted += 1;
@@ -352,6 +359,8 @@ impl Metropolis {
         let z = self.z_nnn;
         self.ensure_table_sign(beta, j2, z);
         let table = &self.table_sign;
+        // Same energy-sign folding as sweep_j1.
+        let coupling_sign: i32 = if j2 < 0.0 { -1 } else { 1 };
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
@@ -361,7 +370,7 @@ impl Metropolis {
                 .iter()
                 .map(|&i| i32::from(spins[i]))
                 .sum();
-            let half_de = spin * sum;
+            let half_de = coupling_sign * spin * sum;
             if half_de <= 0 {
                 spins[idx] = -spins[idx];
                 accepted += 1;
@@ -392,6 +401,8 @@ impl Metropolis {
         let z = self.z_tnn;
         self.ensure_table_sign(beta, j3, z);
         let table = &self.table_sign;
+        // Same energy-sign folding as sweep_j1.
+        let coupling_sign: i32 = if j3 < 0.0 { -1 } else { 1 };
         let n = lattice.num_sites();
         let mut accepted = 0;
         for idx in 0..n {
@@ -401,7 +412,7 @@ impl Metropolis {
                 .iter()
                 .map(|&i| i32::from(spins[i]))
                 .sum();
-            let half_de = spin * sum;
+            let half_de = coupling_sign * spin * sum;
             if half_de <= 0 {
                 spins[idx] = -spins[idx];
                 accepted += 1;
@@ -1256,5 +1267,170 @@ mod tests {
         use crate::lattice::cubic::CubicLattice;
         let lat = CubicLattice::new(6).unwrap();
         assert_energy_decreases_on_lattice(&lat, 1.0, 0.5, 0.0, 0.0, 6, 12, 8);
+    }
+
+    // ── Antiferromagnetic (J<0) energy-sign tests ─────────────────────
+    //
+    // Regression tests for the energy-sign defect: the single-coupling
+    // sweeps branched on the neighbor-sum sign instead of the energy sign,
+    // so every J<0 flip was accepted (T=∞ sampling regardless of β).
+
+    #[test]
+    fn test_energy_decreases_j1_afm() {
+        assert_energy_decreases_at_zero_t(-1.0, 0.0, 0.0, 0.0);
+    }
+    #[test]
+    fn test_energy_decreases_j2_afm() {
+        assert_energy_decreases_at_zero_t(0.0, -1.0, 0.0, 0.0);
+    }
+    #[test]
+    fn test_energy_decreases_j3_afm() {
+        assert_energy_decreases_at_zero_t(0.0, 0.0, -1.0, 0.0);
+    }
+
+    #[test]
+    fn test_neel_ground_state_stable_at_low_t() {
+        // Checkerboard is the J1<0 square-lattice ground state; every flip
+        // costs dE=8|J1|, so at β=10 (p=e^-80) the state must not move.
+        let lattice = SquareLattice::new(8).unwrap();
+        let mut spins: Vec<i8> = (0..lattice.num_sites())
+            .map(|i| if (i / 8 + i % 8) % 2 == 0 { 1 } else { -1 })
+            .collect();
+        let expected = spins.clone();
+        let mut rng = create_rng(42);
+        let mut metro = make_metro(-1.0, 0.0, 0.0, 0.0);
+        for _ in 0..10 {
+            metro.sweep(&mut spins, &lattice, -1.0, 0.0, 0.0, 0.0, 10.0, &mut rng);
+        }
+        assert_eq!(spins, expected, "Néel state should be frozen at low T");
+    }
+
+    #[test]
+    fn test_afm_low_t_acceptance_is_small() {
+        // Pre-fix J1<0 accepted every flip (rate exactly 1.0); the
+        // equilibrated Néel phase at β=2 accepts almost nothing.
+        let lattice = SquareLattice::new(8).unwrap();
+        let mut rng = create_rng(42);
+        let mut spins = random_spins(&lattice, &mut rng);
+        let mut metro = make_metro(-1.0, 0.0, 0.0, 0.0);
+        for _ in 0..200 {
+            metro.sweep(&mut spins, &lattice, -1.0, 0.0, 0.0, 0.0, 2.0, &mut rng);
+        }
+        let (mut accepted, mut attempted) = (0, 0);
+        for _ in 0..100 {
+            let r = metro.sweep(&mut spins, &lattice, -1.0, 0.0, 0.0, 0.0, 2.0, &mut rng);
+            accepted += r.accepted;
+            attempted += r.attempted;
+        }
+        let rate = accepted as f64 / attempted as f64;
+        assert!(
+            rate < 0.35,
+            "AFM acceptance at β=2 should be far below 1, got {rate}"
+        );
+    }
+
+    // ── Single- vs multi-coupling path agreement ──────────────────────
+    //
+    // The sign-branch sweeps (sweep_j1/j2/j3) and the branchless
+    // spin-symmetry tables (sweep_j1j2/j1j3) implement the same physics;
+    // their acceptance statistics must agree for both coupling signs.
+    // Each path runs independent seeds, so the per-seed mean acceptances
+    // are iid samples and a two-sample 4σ comparison applies.
+
+    use rand_xoshiro::Xoshiro256StarStar;
+
+    fn mean_and_se(values: &[f64]) -> (f64, f64) {
+        let n = values.len() as f64;
+        let mean = values.iter().sum::<f64>() / n;
+        let var = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        (mean, (var / n).sqrt())
+    }
+
+    /// Per-seed mean acceptance rate: random init, 100 warmup sweeps, then
+    /// 100 measured sweeps, on an 8×8 square lattice.
+    fn acceptance_over_seeds(
+        seed_base: u64,
+        n_seeds: u64,
+        beta: f64,
+        mut sweep_fn: impl FnMut(
+            &mut Metropolis,
+            &mut [i8],
+            &SquareLattice,
+            f64,
+            &mut Xoshiro256StarStar,
+        ) -> SweepResult,
+    ) -> Vec<f64> {
+        let lattice = SquareLattice::new(8).unwrap();
+        (0..n_seeds)
+            .map(|s| {
+                let mut rng = create_rng(seed_base + s);
+                let mut spins = random_spins(&lattice, &mut rng);
+                // Strategy is bypassed (private sweeps called directly);
+                // the constructor only sizes the tables.
+                let mut metro = make_metro(1.0, 1.0, 1.0, 0.0);
+                for _ in 0..100 {
+                    sweep_fn(&mut metro, &mut spins, &lattice, beta, &mut rng);
+                }
+                let (mut acc, mut att) = (0, 0);
+                for _ in 0..100 {
+                    let r = sweep_fn(&mut metro, &mut spins, &lattice, beta, &mut rng);
+                    acc += r.accepted;
+                    att += r.attempted;
+                }
+                acc as f64 / att as f64
+            })
+            .collect()
+    }
+
+    fn assert_acceptance_paths_agree(a: &[f64], b: &[f64], label: &str) {
+        let (ma, sea) = mean_and_se(a);
+        let (mb, seb) = mean_and_se(b);
+        let sigma = sea.hypot(seb);
+        let dev = (ma - mb).abs();
+        assert!(
+            dev <= 4.0 * sigma,
+            "{label}: single vs multi acceptance differ: {ma:.4} vs {mb:.4} \
+             (dev {dev:.4} > 4σ = {:.4})",
+            4.0 * sigma
+        );
+    }
+
+    fn assert_j1_paths_agree(j1: f64, beta: f64) {
+        let single =
+            acceptance_over_seeds(1000, 20, beta, |m, s, l, b, r| m.sweep_j1(s, l, j1, b, r));
+        let multi = acceptance_over_seeds(2000, 20, beta, |m, s, l, b, r| {
+            m.sweep_j1j2(s, l, j1, 0.0, b, r)
+        });
+        assert_acceptance_paths_agree(&single, &multi, &format!("J1={j1}, β={beta}"));
+    }
+
+    #[test]
+    fn test_sweep_j1_matches_j1j2_ferromagnetic() {
+        assert_j1_paths_agree(1.0, 0.5);
+    }
+
+    #[test]
+    fn test_sweep_j1_matches_j1j2_antiferromagnetic() {
+        assert_j1_paths_agree(-1.0, 0.5);
+    }
+
+    #[test]
+    fn test_sweep_j2_matches_j1j2_antiferromagnetic() {
+        let single =
+            acceptance_over_seeds(3000, 20, 0.5, |m, s, l, b, r| m.sweep_j2(s, l, -1.0, b, r));
+        let multi = acceptance_over_seeds(4000, 20, 0.5, |m, s, l, b, r| {
+            m.sweep_j1j2(s, l, 0.0, -1.0, b, r)
+        });
+        assert_acceptance_paths_agree(&single, &multi, "J2=-1, β=0.5");
+    }
+
+    #[test]
+    fn test_sweep_j3_matches_j1j3_antiferromagnetic() {
+        let single =
+            acceptance_over_seeds(5000, 20, 0.5, |m, s, l, b, r| m.sweep_j3(s, l, -1.0, b, r));
+        let multi = acceptance_over_seeds(6000, 20, 0.5, |m, s, l, b, r| {
+            m.sweep_j1j3(s, l, 0.0, -1.0, b, r)
+        });
+        assert_acceptance_paths_agree(&single, &multi, "J3=-1, β=0.5");
     }
 }

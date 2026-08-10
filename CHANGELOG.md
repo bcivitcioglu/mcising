@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Antiferromagnetic (J<0) single-coupling Metropolis now samples the
+  Boltzmann distribution. The J1-, J2-, and J3-only sweep strategies branched
+  on the neighbor-sum sign instead of the energy sign, so every proposed flip
+  was accepted and any single-coupling J<0 simulation silently sampled T=∞
+  configurations at every requested temperature. Acceptance tables are now
+  keyed on |β·J| with the coupling sign folded into the energy branch;
+  ferromagnetic (J>0) runs are bit-for-bit unchanged. A new antiferromagnetic
+  regression suite covers Néel ground-state energies, low-temperature
+  acceptance, and single- vs multi-coupling path agreement.
 - Rust sources pass `cargo fmt --check` and
   `cargo clippy --all-targets -- -D warnings` (135 lint errors resolved).
   Sites belonging to known open bugs (B1, B2, B5, B8, B11) are preserved
