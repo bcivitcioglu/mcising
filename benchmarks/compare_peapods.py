@@ -13,10 +13,6 @@ from __future__ import annotations
 
 import argparse
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-
 from mcising.benchmarks import (
     BenchmarkResult,
     bench_mcising,
@@ -26,6 +22,9 @@ from mcising.benchmarks import (
     bench_peapods_triangular,
     bench_peapods_wolff,
 )
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 console = Console()
 
@@ -42,14 +41,40 @@ def main() -> None:
     seed = args.seed
     cubic_size = min(lattice_size, 16)
 
-    cases: list[
-        tuple[str, str, str, int, float, object]
-    ] = [
-        ("Metropolis: Square", "square", "metropolis", lattice_size, 2.269, bench_peapods),
-        ("Metropolis: Triangular", "triangular", "metropolis", lattice_size, 3.641, bench_peapods_triangular),
-        ("Metropolis: Cubic", "cubic", "metropolis", cubic_size, 4.5115, bench_peapods_cubic),
+    cases: list[tuple[str, str, str, int, float, object]] = [
+        (
+            "Metropolis: Square",
+            "square",
+            "metropolis",
+            lattice_size,
+            2.269,
+            bench_peapods,
+        ),
+        (
+            "Metropolis: Triangular",
+            "triangular",
+            "metropolis",
+            lattice_size,
+            3.641,
+            bench_peapods_triangular,
+        ),
+        (
+            "Metropolis: Cubic",
+            "cubic",
+            "metropolis",
+            cubic_size,
+            4.5115,
+            bench_peapods_cubic,
+        ),
         ("Wolff: Square", "square", "wolff", lattice_size, 2.269, bench_peapods_wolff),
-        ("Swendsen-Wang: Square", "square", "swendsen_wang", lattice_size, 2.269, bench_peapods_sw),
+        (
+            "Swendsen-Wang: Square",
+            "square",
+            "swendsen_wang",
+            lattice_size,
+            2.269,
+            bench_peapods_sw,
+        ),
     ]
 
     console.print(

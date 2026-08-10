@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+type: software
+title: "mcising: high-performance Ising model Monte Carlo simulation with a Rust core"
+authors:
+  - family-names: "Çivitcioğlu"
+    given-names: "Burak"
+    orcid: "https://orcid.org/0000-0001-8433-657X"
+    email: "bcivitcioglu@gmail.com"
+repository-code: "https://github.com/bcivitcioglu/mcising"
+url: "https://bcivitcioglu.github.io/mcising/"
+license: MIT
+version: 0.22.0
+date-released: "2026-08-08"
+keywords:
+  - "Ising model"
+  - "Monte Carlo"
+  - "statistical mechanics"
+  - "frustrated magnetism"
+  - "physics"
+  - "simulation"
+# A Zenodo DOI is added at v1.0.0 (see the release checklist).

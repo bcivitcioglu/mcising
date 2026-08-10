@@ -85,15 +85,9 @@ class TestIndependentDeterminism:
             measurement_interval=10,
             mode=ExecutionMode.INDEPENDENT,
         )
-        r1 = Simulation(SimulationConfig(**base, seed=1)).run(
-            show_progress=False
-        )
-        r2 = Simulation(SimulationConfig(**base, seed=999)).run(
-            show_progress=False
-        )
-        assert not np.array_equal(
-            r1.energy[2.269], r2.energy[2.269]
-        )
+        r1 = Simulation(SimulationConfig(**base, seed=1)).run(show_progress=False)
+        r2 = Simulation(SimulationConfig(**base, seed=999)).run(show_progress=False)
+        assert not np.array_equal(r1.energy[2.269], r2.energy[2.269])
 
 
 class TestIndependentLattices:
@@ -101,9 +95,7 @@ class TestIndependentLattices:
 
     def test_triangular(self) -> None:
         config = SimulationConfig(
-            lattice=LatticeConfig(
-                lattice_type=LatticeType.TRIANGULAR, size=8
-            ),
+            lattice=LatticeConfig(lattice_type=LatticeType.TRIANGULAR, size=8),
             temperatures=(4.0, 3.641),
             n_sweeps=50,
             measurement_interval=10,
@@ -114,9 +106,7 @@ class TestIndependentLattices:
 
     def test_cubic(self) -> None:
         config = SimulationConfig(
-            lattice=LatticeConfig(
-                lattice_type=LatticeType.CUBIC, size=4
-            ),
+            lattice=LatticeConfig(lattice_type=LatticeType.CUBIC, size=4),
             temperatures=(5.0, 4.5),
             n_sweeps=50,
             measurement_interval=10,
@@ -127,9 +117,7 @@ class TestIndependentLattices:
 
     def test_honeycomb(self) -> None:
         config = SimulationConfig(
-            lattice=LatticeConfig(
-                lattice_type=LatticeType.HONEYCOMB, size=6
-            ),
+            lattice=LatticeConfig(lattice_type=LatticeType.HONEYCOMB, size=6),
             temperatures=(2.0, 1.519),
             n_sweeps=50,
             measurement_interval=10,
@@ -140,9 +128,7 @@ class TestIndependentLattices:
 
     def test_chain(self) -> None:
         config = SimulationConfig(
-            lattice=LatticeConfig(
-                lattice_type=LatticeType.CHAIN, size=50
-            ),
+            lattice=LatticeConfig(lattice_type=LatticeType.CHAIN, size=50),
             temperatures=(2.0, 1.0),
             n_sweeps=50,
             measurement_interval=10,
@@ -197,9 +183,7 @@ class TestIndependentManyTemperatures:
         states that cool-down anneals away — a difference of protocol,
         not of physics.
         """
-        temps = tuple(
-            float(f"{t:.2f}") for t in np.linspace(1.5, 3.5, 20)
-        )
+        temps = tuple(float(f"{t:.2f}") for t in np.linspace(1.5, 3.5, 20))
         base = dict(
             lattice=LatticeConfig(size=16),
             temperatures=temps,

@@ -35,9 +35,7 @@ def sim(small_config: SimulationConfig) -> Simulation:
 class TestCheckpointPrimitives:
     def test_init_checkpoint_file(self, tmp_path: Path) -> None:
         path = tmp_path / "ckpt.h5"
-        results = SimulationResults(
-            metadata={"version": "0.2.0", "config": None}
-        )
+        results = SimulationResults(metadata={"version": "0.2.0", "config": None})
         init_checkpoint_file(path, results)
 
         assert path.exists()
@@ -48,9 +46,7 @@ class TestCheckpointPrimitives:
             temp_groups = [k for k in f.keys() if k.startswith("T=")]
             assert len(temp_groups) == 0
 
-    def test_save_temperature_group(
-        self, sim: Simulation, tmp_path: Path
-    ) -> None:
+    def test_save_temperature_group(self, sim: Simulation, tmp_path: Path) -> None:
         path = tmp_path / "ckpt.h5"
         results = sim.run(show_progress=False)
         init_checkpoint_file(path, results)
@@ -63,9 +59,7 @@ class TestCheckpointPrimitives:
             # Other temps not yet written
             assert "T=2.000000" not in f
 
-    def test_load_completed_temperatures(
-        self, sim: Simulation, tmp_path: Path
-    ) -> None:
+    def test_load_completed_temperatures(self, sim: Simulation, tmp_path: Path) -> None:
         path = tmp_path / "ckpt.h5"
         results = sim.run(show_progress=False)
         init_checkpoint_file(path, results)
@@ -151,9 +145,7 @@ class TestRngState:
 
 
 class TestCheckpointRun:
-    def test_creates_file_with_all_temps(
-        self, sim: Simulation, tmp_path: Path
-    ) -> None:
+    def test_creates_file_with_all_temps(self, sim: Simulation, tmp_path: Path) -> None:
         path = tmp_path / "ckpt.h5"
         results = checkpoint_run(sim, path, show_progress=False)
 
@@ -187,18 +179,14 @@ class TestCheckpointRun:
 
         # Resume: all temps already done, should skip everything
         sim2 = Simulation(small_config)
-        results2 = checkpoint_run(
-            sim2, path, show_progress=False, resume=True
-        )
+        results2 = checkpoint_run(sim2, path, show_progress=False, resume=True)
 
         # All temperatures should still be in results
         assert len(results2.temperatures) == 3
         # Resumed data for T=3.0 should match original
         assert np.allclose(results2.energy[3.0], original_energy_3)
 
-    def test_roundtrip_matches_structure(
-        self, sim: Simulation, tmp_path: Path
-    ) -> None:
+    def test_roundtrip_matches_structure(self, sim: Simulation, tmp_path: Path) -> None:
         """Checkpoint file is loadable via load_hdf5."""
         from mcising.io import load_hdf5
 

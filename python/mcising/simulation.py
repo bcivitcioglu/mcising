@@ -85,12 +85,8 @@ class SimulationResults:
 
     temperatures: list[float] = field(default_factory=list)
     energy: dict[float, NDArray[np.float64]] = field(default_factory=dict)
-    magnetization: dict[float, NDArray[np.float64]] = field(
-        default_factory=dict
-    )
-    configurations: dict[float, NDArray[np.int8]] = field(
-        default_factory=dict
-    )
+    magnetization: dict[float, NDArray[np.float64]] = field(default_factory=dict)
+    configurations: dict[float, NDArray[np.int8]] = field(default_factory=dict)
     correlation_function: (
         dict[float, tuple[NDArray[np.float64], NDArray[np.float64]]] | None
     ) = None
@@ -165,9 +161,7 @@ class SimulationResults:
         from rich.console import Console
         from rich.table import Table
 
-        table = Table(
-            title="Simulation Results", border_style="blue"
-        )
+        table = Table(title="Simulation Results", border_style="blue")
         table.add_column("T", justify="right", style="bold")
         table.add_column("<E>/N", justify="right")
         table.add_column("<|M|>/N", justify="right")
@@ -300,9 +294,7 @@ class Simulation:
             return self._run_independent(show_progress=show_progress)
 
         if self.config.mode == ExecutionMode.PARALLEL_TEMPERING:
-            return self._run_parallel_tempering(
-                show_progress=show_progress
-            )
+            return self._run_parallel_tempering(show_progress=show_progress)
 
         return self._run_cooldown(
             show_progress=show_progress,
@@ -310,9 +302,7 @@ class Simulation:
             skip_temperatures=skip_temperatures,
         )
 
-    def _run_independent(
-        self, *, show_progress: bool = True
-    ) -> SimulationResults:
+    def _run_independent(self, *, show_progress: bool = True) -> SimulationResults:
         """Run all temperatures in parallel via Rayon."""
         import time
 
@@ -360,13 +350,9 @@ class Simulation:
         for entry in raw:
             temp = float(entry["temperature"])
             results.energy[temp] = np.asarray(entry["energies"])
-            results.magnetization[temp] = np.asarray(
-                entry["magnetizations"]
-            )
+            results.magnetization[temp] = np.asarray(entry["magnetizations"])
             if "configurations" in entry:
-                results.configurations[temp] = np.asarray(
-                    entry["configurations"]
-                )
+                results.configurations[temp] = np.asarray(entry["configurations"])
 
         elapsed = time.monotonic() - start_time
         results.metadata["elapsed_seconds"] = elapsed
@@ -424,13 +410,9 @@ class Simulation:
         for entry in raw:
             temp = float(entry["temperature"])
             results.energy[temp] = np.asarray(entry["energies"])
-            results.magnetization[temp] = np.asarray(
-                entry["magnetizations"]
-            )
+            results.magnetization[temp] = np.asarray(entry["magnetizations"])
             if "configurations" in entry:
-                results.configurations[temp] = np.asarray(
-                    entry["configurations"]
-                )
+                results.configurations[temp] = np.asarray(entry["configurations"])
 
         elapsed = time.monotonic() - start_time
         results.metadata["elapsed_seconds"] = elapsed
@@ -456,9 +438,7 @@ class Simulation:
 
         # Build effective schedule excluding skipped temperatures
         effective_temps = [
-            t
-            for t in sorted_temps
-            if t not in (skip_temperatures or frozenset())
+            t for t in sorted_temps if t not in (skip_temperatures or frozenset())
         ]
 
         results = SimulationResults(
@@ -489,12 +469,8 @@ class Simulation:
 
         n_skipped = len(sorted_temps) - len(effective_temps)
 
-        with Progress(
-            *progress_columns, disable=not show_progress
-        ) as progress:
-            task = progress.add_task(
-                "Temperature scan", total=len(sorted_temps)
-            )
+        with Progress(*progress_columns, disable=not show_progress) as progress:
+            task = progress.add_task("Temperature scan", total=len(sorted_temps))
 
             # Pre-advance for skipped temperatures
             if n_skipped > 0:
@@ -510,16 +486,12 @@ class Simulation:
                 )
 
                 if adaptive:
-                    self._thermalize_adaptive(
-                        from_temp, to_temp, results
-                    )
+                    self._thermalize_adaptive(from_temp, to_temp, results)
                     progress.update(
                         task,
                         description=f"T={to_temp:.3f} (measuring)",
                     )
-                    self._collect_at_temperature_adaptive(
-                        to_temp, results
-                    )
+                    self._collect_at_temperature_adaptive(to_temp, results)
                 else:
                     self._thermalize(
                         from_temp,
@@ -686,9 +658,7 @@ class Simulation:
                 n_therm,
                 ac.max_thermalization_sweeps - total_therm,
             )
-            extra_energies = np.asarray(
-                self._core.extend_thermalization(extra_n, beta)
-            )
+            extra_energies = np.asarray(self._core.extend_thermalization(extra_n, beta))
             energy_series = np.concatenate([energy_series, extra_energies])
             total_therm += extra_n
 

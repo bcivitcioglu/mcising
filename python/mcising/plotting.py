@@ -33,12 +33,7 @@ __all__: Final[list[str]] = [
 ]
 
 # Type alias: accepts Results object, file path, or list of either
-ResultsInput = (
-    SimulationResults
-    | str
-    | Path
-    | list[SimulationResults | str | Path]
-)
+ResultsInput = SimulationResults | str | Path | list[SimulationResults | str | Path]
 
 
 def _load_if_needed(
@@ -181,8 +176,11 @@ def plot_susceptibility(
         The matplotlib figure.
     """
     return _plot_quantity(
-        source, "susceptibility", r"$\chi$/N",
-        "Susceptibility per site", ax=ax,
+        source,
+        "susceptibility",
+        r"$\chi$/N",
+        "Susceptibility per site",
+        ax=ax,
     )
 
 
@@ -213,12 +211,8 @@ def _plot_quantity(
                 vals.append(float(np.mean(results.energy[t])))
                 errs.append(float(np.std(results.energy[t])))
             elif quantity == "magnetization" and t in results.magnetization:
-                vals.append(
-                    float(np.mean(np.abs(results.magnetization[t])))
-                )
-                errs.append(
-                    float(np.std(np.abs(results.magnetization[t])))
-                )
+                vals.append(float(np.mean(np.abs(results.magnetization[t]))))
+                errs.append(float(np.std(np.abs(results.magnetization[t]))))
             elif quantity == "specific_heat" and t in results.energy:
                 vals.append(results.specific_heat(t))
                 errs.append(0.0)
@@ -228,9 +222,7 @@ def _plot_quantity(
 
         label = _label_for(results) if multi else None
         if any(e > 0 for e in errs):
-            ax.errorbar(
-                temps, vals, yerr=errs, fmt="o-", capsize=3, label=label
-            )
+            ax.errorbar(temps, vals, yerr=errs, fmt="o-", capsize=3, label=label)
         else:
             ax.plot(temps, vals, "o-", label=label)
 
@@ -257,9 +249,7 @@ def _render_spins(ax: Axes, spins: NDArray[np.int8]) -> None:
         plot_data = spins.reshape(spins.shape[0], -1)
     elif spins.ndim == 1:
         plot_data = spins.reshape(1, -1)
-    ax.imshow(
-        plot_data, cmap="RdBu", vmin=-1, vmax=1, interpolation="nearest"
-    )
+    ax.imshow(plot_data, cmap="RdBu", vmin=-1, vmax=1, interpolation="nearest")
     ax.set_aspect("equal")
     ax.set_xticks([])
     ax.set_yticks([])
@@ -311,9 +301,7 @@ def plot_lattice(
     results = _load_if_needed(source)
 
     if temperature is None:
-        temperature = sorted(results.temperatures)[
-            len(results.temperatures) // 2
-        ]
+        temperature = sorted(results.temperatures)[len(results.temperatures) // 2]
     if temperature not in results.configurations:
         msg = f"No configurations stored for T={temperature}"
         raise ValueError(msg)
@@ -345,7 +333,8 @@ def plot_lattice(
     ncols = min(n_show, max_cols)
     nrows = (n_show + ncols - 1) // ncols
     fig, axes = plt.subplots(
-        nrows, ncols,
+        nrows,
+        ncols,
         figsize=(2.5 * ncols, 2.5 * nrows),
         squeeze=False,
     )
@@ -361,7 +350,8 @@ def plot_lattice(
 
     fig.suptitle(
         f"T={temperature:.4f}  ({n_configs} configurations)",
-        fontsize=12, fontweight="bold",
+        fontsize=12,
+        fontweight="bold",
     )
     fig.tight_layout()
     return fig
@@ -409,15 +399,11 @@ def export_lattices(
     # Build descriptive prefix from metadata
     prefix = _export_prefix(results)
 
-    all_temps = sorted(
-        t for t in results.temperatures if t in results.configurations
-    )
+    all_temps = sorted(t for t in results.temperatures if t in results.configurations)
     if temperatures is not None:
         all_temps = [t for t in all_temps if t in temperatures]
 
-    total_images = sum(
-        len(results.configurations[t]) for t in all_temps
-    )
+    total_images = sum(len(results.configurations[t]) for t in all_temps)
 
     from rich.progress import (
         BarColumn,
@@ -440,18 +426,14 @@ def export_lattices(
             TimeRemainingColumn(),
         ) as progress,
     ):
-        task = progress.add_task(
-            f"Exporting {total_images} images", total=total_images
-        )
+        task = progress.add_task(f"Exporting {total_images} images", total=total_images)
         for temp in all_temps:
             configs = results.configurations[temp]
             for cfg_idx in range(len(configs)):
                 # Render to in-memory PNG
                 fig, ax = plt.subplots(1, 1, figsize=(4, 4))
                 _render_spins(ax, configs[cfg_idx])
-                ax.set_title(
-                    f"T={temp:.4f} #{cfg_idx + 1}", fontsize=8
-                )
+                ax.set_title(f"T={temp:.4f} #{cfg_idx + 1}", fontsize=8)
                 fig.tight_layout()
 
                 buf = io.BytesIO()
@@ -464,14 +446,9 @@ def export_lattices(
                 cfg_str = f"config_{cfg_idx + 1:03d}.png"
 
                 if flat:
-                    arcname = (
-                        f"{prefix}/"
-                        f"{prefix}_{t_str}_{cfg_str}"
-                    )
+                    arcname = f"{prefix}/{prefix}_{t_str}_{cfg_str}"
                 else:
-                    arcname = (
-                        f"{prefix}/{t_str}/{cfg_str}"
-                    )
+                    arcname = f"{prefix}/{t_str}/{cfg_str}"
 
                 zf.writestr(arcname, buf.getvalue())
                 count += 1

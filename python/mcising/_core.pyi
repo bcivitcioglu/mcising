@@ -82,7 +82,6 @@ def run_parallel_tempering(
     swap_interval: int = 1,
     store_configs: bool = False,
 ) -> list[dict[str, Any]]: ...
-
 def run_independent_temperatures(
     lattice_size: int,
     j1: float,
