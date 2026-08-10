@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The release workflow now builds wheels for every supported CPython
+  (3.10–3.13) on all platforms. Previously the Linux jobs failed outright
+  (no interpreter visible inside the manylinux container) and macOS/Windows
+  shipped wheels only for CPython 3.12.
+
 ## [0.22.0] - 2026-08-08
 
 ### Added
