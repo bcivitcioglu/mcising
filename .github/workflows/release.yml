@@ -38,8 +38,11 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
         platform:
+          # GitHub retired the Intel (macos-13) hosted runners in Dec 2025;
+          # x86_64 wheels are cross-compiled on arm64 (setup-python
+          # interpreters are universal2, so maturin has the x86_64 libs).
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-latest
           - target: aarch64-apple-darwin
             runner: macos-latest
     steps:
