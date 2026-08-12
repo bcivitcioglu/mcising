@@ -76,7 +76,9 @@ class LatticeConfig:
     lattice_type : LatticeType
         Type of lattice geometry.
     size : int
-        Linear size L of the lattice (creates L x L for 2D).
+        Linear size L of the lattice (creates L x L for 2D). Must be even
+        for triangular and honeycomb lattices (their periodic wrap is only
+        consistent for even L).
     j1 : float
         Nearest-neighbor coupling strength.
     j2 : float
@@ -98,6 +100,19 @@ class LatticeConfig:
         if self.size < 2:
             msg = f"Lattice size must be >= 2, got {self.size}"
             raise ValueError(msg)
+        if (
+            self.lattice_type in (LatticeType.TRIANGULAR, LatticeType.HONEYCOMB)
+            and self.size % 2 != 0
+        ):
+            # Row-parity offset coordinates make rows 0 and L-1 share a
+            # parity when L is odd, so bonds across the vertical wrap seam
+            # are not reciprocal and the Hamiltonian is invalid (B2, #13).
+            raise ConfigurationError(
+                f"The {self.lattice_type.value} lattice requires even size L "
+                "under periodic boundary conditions (odd L breaks "
+                "neighbor-table symmetry across the wrap seam; odd-L support "
+                f"is future work). Got size={self.size}."
+            )
         if not isinstance(self.j1, (int, float)) or not _is_finite(self.j1):
             msg = f"j1 must be a finite number, got {self.j1}"
             raise ValueError(msg)

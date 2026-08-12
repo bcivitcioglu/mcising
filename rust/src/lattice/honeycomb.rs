@@ -3,17 +3,35 @@ use super::Lattice;
 /// 2D honeycomb lattice with periodic boundary conditions.
 ///
 /// Two-sublattice structure with L×L unit cells, each containing 2 sites
-/// (A=sublattice 0, B=sublattice 1). Total sites = 2*L*L.
+/// (A=sublattice 0, B=sublattice 1). Total sites = 2*L*L. L must be even
+/// (see [`Self::new`]).
 ///
 /// **Flat indexing:** `idx = row * (2*L) + col * 2 + sublattice`
 /// **Shape:** `[L, L, 2]`
 ///
-/// The honeycomb is built from a "brick wall" offset convention:
-/// - The A-B bond within each cell is horizontal (A on left, B on right).
-/// - Even rows: inter-cell bonds go down-left for A, down-right for B.
-/// - Odd rows: inter-cell bonds go down-right for A, down-left for B.
+/// The NN table realizes an armchair-row embedding with NN distance 1
+/// and unit-cell width 3. In cartesian coordinates:
 ///
-/// Each site has coordination 3 (3 NN from the opposite sublattice).
+/// ```text
+///   x = 3*col + { A even row: 0,    B even row: +1,
+///                 A odd  row: -3/2, B odd  row: -1/2 }
+///   y = row * sqrt(3)/2
+/// ```
+///
+/// The A-B bond within each cell is horizontal (A at x, B at x+1); the
+/// other two bonds go to the rows above and below (column shift depends
+/// on row parity). The three shells, with exact squared distances in
+/// this embedding:
+///
+///   NN  (3 per site, opposite sublattice, d² = 1)
+///   NNN (6 per site, same sublattice,     d² = 3): the sublattice's
+///       own triangular-lattice NN shell; offsets depend only on row
+///       parity and are identical for A and B:
+///       even rows (Δrow, Δcol): (±2, 0), (−1, 0), (−1, +1), (+1, 0), (+1, +1)
+///       odd  rows (Δrow, Δcol): (±2, 0), (−1, −1), (−1, 0), (+1, −1), (+1, 0)
+///   TNN (3 per site, opposite sublattice, d² = 4): the site at −2δ for
+///       each NN bond vector δ; parity-independent:
+///       A: B(r, c−1), B(r±2, c)   B: A(r, c+1), A(r±2, c)
 pub struct HoneycombLattice {
     size: usize,
     num_sites: usize,
@@ -26,9 +44,12 @@ pub struct HoneycombLattice {
 impl HoneycombLattice {
     /// Create a new honeycomb lattice with L×L unit cells (2*L*L sites).
     ///
-    /// Returns `None` if `size < 2`.
+    /// Returns `None` if `size < 2` or `size` is odd. With row-parity
+    /// offset coordinates, rows 0 and L−1 have the same parity when L is
+    /// odd, so bonds across the vertical wrap seam are not reciprocal and
+    /// the Hamiltonian would be invalid (B2, #13).
     pub fn new(size: usize) -> Option<Self> {
-        if size < 2 {
+        if size < 2 || !size.is_multiple_of(2) {
             return None;
         }
 
@@ -46,95 +67,68 @@ impl HoneycombLattice {
 
             let up = (row + size - 1) % size;
             let down = (row + 1) % size;
+            let up2 = (row + size - 2) % size;
+            let down2 = (row + 2) % size;
+            let left = (col + size - 1) % size;
+            let right = (col + 1) % size;
 
             // Helper to compute flat index from (r, c, s)
             let flat = |r: usize, c: usize, s: usize| -> usize { r * stride_row + c * 2 + s };
 
+            // NN (3 neighbors, opposite sublattice, d² = 1): the same-cell
+            // horizontal bond plus one bond each to the rows above and
+            // below; the column shift of the vertical bonds depends on row
+            // parity (see the struct-level embedding).
             if sub == 0 {
-                // ── Sublattice A ──
-                // NN (3 neighbors, all sublattice B):
                 nn_table.push(flat(row, col, 1)); // same-cell B
                 if row.is_multiple_of(2) {
                     nn_table.push(flat(up, col, 1)); // up B (no col shift)
                     nn_table.push(flat(down, col, 1)); // down B (no col shift)
                 } else {
-                    let left = (col + size - 1) % size;
                     nn_table.push(flat(up, left, 1)); // up-left B
                     nn_table.push(flat(down, left, 1)); // down-left B
                 }
-
-                // NNN (6 neighbors, all sublattice A):
-                let left = (col + size - 1) % size;
-                let right = (col + 1) % size;
-                nnn_table.push(flat(row, left, 0)); // left A
-                nnn_table.push(flat(row, right, 0)); // right A
-                if row.is_multiple_of(2) {
-                    nnn_table.push(flat(up, col, 0)); // up A (no shift)
-                    nnn_table.push(flat(up, left, 0)); // up-left A
-                    nnn_table.push(flat(down, col, 0)); // down A (no shift)
-                    nnn_table.push(flat(down, left, 0)); // down-left A
-                } else {
-                    nnn_table.push(flat(up, right, 0)); // up-right A
-                    nnn_table.push(flat(up, col, 0)); // up A
-                    nnn_table.push(flat(down, right, 0)); // down-right A
-                    nnn_table.push(flat(down, col, 0)); // down A
-                }
-
-                // TNN (3 neighbors, all sublattice B at distance 2):
-                // Only left-side wraps are used here — this shell's asymmetry
-                // is B2; the table is redesigned in P05.
-                let left = (col + size - 1) % size;
-                tnn_table.push(flat(row, left, 1)); // left B (far)
-                if row.is_multiple_of(2) {
-                    tnn_table.push(flat(up, left, 1)); // up-left B
-                    tnn_table.push(flat(down, left, 1)); // down-left B
-                } else {
-                    let left2 = (col + size - 2) % size;
-                    tnn_table.push(flat(up, left2, 1)); // up-far-left B
-                    tnn_table.push(flat(down, left2, 1)); // down-far-left B
-                }
             } else {
-                // ── Sublattice B ──
-                // NN (3 neighbors, all sublattice A):
-                // Exact mirror of A's connectivity.
                 nn_table.push(flat(row, col, 0)); // same-cell A
                 if row.is_multiple_of(2) {
-                    let right = (col + 1) % size;
                     nn_table.push(flat(up, right, 0)); // up-right A
                     nn_table.push(flat(down, right, 0)); // down-right A
                 } else {
                     nn_table.push(flat(up, col, 0)); // up A (no col shift)
                     nn_table.push(flat(down, col, 0)); // down A (no col shift)
                 }
+            }
 
-                // NNN (6 neighbors, all sublattice B):
-                let left = (col + size - 1) % size;
-                let right = (col + 1) % size;
-                nnn_table.push(flat(row, left, 1)); // left B
-                nnn_table.push(flat(row, right, 1)); // right B
-                if row.is_multiple_of(2) {
-                    nnn_table.push(flat(up, right, 1)); // up-right B
-                    nnn_table.push(flat(up, col, 1)); // up B
-                    nnn_table.push(flat(down, right, 1)); // down-right B
-                    nnn_table.push(flat(down, col, 1)); // down B
-                } else {
-                    nnn_table.push(flat(up, col, 1)); // up B
-                    nnn_table.push(flat(up, left, 1)); // up-left B
-                    nnn_table.push(flat(down, col, 1)); // down B
-                    nnn_table.push(flat(down, left, 1)); // down-left B
-                }
+            // NNN (6 neighbors, same sublattice, d² = 3): each sublattice
+            // is a triangular Bravais lattice; this is its NN shell. The
+            // offsets depend only on row parity and are identical for A
+            // and B: (±2, 0) plus the four diagonal steps whose column
+            // shift follows the parity rule.
+            nnn_table.push(flat(up2, col, sub)); // up 2
+            nnn_table.push(flat(down2, col, sub)); // down 2
+            if row.is_multiple_of(2) {
+                nnn_table.push(flat(up, col, sub)); // up
+                nnn_table.push(flat(up, right, sub)); // up-right
+                nnn_table.push(flat(down, col, sub)); // down
+                nnn_table.push(flat(down, right, sub)); // down-right
+            } else {
+                nnn_table.push(flat(up, left, sub)); // up-left
+                nnn_table.push(flat(up, col, sub)); // up
+                nnn_table.push(flat(down, left, sub)); // down-left
+                nnn_table.push(flat(down, col, sub)); // down
+            }
 
-                // TNN (3 neighbors, all sublattice A at distance 2):
-                let right = (col + 1) % size;
+            // TNN (3 neighbors, opposite sublattice, d² = 4): the site at
+            // −2δ for each NN bond vector δ. Row steps of 0 or ±2 preserve
+            // parity, so the offsets are the same for every row.
+            if sub == 0 {
+                tnn_table.push(flat(row, left, 1)); // left B (far)
+                tnn_table.push(flat(up2, col, 1)); // up-2 B
+                tnn_table.push(flat(down2, col, 1)); // down-2 B
+            } else {
                 tnn_table.push(flat(row, right, 0)); // right A (far)
-                if row.is_multiple_of(2) {
-                    let right2 = (col + 2) % size;
-                    tnn_table.push(flat(up, right2, 0)); // up-far-right A
-                    tnn_table.push(flat(down, right2, 0)); // down-far-right A
-                } else {
-                    tnn_table.push(flat(up, right, 0)); // up-right A
-                    tnn_table.push(flat(down, right, 0)); // down-right A
-                }
+                tnn_table.push(flat(up2, col, 0)); // up-2 A
+                tnn_table.push(flat(down2, col, 0)); // down-2 A
             }
         }
 
@@ -234,6 +228,14 @@ mod tests {
     fn test_creation_too_small() {
         assert!(HoneycombLattice::new(0).is_none());
         assert!(HoneycombLattice::new(1).is_none());
+    }
+
+    #[test]
+    fn test_creation_odd_rejected() {
+        // Odd L breaks bond reciprocity across the row wrap (B2).
+        assert!(HoneycombLattice::new(3).is_none());
+        assert!(HoneycombLattice::new(5).is_none());
+        assert!(HoneycombLattice::new(7).is_none());
     }
 
     #[test]
@@ -363,9 +365,54 @@ mod tests {
 
     #[test]
     fn test_flat_roundtrip() {
-        let lat = HoneycombLattice::new(5).unwrap();
+        let lat = HoneycombLattice::new(6).unwrap();
         for i in 0..lat.num_sites() {
             assert_eq!(lat.multi_to_flat(&lat.flat_to_multi(i)), i);
+        }
+    }
+
+    #[test]
+    fn test_tnn_symmetry() {
+        let lat = HoneycombLattice::new(6).unwrap();
+        for i in 0..lat.num_sites() {
+            for &n in lat.third_nearest_neighbors(i) {
+                assert!(
+                    lat.third_nearest_neighbors(n).contains(&i),
+                    "Site {n} should have {i} as TNN"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_tnn_connects_opposite_sublattice() {
+        let lat = HoneycombLattice::new(6).unwrap();
+        for i in 0..lat.num_sites() {
+            let my_sub = i % 2;
+            for &n in lat.third_nearest_neighbors(i) {
+                assert_ne!(
+                    n % 2,
+                    my_sub,
+                    "Site {i} (sub={my_sub}) has TNN {n} (sub={}), should be opposite",
+                    n % 2
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_shells_disjoint() {
+        let lat = HoneycombLattice::new(6).unwrap();
+        for i in 0..lat.num_sites() {
+            let nn: std::collections::HashSet<usize> =
+                lat.nearest_neighbors(i).iter().copied().collect();
+            let nnn: std::collections::HashSet<usize> =
+                lat.next_nearest_neighbors(i).iter().copied().collect();
+            let tnn: std::collections::HashSet<usize> =
+                lat.third_nearest_neighbors(i).iter().copied().collect();
+            assert!(nn.is_disjoint(&nnn), "NN∩NNN nonempty for site {i}");
+            assert!(nn.is_disjoint(&tnn), "NN∩TNN nonempty for site {i}");
+            assert!(nnn.is_disjoint(&tnn), "NNN∩TNN nonempty for site {i}");
         }
     }
 

@@ -1,5 +1,8 @@
 pub mod chain;
 pub mod cubic;
+/// Cross-lattice neighbor-table geometry matrix (test-only).
+#[cfg(test)]
+mod geometry_tests;
 pub mod honeycomb;
 pub mod square;
 pub mod triangular;
@@ -97,10 +100,23 @@ impl LatticeKind {
     ///
     /// # Errors
     ///
-    /// Returns `MCIsingError::InvalidLatticeType` for unrecognized names and
+    /// Returns `MCIsingError::InvalidLatticeType` for unrecognized names,
+    /// `MCIsingError::OddLatticeSize` for odd `size` on lattices whose
+    /// periodic wrap requires even L (triangular, honeycomb), and
     /// `MCIsingError::InvalidLatticeSize` if the lattice cannot be built at
     /// `size`.
     pub fn from_str(s: &str, size: usize) -> Result<Self, MCIsingError> {
+        // Triangular and honeycomb row-parity wraps are only consistent for
+        // even L (B2, #13): report the specific defect, not a generic size
+        // error. The constructors themselves also reject odd L.
+        if matches!(s, "triangular" | "honeycomb") && size >= 2 && !size.is_multiple_of(2) {
+            let name: &'static str = if s == "triangular" {
+                "triangular"
+            } else {
+                "honeycomb"
+            };
+            return Err(MCIsingError::OddLatticeSize(name, size));
+        }
         match s {
             "square" => SquareLattice::new(size)
                 .map(LatticeKind::Square)

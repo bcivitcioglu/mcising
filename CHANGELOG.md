@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-13
+
 ### Added
 
+- Cross-lattice geometry test matrix (Rust, test-only): every lattice ×
+  shell × size combination is verified for reciprocal bonds, exact
+  coordination, shell disjointness, no self-bonds, and — decisively — the
+  exact Euclidean distance of every neighbor-table entry in the embedding
+  the NN table realizes. This is the assertion class that caught the
+  honeycomb defect below.
+- A brute-force pair-sum energy reference for the triangular lattice with
+  all three couplings active, agreeing with the table-driven energy to
+  1e-10 (guards against shell double-counting).
 - Exact-enumeration test oracle (Rust, test-only): the full density of
   states of the 4×4 square torus (65 536 states) and the 12-site periodic
   chain (4 096 states), validated against the closed-form transfer matrix
@@ -22,6 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Triangular and honeycomb lattices now require an even size L and reject
+  odd L with a clear error (`ConfigurationError` from `LatticeConfig`;
+  `ValueError` from the Rust core and both parallel runners). With
+  row-parity offset coordinates, rows 0 and L-1 share a parity when L is
+  odd, so bonds across the vertical wrap seam were not reciprocal and the
+  Hamiltonian was silently invalid. Correct odd-L periodic wraps are
+  research-shaped and remain future work.
 - Cluster algorithms (Wolff, Swendsen-Wang) now reject `j1 <= 0` with a
   clear error instead of silently degenerating into random single spin
   flips (the bond probability `1 − exp(−2βJ1)` is not a probability for
@@ -33,6 +51,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Triangular third-neighbor (J3) table: two of six entries per site
+  duplicated next-nearest-neighbor sites (double-counting J2 and J3 bonds
+  when both couplings were active) and the shell was not reciprocal. The
+  corrected shell is parity-independent and sits at the exact TNN
+  distance 2.
+- Honeycomb second- (J2) and third-neighbor (J3) tables: four of six NNN
+  entries and two of three TNN entries per site pointed at sites far
+  outside their shells (distances 3, sqrt(13), and sqrt(21) instead of
+  sqrt(3) and 2), so any honeycomb run with J2 or J3 active sampled a
+  geometrically invalid Hamiltonian. Both tables are rebuilt from the
+  armchair-row embedding, with the derivation documented in the source.
+- Triangular `distance_squared` now returns the exact Euclidean squared
+  distance in the 60-degree basis (an exact integer: d² = 1, 3, 4 for the
+  three shells) instead of a square-grid approximation, fixing the
+  distance axis of triangular correlation functions.
 - Antiferromagnetic (J<0) single-coupling Metropolis now samples the
   Boltzmann distribution. The J1-, J2-, and J3-only sweep strategies branched
   on the neighbor-sum sign instead of the energy sign, so every proposed flip
