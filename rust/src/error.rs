@@ -11,6 +11,7 @@ pub enum MCIsingError {
     InvalidSpinConfiguration(String),
     InvalidAlgorithm(String),
     ClusterAlgorithmConstraint(String),
+    ClusterCouplingSign(String),
     InvalidLatticeType(String),
 }
 
@@ -40,6 +41,14 @@ impl fmt::Display for MCIsingError {
                     f,
                     "Cluster algorithm '{alg}' requires J2=0 and h=0. \
                      Use algorithm='metropolis' for J1-J2 or external field simulations."
+                )
+            }
+            Self::ClusterCouplingSign(alg) => {
+                write!(
+                    f,
+                    "Cluster algorithm '{alg}' requires J1>0; use \
+                     algorithm='metropolis' for antiferromagnetic couplings; \
+                     sublattice mapping is future work."
                 )
             }
             Self::InvalidLatticeType(name) => {

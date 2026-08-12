@@ -3,6 +3,11 @@
 import numpy as np
 import pytest
 from mcising import Simulation, SimulationConfig
+from mcising._core import (
+    IsingSimulation,
+    run_independent_temperatures,
+    run_parallel_tempering,
+)
 from mcising.config import AdaptiveConfig, Algorithm, LatticeConfig
 from mcising.exceptions import ConfigurationError
 
@@ -39,6 +44,86 @@ class TestWolffConfig:
             algorithm=Algorithm.WOLFF,
         )
         assert config.algorithm == Algorithm.WOLFF
+
+    def test_wolff_negative_j1_raises(self) -> None:
+        with pytest.raises(ConfigurationError, match="require J1>0"):
+            SimulationConfig(
+                lattice=LatticeConfig(size=4, j1=-1.0),
+                algorithm=Algorithm.WOLFF,
+            )
+
+    def test_wolff_zero_j1_raises(self) -> None:
+        # J1=0 gives bond probability 0: the "cluster" degenerates exactly
+        # like J1<0 does, so it is rejected by the same guard.
+        with pytest.raises(ConfigurationError, match="require J1>0"):
+            SimulationConfig(
+                lattice=LatticeConfig(size=4, j1=0.0),
+                algorithm=Algorithm.WOLFF,
+            )
+
+    def test_wolff_negative_j1_message_names_the_alternative(self) -> None:
+        with pytest.raises(ConfigurationError) as exc_info:
+            SimulationConfig(
+                lattice=LatticeConfig(size=4, j1=-1.0),
+                algorithm=Algorithm.WOLFF,
+            )
+        message = str(exc_info.value)
+        assert "use metropolis for antiferromagnetic couplings" in message
+        assert "sublattice mapping is future work" in message
+
+
+class TestClusterCouplingSignBoundary:
+    """The J1>0 cluster guard fires at every boundary a user can reach.
+
+    At J1<=0 the Fortuin-Kasteleyn bond probability 1 - exp(-2*beta*J1)
+    is <= 0, so cluster growth never adds a site and Wolff/Swendsen-Wang
+    silently degenerate into random single spin flips (B1). The previous
+    guard was a debug_assert that vanished in release builds.
+    """
+
+    def test_run_with_negative_j1_raises(self) -> None:
+        # The roadmap gate: Simulation(algorithm=WOLFF, j1=-1).run() raises
+        # ConfigurationError. It fires at config construction, before any
+        # sweep can sample the wrong ensemble.
+        with pytest.raises(ConfigurationError, match="require J1>0"):
+            Simulation(
+                SimulationConfig(
+                    lattice=LatticeConfig(size=4, j1=-1.0),
+                    algorithm=Algorithm.WOLFF,
+                )
+            ).run(show_progress=False)
+
+    def test_core_constructor_rejects_negative_j1(self) -> None:
+        # Defense in depth for direct _core use, which bypasses
+        # SimulationConfig. Rust errors currently map to ValueError, not
+        # ConfigurationError (unified in the P10/P11 API phases).
+        with pytest.raises(ValueError, match="requires J1>0"):
+            IsingSimulation(4, -1.0, 0.0, 0.0, 0.0, 42, "wolff", "square")
+
+    def test_independent_runner_rejects_negative_j1(self) -> None:
+        # Before P04 this path would panic inside the Rayon closure
+        # (PanicException), not raise.
+        with pytest.raises(ValueError, match="requires J1>0"):
+            run_independent_temperatures(
+                4, -1.0, 0.0, 0.0, 0.0, 42, "wolff", "square", [2.0], 10, 10, 1
+            )
+
+    def test_parallel_tempering_rejects_negative_j1(self) -> None:
+        with pytest.raises(ValueError, match="requires J1>0"):
+            run_parallel_tempering(
+                4,
+                -1.0,
+                0.0,
+                0.0,
+                0.0,
+                42,
+                "swendsen_wang",
+                "square",
+                [2.0, 2.5],
+                10,
+                10,
+                1,
+            )
 
 
 class TestWolffSimulation:

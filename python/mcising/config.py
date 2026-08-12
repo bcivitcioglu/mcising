@@ -249,6 +249,15 @@ class SimulationConfig:
                     "Use algorithm='metropolis' for J1-J2, J1-J3, or "
                     "external field simulations."
                 )
+            if self.lattice.j1 <= 0.0:
+                # The Fortuin-Kasteleyn bond probability 1 - exp(-2*beta*J1)
+                # is <= 0 for J1 <= 0: cluster growth never adds a site and
+                # the update silently degenerates to random single flips (B1).
+                raise ConfigurationError(
+                    "Cluster algorithms require J1>0; use metropolis for "
+                    "antiferromagnetic couplings; sublattice mapping is "
+                    f"future work. Got j1={self.lattice.j1}."
+                )
 
 
 def _is_finite(value: float) -> bool:

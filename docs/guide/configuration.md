@@ -45,15 +45,15 @@ config = SimulationConfig(
 | `j3` | `float` | `0.0` | Third-nearest-neighbor coupling |
 | `h` | `float` | `0.0` | External magnetic field |
 
-All coupling values must be finite. Cluster algorithms (Wolff, Swendsen-Wang) require `j2=0`, `j3=0`, `h=0`.
+All coupling values must be finite. Cluster algorithms (Wolff, Swendsen-Wang) require `j1>0`, `j2=0`, `j3=0`, `h=0`.
 
 ## Algorithm constraints
 
 | Algorithm | J1 | J2 | J3 | h | All lattices? |
 |---|---|---|---|---|---|
 | Metropolis | any | any | any | any | Yes |
-| Wolff | any | 0 only | 0 only | 0 only | Yes |
-| Swendsen-Wang | any | 0 only | 0 only | 0 only | Yes |
+| Wolff | > 0 only | 0 only | 0 only | 0 only | Yes |
+| Swendsen-Wang | > 0 only | 0 only | 0 only | 0 only | Yes |
 
 ## Temperature specification
 

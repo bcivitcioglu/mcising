@@ -8,7 +8,8 @@ use rand::Rng;
 /// nearest neighbors with probability p_add = 1 - exp(-2 * beta * J1).
 /// The entire cluster is then flipped.
 ///
-/// Only valid for J2=0 and h=0 (nearest-neighbor-only Hamiltonian).
+/// Only valid for J1>0 with J2=J3=h=0 (ferromagnetic nearest-neighbor-only
+/// Hamiltonian); enforced at the boundary in `IsingSimulation::new_internal`.
 ///
 /// `accepted` in `SweepResult` is the cluster size (number of spins flipped).
 pub struct Wolff {
@@ -33,9 +34,6 @@ impl Wolff {
 }
 
 impl McAlgorithm for Wolff {
-    // `_j2`/`_j3` are read only by the debug_assert; that assert becomes a
-    // real boundary error in P04 (B1).
-    #[allow(clippy::used_underscore_binding)]
     fn sweep<L: Lattice, R: Rng>(
         &mut self,
         spins: &mut [i8],
@@ -43,16 +41,12 @@ impl McAlgorithm for Wolff {
         j1: f64,
         _j2: f64,
         _j3: f64,
-        h: f64,
+        _h: f64,
         beta: f64,
         rng: &mut R,
     ) -> SweepResult {
-        debug_assert!(
-            _j2 == 0.0 && _j3 == 0.0 && h == 0.0,
-            "Wolff algorithm requires J2=0, J3=0, and h=0"
-        );
-
         let n = lattice.num_sites();
+        // p_add in (0,1) requires J1 > 0 — guaranteed by the constructor.
         let p_add = 1.0 - (-2.0 * beta * j1).exp();
 
         // Pick random seed site

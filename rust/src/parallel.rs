@@ -27,6 +27,33 @@ struct TempResult {
     shape: Vec<usize>,
 }
 
+/// Reject invalid constructor parameters before entering the Rayon closures:
+/// the per-replica constructors inside them use `.expect()` (owned by
+/// B5/P06), so a configuration error must be caught here or it would panic
+/// instead of raising a Python exception.
+fn validate_run_params(
+    lattice_size: usize,
+    j1: f64,
+    j2: f64,
+    j3: f64,
+    h: f64,
+    base_seed: u64,
+    algorithm: &str,
+    lattice_type: &str,
+) -> PyResult<()> {
+    IsingSimulation::new_internal(
+        lattice_size,
+        j1,
+        j2,
+        j3,
+        h,
+        base_seed,
+        algorithm,
+        lattice_type,
+    )?;
+    Ok(())
+}
+
 /// Run independent simulations at multiple temperatures in parallel.
 ///
 /// Each temperature starts from a random spin configuration with a
@@ -71,6 +98,17 @@ pub fn run_independent_temperatures<'py>(
     store_configs: bool,
     compute_correlation: bool,
 ) -> PyResult<Vec<Bound<'py, PyDict>>> {
+    validate_run_params(
+        lattice_size,
+        j1,
+        j2,
+        j3,
+        h,
+        base_seed,
+        algorithm,
+        lattice_type,
+    )?;
+
     let n_measurements = n_sweeps / measurement_interval.max(1);
 
     // Clone strings for use inside rayon closure (which requires Send).
@@ -198,6 +236,9 @@ fn convert_results_to_py(
     temperatures, n_thermalization, n_sweeps, measurement_interval,
     swap_interval = 1, store_configs = false
 ))]
+// Two lines over the limit since the P04 up-front validation; P06 owns this
+// function's error-path refactor and removes the allow with it.
+#[allow(clippy::too_many_lines)]
 pub fn run_parallel_tempering<'py>(
     py: Python<'py>,
     lattice_size: usize,
@@ -215,6 +256,17 @@ pub fn run_parallel_tempering<'py>(
     swap_interval: usize,
     store_configs: bool,
 ) -> PyResult<Vec<Bound<'py, PyDict>>> {
+    validate_run_params(
+        lattice_size,
+        j1,
+        j2,
+        j3,
+        h,
+        base_seed,
+        algorithm,
+        lattice_type,
+    )?;
+
     let algo = algorithm.to_string();
     let lat_type = lattice_type.to_string();
     let n_measurements = n_sweeps / measurement_interval.max(1);
