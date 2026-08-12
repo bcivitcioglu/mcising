@@ -6,6 +6,7 @@ for well-known cases of the 2D Ising model.
 
 from __future__ import annotations
 
+import functools
 import math
 from typing import Final
 
@@ -24,6 +25,7 @@ from tests._stats import (
     assert_over_seeds,
     assert_samples_agree,
     assert_within_sigma,
+    tau_int_blocking,
 )
 
 #: Descending ladder for sub-Tc runs. The cool-down ramp between rungs is
@@ -191,6 +193,255 @@ class TestStationarity:
             label_a=f"first half (seed={seed})",
             label_b=f"second half (seed={seed})",
         )
+
+
+# ── True detailed-balance harness (P04) ──────────────────────────────
+#
+# A 3x3 square torus has only 512 spin states, so the full stationary
+# distribution is checkable against exact Boltzmann weights computed by
+# an in-test enumeration (independent of the Rust oracle).
+
+DB_SIZE: Final = 3
+DB_N_STATES: Final = 512
+DB_TEMPERATURE: Final = 4.0
+DB_N_SAMPLES: Final = 120_000
+DB_INTERVAL: Final = 5
+DB_THERMALIZATION: Final = 2_000
+#: z=5 normal sigmas on the chi-square law of the G statistic
+#: (one-test false-positive rate ~3e-7); see TestDetailedBalance.
+DB_SIGMA: Final = 5.0
+
+
+def _state_energies(size: int) -> np.ndarray:
+    """Total energy of every spin state of a size x size torus at J1=+1.
+
+    State s encodes site i = row*size + col as bit i (set bit = spin up),
+    matching the row-major flat order of get_spins()/production_sweeps.
+    Bonds are counted once via the +row and +col torus directions.
+    """
+    n = size * size
+    states = np.arange(1 << n, dtype=np.int64)
+    spins = np.where((states[:, None] >> np.arange(n)) & 1 == 1, 1, -1)
+    energies = np.zeros(1 << n)
+    for row in range(size):
+        for col in range(size):
+            site = row * size + col
+            right = row * size + (col + 1) % size
+            down = ((row + 1) % size) * size + col
+            energies -= spins[:, site] * (spins[:, right] + spins[:, down])
+    return energies
+
+
+def _boltzmann(energies: np.ndarray, temperature: float) -> np.ndarray:
+    weights = np.exp(-(energies - energies.min()) / temperature)
+    return weights / weights.sum()
+
+
+def _state_indices(configs: np.ndarray) -> np.ndarray:
+    """Map (n, size, size) spin arrays to the integer state indices above."""
+    n_samples = configs.shape[0]
+    bits = (configs.reshape(n_samples, -1) > 0).astype(np.int64)
+    return bits @ (1 << np.arange(bits.shape[1], dtype=np.int64))
+
+
+def _kl_divergence(counts: np.ndarray, probabilities: np.ndarray) -> float:
+    """KL(empirical || exact); empty cells contribute 0 (0 log 0 = 0)."""
+    q = counts / counts.sum()
+    mask = q > 0
+    return float(np.sum(q[mask] * np.log(q[mask] / probabilities[mask])))
+
+
+def _chi2_upper(df: int, z: float) -> float:
+    """Wilson-Hilferty upper quantile of chi-square_df at z normal sigmas.
+
+    The naive normal approximation df + z*sqrt(2 df) is too tight for the
+    right-skewed chi-square (measurably so at df~500); Wilson-Hilferty is
+    accurate to <1% here.
+    """
+    return df * (1.0 - 2.0 / (9 * df) + z * math.sqrt(2.0 / (9 * df))) ** 3
+
+
+def _kl_threshold(n_cells: int) -> float:
+    return _chi2_upper(n_cells - 1, DB_SIGMA) / (2.0 * DB_N_SAMPLES)
+
+
+def _sweep_support(size: int) -> np.ndarray:
+    """Boolean successor matrix of one typewriter Metropolis sweep.
+
+    Only the branching structure matters: a flip with dE <= 0 is accepted
+    with probability exactly 1 (min(1, e^{-b dE}) = 1), so those rows are
+    deterministic, while dE > 0 flips branch into {flip, stay}. The
+    support — and hence the ergodic class structure — is therefore
+    independent of temperature for 0 < T < inf.
+    """
+    n = size * size
+    k = 1 << n
+    energies = _state_energies(size)
+    rows = np.arange(k)
+    support = np.eye(k, dtype=bool)
+    for site in range(n):
+        flipped = rows ^ (1 << site)
+        de = energies[flipped] - energies[rows]
+        site_support = np.zeros((k, k), dtype=bool)
+        site_support[rows, flipped] = True
+        site_support[rows[de > 0], rows[de > 0]] = True
+        # float32 matmul is BLAS-fast and exact for counts < 2^24.
+        support = (support.astype(np.float32) @ site_support.astype(np.float32)) > 0
+    return support
+
+
+@functools.cache
+def _metropolis_ergodic_class_mask() -> np.ndarray:
+    """Mask of the 3x3 states reachable by typewriter Metropolis (#32).
+
+    The sweep kernel is NOT irreducible: states where every flip is
+    downhill are updated deterministically and form closed 2-cycles
+    {s, global flip of s} — two frustrated checkerboards (E=+6) and three
+    diagonal-stripe pairs (E=-2), 8 states in all, 0.98% of the Boltzmann
+    mass at T=4. This computes the big class exactly from the sweep
+    support digraph (transitive closure by repeated squaring).
+    """
+    support = _sweep_support(DB_SIZE)
+    k = support.shape[0]
+    reach = support | np.eye(k, dtype=bool)
+    while True:
+        closure = (reach.astype(np.float32) @ reach.astype(np.float32)) > 0
+        closure |= reach
+        if (closure == reach).all():
+            break
+        reach = closure
+    mutual = reach & reach.T
+    # The all-up ground state branches (every flip is uphill), so it lies
+    # in the big class; take its communicating class.
+    mask = mutual[k - 1]
+    # The class must be closed (no support edge leaves it) and match the
+    # exact decomposition documented in #32: 504 of 512 states.
+    assert not support[mask][:, ~mask].any()
+    assert int(mask.sum()) == 504
+    return mask
+
+
+class TestDetailedBalance:
+    """The sampled state distribution is the exact Boltzmann distribution.
+
+    TestStationarity above checks that <E> is stationary — necessary but
+    far from sufficient (the B1 accept-everything bug was stationary too,
+    just around the wrong distribution). Here every state of a 3x3 torus
+    gets an exact Boltzmann weight and an empirical visit frequency.
+
+    Scope: with sequential (typewriter) site updates the composite sweep
+    satisfies balance, not per-move detailed balance; what is falsifiable
+    from a trajectory — and what this test checks — is that the chain's
+    stationary distribution is exactly Boltzmann on its ergodic class.
+
+    Ergodicity caveat (#32, found BY this test): the typewriter Metropolis
+    sweep kernel is reducible — 8 states where every flip is downhill form
+    deterministic 2-cycles that never communicate with the other 504
+    states (0.98% of Boltzmann mass at T=4). Within the big class the
+    stationary measure is exactly the restricted Boltzmann distribution
+    (verified to machine precision from the exact 512-state kernel), so
+    Metropolis is compared against that restriction, with a canary
+    assertion that the trapped states are never visited: when the scan-
+    order fix for #32/#26 lands, the canary fails and this test must be
+    unified back to the full distribution. Wolff and Swendsen-Wang are
+    properly ergodic and face the full 512-state Boltzmann distribution.
+
+    Threshold derivation: the G statistic against a fully specified
+    distribution is G^2 = 2*N*KL(q_hat || p) over K cells; under the null
+    it is asymptotically chi-square with df = K-1, so KL does NOT tend to
+    zero: E[KL] = df/(2N) ~ 0.00213 at K = 512, N = 120,000. The
+    threshold is the Wilson-Hilferty chi-square upper quantile at z=5
+    (one-test tail ~3e-7), KL_max = chi2_{K-1}(z=5)/(2N) ~ 0.00286.
+    Validity requires every expected count >~ 10: the rarest state at
+    T=4.0 has p_min ~ 2.1e-4, giving expected count ~25 (asserted
+    in-test). That is why T=4.0: at T=2.269 the same condition needs
+    ~1.2e6 samples, at T=1.0 ~5e11.
+
+    Power: the B1 failure mode (accept-everything -> near-uniform) gives
+    KL ~ 0.7, ~250x the threshold; a sampler equilibrated at T=3.5
+    instead of 4.0 gives ~10x the threshold (checked below without
+    Monte Carlo); the #32 ergodicity defect itself showed up as 4.2x.
+    """
+
+    def _assert_visit_histogram_is_boltzmann(
+        self, algorithm: str, seed: int
+    ) -> None:
+        beta = 1.0 / DB_TEMPERATURE
+        exact_energies = _state_energies(DB_SIZE)
+        p_full = _boltzmann(exact_energies, DB_TEMPERATURE)
+
+        sim = IsingSimulation(DB_SIZE, 1.0, 0.0, 0.0, 0.0, seed, algorithm)
+        sim.sweep(DB_THERMALIZATION, beta)
+        energies, mags, configs = sim.production_sweeps(
+            DB_N_SAMPLES, DB_INTERVAL, beta, True
+        )
+        idx = _state_indices(np.asarray(configs))
+
+        # Free cross-check: the in-test energy table agrees with the Rust
+        # per-site energies for every sampled state — validates the bit
+        # mapping and the energy definition at once.
+        np.testing.assert_allclose(
+            exact_energies[idx] / (DB_SIZE * DB_SIZE), energies, atol=1e-12
+        )
+
+        # The threshold assumes ~independent samples. Convert residual
+        # autocorrelation into a legible failure instead of a silent
+        # threshold error. Fix: raise DB_INTERVAL, never the threshold.
+        tau = max(
+            tau_int_blocking(np.asarray(energies)),
+            tau_int_blocking(np.abs(np.asarray(mags))),
+        )
+        assert tau < 1.0, f"samples correlated (tau_int={tau:.2f}); raise DB_INTERVAL"
+
+        counts = np.bincount(idx, minlength=DB_N_STATES).astype(np.float64)
+
+        if algorithm == "metropolis":
+            mask = _metropolis_ergodic_class_mask()
+            # Canary for #32: the trapped 2-cycles are unreachable today.
+            # When the scan-order fix lands this fails — unify the test to
+            # the full Boltzmann distribution then.
+            assert counts[~mask].sum() == 0, (
+                "typewriter Metropolis visited a state outside its ergodic "
+                "class — #32 must be fixed; compare against the FULL "
+                "Boltzmann distribution now"
+            )
+        else:
+            mask = np.ones(DB_N_STATES, dtype=bool)
+
+        p = p_full[mask] / p_full[mask].sum()
+        # Chi-square validity of the threshold: asserted, not assumed.
+        assert DB_N_SAMPLES * p.min() >= 10.0
+
+        kl = _kl_divergence(counts[mask], p)
+        n_cells = int(mask.sum())
+        threshold = _kl_threshold(n_cells)
+        null_mean = (n_cells - 1) / (2.0 * DB_N_SAMPLES)
+        assert kl <= threshold, (
+            f"{algorithm} (seed={seed}): KL(empirical||Boltzmann) = {kl:.5f} "
+            f"> threshold {threshold:.5f} over {n_cells} states (null mean "
+            f"{null_mean:.5f}, tau={tau:.2f}, min expected count "
+            f"{DB_N_SAMPLES * p.min():.1f})"
+        )
+
+    @pytest.mark.statistical
+    @pytest.mark.parametrize("seed", DEFAULT_SEEDS)
+    def test_metropolis_visit_histogram_is_boltzmann(self, seed: int) -> None:
+        self._assert_visit_histogram_is_boltzmann("metropolis", seed)
+
+    @pytest.mark.statistical
+    @pytest.mark.parametrize("algorithm", ["wolff", "swendsen_wang"])
+    def test_cluster_visit_histogram_is_boltzmann(self, algorithm: str) -> None:
+        self._assert_visit_histogram_is_boltzmann(algorithm, 42)
+
+    def test_kl_threshold_resolves_a_wrong_temperature(self) -> None:
+        """Power check without Monte Carlo: sampling at T=3.5 instead of
+        4.0 (a ~12% temperature error) exceeds the threshold several-fold,
+        so the gate resolves far subtler errors than the B1 bug class."""
+        energies = _state_energies(DB_SIZE)
+        p_target = _boltzmann(energies, DB_TEMPERATURE)
+        p_wrong = _boltzmann(energies, 3.5)
+        kl = float(np.sum(p_wrong * np.log(p_wrong / p_target)))
+        assert kl > 5.0 * _kl_threshold(DB_N_STATES)
 
 
 class TestFieldEffect:

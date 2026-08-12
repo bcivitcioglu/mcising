@@ -87,6 +87,12 @@ impl IsingSimulation {
             ));
         }
 
+        if algo_kind.requires_ferromagnetic_j1() && j1 <= 0.0 {
+            return Err(MCIsingError::ClusterCouplingSign(
+                algo_kind.name().to_string(),
+            ));
+        }
+
         if j2 != 0.0 && lattice.nnn_coordination_number() == 0 {
             return Err(MCIsingError::InvalidCoupling(
                 "j2 (no NNN defined for this lattice)",
@@ -549,5 +555,55 @@ impl IsingSimulation {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `Result::expect_err` needs `Debug` on the Ok type, which the
+    /// production struct deliberately does not derive.
+    fn constructor_error(j1: f64, algorithm: &str) -> MCIsingError {
+        match IsingSimulation::new_internal(4, j1, 0.0, 0.0, 0.0, 42, algorithm, "square") {
+            Ok(_) => panic!("J1={j1} must be rejected for {algorithm}"),
+            Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn test_new_internal_rejects_cluster_with_negative_j1() {
+        for algorithm in ["wolff", "swendsen_wang"] {
+            let err = constructor_error(-1.0, algorithm);
+            assert!(err.to_string().contains("requires J1>0"), "{err}");
+        }
+    }
+
+    #[test]
+    fn test_new_internal_rejects_cluster_with_zero_j1() {
+        // J1=0 gives p_add=0: cluster growth never adds a site, so the
+        // "cluster" update degenerates just like J1<0 does.
+        for algorithm in ["wolff", "swendsen_wang"] {
+            let err = constructor_error(0.0, algorithm);
+            assert!(err.to_string().contains("requires J1>0"), "{err}");
+        }
+    }
+
+    #[test]
+    fn test_new_internal_accepts_cluster_with_positive_j1() {
+        for algorithm in ["wolff", "swendsen_wang"] {
+            assert!(
+                IsingSimulation::new_internal(4, 1.0, 0.0, 0.0, 0.0, 42, algorithm, "square")
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn test_new_internal_metropolis_accepts_negative_j1() {
+        assert!(
+            IsingSimulation::new_internal(4, -1.0, 0.0, 0.0, 0.0, 42, "metropolis", "square")
+                .is_ok()
+        );
     }
 }

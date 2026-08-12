@@ -63,6 +63,11 @@ Metropolis flips one spin at a time. Near the critical temperature, this gets sl
 !!! warning "Cluster algorithm constraints"
     Wolff and Swendsen-Wang require `j2=0`, `j3=0`, and `h=0`. This is a fundamental limitation of the bond-percolation approach — it only works for pure nearest-neighbor ferromagnets. If you need J2 or external field, use Metropolis.
 
+    `j1` must also be positive: the bond probability `1 - exp(-2*beta*J1)` is
+    not a probability for antiferromagnetic couplings, so `j1<=0` is rejected
+    with a `ConfigurationError`. Use Metropolis for antiferromagnetic
+    couplings (a sublattice-mapped cluster algorithm is future work).
+
 ## Performance comparison
 
 On a 32x32 square lattice at Tc=2.269, 10,000 sweeps:

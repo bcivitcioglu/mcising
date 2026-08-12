@@ -115,4 +115,14 @@ impl AlgorithmKind {
     pub fn requires_no_frustration(&self) -> bool {
         matches!(self, Self::Wolff | Self::SwendsenWang)
     }
+
+    /// Whether this algorithm's Fortuin-Kasteleyn bond probability
+    /// `p_add = 1 - exp(-2*beta*J1)` requires a ferromagnetic J1.
+    ///
+    /// For J1 <= 0, `p_add <= 0` and cluster growth never adds a site:
+    /// the update degenerates to single random spin flips with no
+    /// acceptance test — a silently wrong sampler (B1).
+    pub fn requires_ferromagnetic_j1(&self) -> bool {
+        matches!(self, Self::Wolff | Self::SwendsenWang)
+    }
 }

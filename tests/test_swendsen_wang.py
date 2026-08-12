@@ -33,6 +33,22 @@ class TestSwendsenWangConfig:
         )
         assert config.algorithm == Algorithm.SWENDSEN_WANG
 
+    def test_sw_negative_j1_raises(self) -> None:
+        with pytest.raises(ConfigurationError, match="require J1>0"):
+            SimulationConfig(
+                lattice=LatticeConfig(size=4, j1=-1.0),
+                algorithm=Algorithm.SWENDSEN_WANG,
+            )
+
+    def test_sw_zero_j1_raises(self) -> None:
+        # J1=0 gives bond probability 0: the "cluster" degenerates exactly
+        # like J1<0 does, so it is rejected by the same guard.
+        with pytest.raises(ConfigurationError, match="require J1>0"):
+            SimulationConfig(
+                lattice=LatticeConfig(size=4, j1=0.0),
+                algorithm=Algorithm.SWENDSEN_WANG,
+            )
+
 
 class TestSwendsenWangSimulation:
     """Test Swendsen-Wang algorithm via high-level Simulation."""

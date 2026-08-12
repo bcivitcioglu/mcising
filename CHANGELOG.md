@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Exact-enumeration test oracle (Rust, test-only): the full density of
+  states of the 4×4 square torus (65 536 states) and the 12-site periodic
+  chain (4 096 states), validated against the closed-form transfer matrix
+  and high-/zero-temperature limits. Metropolis (both coupling signs),
+  Wolff, and Swendsen-Wang long runs now reproduce exact ⟨E⟩ within 0.5%
+  at T ∈ {1.0, 2.269, 4.0}, with an enforced statistical power floor.
+- True detailed-balance test: the empirical state-visit histogram on a
+  3×3 torus is compared against exact Boltzmann weights with a
+  KL-divergence threshold derived from the chi-square law of the
+  G statistic (previous "detailed balance" test checked stationarity only).
+
+### Changed
+
+- Cluster algorithms (Wolff, Swendsen-Wang) now reject `j1 <= 0` with a
+  clear error instead of silently degenerating into random single spin
+  flips (the bond probability `1 − exp(−2βJ1)` is not a probability for
+  antiferromagnetic couplings; the previous guard was a `debug_assert`
+  that vanished in release builds). `SimulationConfig` raises
+  `ConfigurationError`; the Rust core and both parallel runners raise
+  `ValueError`. Use `metropolis` for antiferromagnetic couplings —
+  sublattice-mapped cluster updates remain future work.
+
 ### Fixed
 
 - Antiferromagnetic (J<0) single-coupling Metropolis now samples the
