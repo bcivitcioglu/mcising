@@ -58,7 +58,12 @@ def info() -> None:
 @app.command()
 def run(
     lattice_size: Annotated[
-        int, typer.Option("-L", "--lattice-size", help="Lattice size L (L x L).")
+        int,
+        typer.Option(
+            "-L",
+            "--lattice-size",
+            help="Lattice size L (L x L; even for triangular/honeycomb).",
+        ),
     ] = 16,
     lattice: Annotated[
         str,
@@ -232,7 +237,12 @@ def run(
 @app.command()
 def benchmark(
     lattice_size: Annotated[
-        int, typer.Option("-L", "--lattice-size", help="Lattice size L.")
+        int,
+        typer.Option(
+            "-L",
+            "--lattice-size",
+            help="Lattice size L (even sizes cover all lattices).",
+        ),
     ] = 32,
     n_sweeps: Annotated[
         int, typer.Option("--sweeps", help="Sweeps to benchmark.")
@@ -829,8 +839,8 @@ def docs_lattices() -> None:
         """LATTICE TYPES
 =============
 square       2D  coord=4   Tc=2.269   shape=(L,L)      J1,J2,J3,H supported
-triangular   2D  coord=6   Tc=3.641   shape=(L,L)      J1,J2,J3,H supported
-honeycomb    2D  coord=3   Tc=1.519   shape=(L,L,2)    J1,J2,J3,H supported
+triangular   2D  coord=6   Tc=3.641   shape=(L,L)      J1,J2,J3,H; even L only
+honeycomb    2D  coord=3   Tc=1.519   shape=(L,L,2)    J1,J2,J3,H; even L only
 cubic        3D  coord=6   Tc=4.512   shape=(L,L,L)    J1,J2,J3,H supported
 chain        1D  coord=2   Tc=0       shape=(N,)        J1,J2,J3,H supported"""
     )

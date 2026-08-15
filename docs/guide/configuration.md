@@ -39,7 +39,7 @@ config = SimulationConfig(
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `lattice_type` | `LatticeType` | `SQUARE` | Lattice geometry |
-| `size` | `int` | `10` | Linear extent L (must be >= 2) |
+| `size` | `int` | `10` | Linear extent L (must be >= 2; even for triangular/honeycomb) |
 | `j1` | `float` | `1.0` | Nearest-neighbor coupling |
 | `j2` | `float` | `0.0` | Next-nearest-neighbor coupling |
 | `j3` | `float` | `0.0` | Third-nearest-neighbor coupling |

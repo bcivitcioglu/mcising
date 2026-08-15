@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from mcising._core import IsingSimulation
+from mcising._core import (
+    IsingSimulation,
+    run_independent_temperatures,
+    run_parallel_tempering,
+)
+from mcising.config import LatticeConfig, LatticeType
+from mcising.exceptions import ConfigurationError
 
 
 class TestLatticeInitialization:
@@ -65,3 +71,64 @@ class TestSpinManipulation:
     def test_flip_out_of_bounds_raises(self, small_sim: IsingSimulation) -> None:
         with pytest.raises(ValueError, match="out of bounds"):
             small_sim.flip_spin(10, 10)
+
+
+class TestOddSizeBoundary:
+    """The even-L guard for triangular/honeycomb fires at every boundary.
+
+    Row-parity offset coordinates make rows 0 and L-1 share a parity when
+    L is odd, so bonds across the vertical wrap seam are not reciprocal
+    and the Hamiltonian is silently invalid (B2, #13). Correct odd-L
+    periodic wraps are research-shaped; the configuration is rejected.
+    """
+
+    @pytest.mark.parametrize(
+        "lattice_type", [LatticeType.TRIANGULAR, LatticeType.HONEYCOMB]
+    )
+    def test_config_rejects_odd_size(self, lattice_type: LatticeType) -> None:
+        with pytest.raises(ConfigurationError, match="requires even size L"):
+            LatticeConfig(lattice_type=lattice_type, size=5)
+
+    @pytest.mark.parametrize(
+        "lattice_type", [LatticeType.TRIANGULAR, LatticeType.HONEYCOMB]
+    )
+    def test_config_accepts_even_size(self, lattice_type: LatticeType) -> None:
+        config = LatticeConfig(lattice_type=lattice_type, size=6)
+        assert config.size == 6
+
+    @pytest.mark.parametrize("lattice_name", ["triangular", "honeycomb"])
+    def test_core_constructor_rejects_odd_size(self, lattice_name: str) -> None:
+        # Defense in depth for direct _core use, which bypasses
+        # LatticeConfig. Rust errors currently map to ValueError, not
+        # ConfigurationError (unified in the P10/P11 API phases).
+        with pytest.raises(ValueError, match="requires even size L"):
+            IsingSimulation(5, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", lattice_name)
+
+    def test_square_still_accepts_odd_size(self) -> None:
+        # The guard is triangular/honeycomb-specific: square, chain, and
+        # cubic wraps are parity-free and odd L remains valid.
+        sim = IsingSimulation(5, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", "square")
+        assert sim.num_sites == 25
+
+    def test_independent_runner_rejects_odd_size(self) -> None:
+        with pytest.raises(ValueError, match="requires even size L"):
+            run_independent_temperatures(
+                5, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", "triangular", [2.0], 10, 10, 1
+            )
+
+    def test_parallel_tempering_rejects_odd_size(self) -> None:
+        with pytest.raises(ValueError, match="requires even size L"):
+            run_parallel_tempering(
+                5,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                42,
+                "metropolis",
+                "honeycomb",
+                [2.0, 2.5],
+                10,
+                10,
+                1,
+            )

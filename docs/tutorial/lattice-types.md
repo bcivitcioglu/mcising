@@ -42,6 +42,11 @@ mcising supports 5 lattice geometries, each with its own coordination number and
 
     6 nearest neighbors per site. Higher coordination means stronger ordering — Tc is higher than square. Uses offset coordinates internally.
 
+    !!! warning "Even L only"
+        The triangular lattice requires an **even size L**: the row-parity
+        offset wrap is only consistent for even L, so odd sizes are rejected
+        with a `ConfigurationError`.
+
 === "Honeycomb"
 
     ```python
@@ -55,6 +60,11 @@ mcising supports 5 lattice geometries, each with its own coordination number and
     ```
 
     3 nearest neighbors per site. Two-sublattice structure — the spin array has shape `(L, L, 2)`. Lower coordination means weaker ordering (Tc < square). Think graphene geometry.
+
+    !!! warning "Even L only"
+        The honeycomb lattice requires an **even size L**: the row-parity
+        offset wrap is only consistent for even L, so odd sizes are rejected
+        with a `ConfigurationError`.
 
 === "Cubic"
 

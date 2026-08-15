@@ -89,15 +89,10 @@ impl McAlgorithm for SwendsenWang {
             }
         }
 
-        // Assign a random flip decision to each cluster root.
-        // We use a simple scheme: for each root, generate a bool.
-        // To avoid a separate pass to find roots, we use a lazy approach:
-        // store flip decisions indexed by root, using a Vec<i8> where
-        // 0 = undecided, 1 = no flip, -1 = flip.
-        //
-        // But since we're reusing buffers, let's use the rank array
-        // (which we no longer need) to store decisions:
-        // 0 = undecided, 1 = keep, 2 = flip
+        // Assign a random flip decision to each cluster root, lazily on
+        // first visit. The union-find rank array is dead after bond
+        // percolation, so it is reused as the per-root decision store:
+        // 0 = undecided, 1 = keep, 2 = flip.
         for i in 0..n {
             self.rank[i] = 0; // reset to "undecided"
         }

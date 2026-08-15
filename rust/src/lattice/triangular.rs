@@ -2,19 +2,33 @@ use super::Lattice;
 
 /// 2D triangular lattice with periodic boundary conditions.
 ///
-/// Uses offset coordinates on an L×L grid. Each site has 6 nearest neighbors.
-/// Rows with even index have different diagonal connectivity than odd rows:
+/// Uses offset coordinates on an L×L grid (L even; see [`Self::new`]).
+/// Site (r, c) maps to cartesian coordinates, in units of the lattice
+/// spacing:
 ///
-/// Even row (r):  also connects to (r-1, c) and (r+1, c) diagonals on the left
-/// Odd row (r):   also connects to (r-1, c) and (r+1, c) diagonals on the right
+/// ```text
+///   x = c + 0.5 * (r % 2)
+///   y = r * sqrt(3)/2
+/// ```
 ///
-/// Specifically, the 6 NN of site (r, c) are:
-///   Same as square: left (r, c-1), right (r, c+1), up (r-1, c), down (r+1, c)
-///   Even row extra: up-left (r-1, c-1), down-left (r+1, c-1)
-///   Odd row extra:  up-right (r-1, c+1), down-right (r+1, c+1)
+/// which realizes the Bravais vectors a1 = (1, 0) and a2 = (1/2, √3/2).
+/// The three neighbor shells, with their exact squared distances in this
+/// embedding, are:
 ///
-/// NNN (6 per site): the 6 next-nearest neighbors at distance √3.
-/// TNN (6 per site): the 6 third-nearest neighbors at distance 2.
+///   NN  (6 per site, d² = 1): ±a1, ±a2, ±(a2 − a1)
+///   NNN (6 per site, d² = 3): ±(a1 + a2), ±(2a2 − a1), ±(2a1 − a2)
+///   TNN (6 per site, d² = 4): ±2a1, ±2a2, ±2(a2 − a1)
+///
+/// In (Δrow, Δcol) offset terms the NN and NNN shells depend on row
+/// parity (a ±1 row step lands on the other parity, whose x origin is
+/// shifted by 1/2), while the TNN shell is parity-independent (row steps
+/// of 0 or ±2 preserve parity):
+///
+///   NN,  even row: (0, ±1), (±1, 0), (−1, −1), (+1, −1)
+///   NN,  odd  row: (0, ±1), (±1, 0), (−1, +1), (+1, +1)
+///   NNN, even row: (±2, 0), (−1, +1), (+1, +1), (−1, −2), (+1, −2)
+///   NNN, odd  row: (±2, 0), (−1, −1), (+1, −1), (−1, +2), (+1, +2)
+///   TNN, any  row: (0, ±2), (+2, ±1), (−2, ±1)
 pub struct TriangularLattice {
     size: usize,
     num_sites: usize,
@@ -27,9 +41,14 @@ pub struct TriangularLattice {
 impl TriangularLattice {
     /// Create a new triangular lattice of dimensions `size x size`.
     ///
-    /// Returns `None` if `size < 2`.
+    /// Returns `None` if `size < 2` or `size` is odd. With row-parity
+    /// offset coordinates, rows 0 and L−1 have the same parity when L is
+    /// odd, so the diagonal bonds across the vertical wrap seam are not
+    /// reciprocal and the Hamiltonian would be invalid (B2, #13). The
+    /// row wrap is only a lattice translation, (0, L·√3/2) = (L/2)(2a2 −
+    /// a1), for even L.
     pub fn new(size: usize) -> Option<Self> {
-        if size < 2 {
+        if size < 2 || !size.is_multiple_of(2) {
             return None;
         }
 
@@ -64,52 +83,43 @@ impl TriangularLattice {
                 nn_table.push(down * size + right); // down-right
             }
 
-            // NNN: 6 next-nearest neighbors (at distance √3 in real space)
-            // These are the sites reachable by one NN step + one different NN step.
-            // For offset coordinates, NNN depends on row parity.
+            // NNN: 6 next-nearest neighbors at distance √3 (d² = 3), the
+            // ±(a1+a2), ±(2a2−a1), ±(2a1−a2) shell. Offsets are parity-
+            // dependent because a ±1 row step changes the x origin by 1/2
+            // (see the struct-level derivation).
             let left2 = (col + size - 2) % size;
             let right2 = (col + 2) % size;
             let up2 = (row + size - 2) % size;
             let down2 = (row + 2) % size;
 
             if row.is_multiple_of(2) {
-                // Even row NNN
+                // Even row NNN: (−1,+1), (+1,+1), (±2,0), (−1,−2), (+1,−2)
                 nnn_table.push(up * size + right); // up-right
                 nnn_table.push(down * size + right); // down-right
                 nnn_table.push(up2 * size + col); // up 2
                 nnn_table.push(down2 * size + col); // down 2
-                nnn_table.push(up * size + left2); // up-left-left (via offset)
-                                                   // Actually, let me be more careful about NNN on triangular.
-                                                   // For a proper triangular lattice with offset coords:
-                                                   // NNN are at distance 2 (in lattice-spacing units).
-                                                   // Let me just use the second-neighbor shell.
-                nnn_table.push(down * size + left2);
+                nnn_table.push(up * size + left2); // up-left-left
+                nnn_table.push(down * size + left2); // down-left-left
             } else {
-                // Odd row NNN
-                nnn_table.push(up * size + left);
-                nnn_table.push(down * size + left);
-                nnn_table.push(up2 * size + col);
-                nnn_table.push(down2 * size + col);
-                nnn_table.push(up * size + right2);
-                nnn_table.push(down * size + right2);
+                // Odd row NNN: (−1,−1), (+1,−1), (±2,0), (−1,+2), (+1,+2)
+                nnn_table.push(up * size + left); // up-left
+                nnn_table.push(down * size + left); // down-left
+                nnn_table.push(up2 * size + col); // up 2
+                nnn_table.push(down2 * size + col); // down 2
+                nnn_table.push(up * size + right2); // up-right-right
+                nnn_table.push(down * size + right2); // down-right-right
             }
 
-            // TNN: 6 third-nearest neighbors (at distance 2 along lattice directions)
-            if row.is_multiple_of(2) {
-                tnn_table.push(row * size + left2); // left 2
-                tnn_table.push(row * size + right2); // right 2
-                tnn_table.push(up2 * size + left); // up2-left
-                tnn_table.push(up2 * size + col); // Hmm, this overlaps with NNN
-                tnn_table.push(down2 * size + left);
-                tnn_table.push(down2 * size + col);
-            } else {
-                tnn_table.push(row * size + left2);
-                tnn_table.push(row * size + right2);
-                tnn_table.push(up2 * size + right);
-                tnn_table.push(up2 * size + col);
-                tnn_table.push(down2 * size + right);
-                tnn_table.push(down2 * size + col);
-            }
+            // TNN: 6 third-nearest neighbors at distance 2 (d² = 4), the
+            // ±2a1, ±2a2, ±2(a2−a1) shell. Row steps of 0 or ±2 preserve
+            // parity, so the offsets are the same for every row:
+            // (0, ±2), (+2, ±1), (−2, ±1).
+            tnn_table.push(row * size + left2); // left 2
+            tnn_table.push(row * size + right2); // right 2
+            tnn_table.push(up2 * size + left); // up2-left
+            tnn_table.push(up2 * size + right); // up2-right
+            tnn_table.push(down2 * size + left); // down2-left
+            tnn_table.push(down2 * size + right); // down2-right
         }
 
         Some(Self {
@@ -149,30 +159,37 @@ impl Lattice for TriangularLattice {
     }
 
     fn distance_squared(&self, idx_a: usize, idx_b: usize) -> usize {
-        // For offset triangular coordinates, exact Euclidean distance
-        // requires conversion to real-space. For now, use axial distance.
-        // Real-space coords for offset:
-        //   x = col + 0.5 * (row % 2)
-        //   y = row * sqrt(3)/2
-        // But distance_squared returns integer, so we approximate
-        // using the standard lattice metric.
-        let row_a = idx_a / self.size;
-        let col_a = idx_a % self.size;
-        let row_b = idx_b / self.size;
-        let col_b = idx_b % self.size;
+        // Exact Euclidean squared distance in the 60° basis, in units of
+        // the lattice spacing. With x = c + (r % 2)/2 and y = r·√3/2,
+        // doubling x to keep integers (X = 2c + r % 2, Y = r) gives
+        //
+        //   4·d² = ΔX² + 3·ΔY²
+        //
+        // ΔX and ΔY always have equal parity (X and r have equal parity
+        // mod 2 for even L), so ΔX² + 3ΔY² ≡ 0 (mod 4) and d² is an exact
+        // integer — the shells come out at d² = 1 (NN), 3 (NNN), 4 (TNN).
+        // Periodic images: a column wrap shifts X by 2L, a row wrap shifts
+        // Y by L (and preserves parity, L even, so X is unshifted);
+        // minimize over the 9 images.
+        let l = self.size as isize;
+        let row_a = (idx_a / self.size) as isize;
+        let col_a = (idx_a % self.size) as isize;
+        let row_b = (idx_b / self.size) as isize;
+        let col_b = (idx_b % self.size) as isize;
 
-        let dy = {
-            let d = row_a.abs_diff(row_b);
-            d.min(self.size - d)
-        };
-        let dx = {
-            let d = col_a.abs_diff(col_b);
-            d.min(self.size - d)
-        };
+        let dx0 = 2 * (col_b - col_a) + (row_b % 2 - row_a % 2);
+        let dy0 = row_b - row_a;
 
-        // Approximate: use Manhattan-like metric for triangular
-        // This is sufficient for correlation function distance binning.
-        dx * dx + dy * dy
+        let mut best = usize::MAX;
+        for m in [-1isize, 0, 1] {
+            for n in [-1isize, 0, 1] {
+                let dx = dx0 + 2 * n * l;
+                let dy = dy0 + m * l;
+                let four_d2 = (dx * dx + 3 * dy * dy) as usize;
+                best = best.min(four_d2);
+            }
+        }
+        best / 4
     }
 
     fn flat_to_multi(&self, idx: usize) -> Vec<usize> {
@@ -212,6 +229,14 @@ mod tests {
     fn test_creation_too_small() {
         assert!(TriangularLattice::new(0).is_none());
         assert!(TriangularLattice::new(1).is_none());
+    }
+
+    #[test]
+    fn test_creation_odd_rejected() {
+        // Odd L breaks diagonal-bond reciprocity across the row wrap (B2).
+        assert!(TriangularLattice::new(3).is_none());
+        assert!(TriangularLattice::new(5).is_none());
+        assert!(TriangularLattice::new(7).is_none());
     }
 
     #[test]
@@ -302,11 +327,55 @@ mod tests {
 
     #[test]
     fn test_flat_to_multi_roundtrip() {
-        let lattice = TriangularLattice::new(5).unwrap();
+        let lattice = TriangularLattice::new(6).unwrap();
         for idx in 0..lattice.num_sites() {
             let multi = lattice.flat_to_multi(idx);
             assert_eq!(lattice.multi_to_flat(&multi), idx);
         }
+    }
+
+    #[test]
+    fn test_distance_squared_shells() {
+        // Every table entry sits at its shell's exact squared distance:
+        // NN d²=1, NNN d²=3, TNN d²=4.
+        let lattice = TriangularLattice::new(8).unwrap();
+        for idx in 0..lattice.num_sites() {
+            for &nbr in lattice.nearest_neighbors(idx) {
+                assert_eq!(lattice.distance_squared(idx, nbr), 1, "NN of {idx}");
+            }
+            for &nbr in lattice.next_nearest_neighbors(idx) {
+                assert_eq!(lattice.distance_squared(idx, nbr), 3, "NNN of {idx}");
+            }
+            for &nbr in lattice.third_nearest_neighbors(idx) {
+                assert_eq!(lattice.distance_squared(idx, nbr), 4, "TNN of {idx}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_distance_squared_symmetric() {
+        let lattice = TriangularLattice::new(6).unwrap();
+        for a in 0..lattice.num_sites() {
+            for b in 0..lattice.num_sites() {
+                assert_eq!(
+                    lattice.distance_squared(a, b),
+                    lattice.distance_squared(b, a),
+                    "d²({a},{b}) != d²({b},{a})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_distance_squared_pbc_wrap() {
+        // Sites (0,0) and (0,L-1) are NN through the column wrap.
+        let lattice = TriangularLattice::new(6).unwrap();
+        assert_eq!(lattice.distance_squared(0, 5), 1);
+        // Sites (0,0) and (L-1,0): odd row L-1 wraps to a NN diagonal.
+        assert_eq!(lattice.distance_squared(0, 30), 1);
+        // Sites (0,0) and (L-2,0): two row steps through the wrap = TNN
+        // shell partner only via (−2,±1); straight up-2 is NNN (d²=3).
+        assert_eq!(lattice.distance_squared(0, 24), 3);
     }
 
     #[test]

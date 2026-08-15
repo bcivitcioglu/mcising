@@ -6,6 +6,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum MCIsingError {
     InvalidLatticeSize(usize),
+    OddLatticeSize(&'static str, usize),
     InvalidTemperature(f64),
     InvalidCoupling(&'static str, f64),
     InvalidSpinConfiguration(String),
@@ -20,6 +21,15 @@ impl fmt::Display for MCIsingError {
         match self {
             Self::InvalidLatticeSize(size) => {
                 write!(f, "Lattice size must be >= 2, got {size}")
+            }
+            Self::OddLatticeSize(lattice, size) => {
+                write!(
+                    f,
+                    "The {lattice} lattice requires even size L under periodic \
+                     boundary conditions (odd L breaks neighbor-table symmetry \
+                     across the wrap seam; odd-L support is future work), \
+                     got {size}"
+                )
             }
             Self::InvalidTemperature(temp) => {
                 write!(f, "Temperature must be positive and finite, got {temp}")
