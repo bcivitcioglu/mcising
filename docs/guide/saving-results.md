@@ -43,27 +43,21 @@ Good for quick inspection, logging, or feeding into other tools.
 
 ## Checkpointing — crash recovery
 
-For long simulations, checkpoint after each temperature so you don't lose progress:
+For long simulations, checkpoint completed temperatures so you don't lose progress:
 
 ```python
-from mcising import checkpoint_run
+from mcising import Simulation, checkpoint_run
 
-checkpoint_run(
-    config,
-    checkpoint_path="checkpoint.h5",
-    output_path="results.h5",
-)
+sim = Simulation(config)
+results = checkpoint_run(sim, "checkpoint.h5")
 ```
 
-If interrupted, resume from where you left off:
+If interrupted, resume from where you left off (the config must match the
+one the checkpoint was written with — only `temperatures` may differ, so a
+scan can be extended):
 
 ```python
-checkpoint_run(
-    config,
-    checkpoint_path="checkpoint.h5",
-    output_path="results.h5",
-    resume=True,
-)
+results = checkpoint_run(Simulation(config), "checkpoint.h5", resume=True)
 ```
 
 Or from the CLI:
@@ -73,4 +67,12 @@ mcising run -L 32 --checkpoint sim.h5
 mcising run -L 32 --checkpoint sim.h5 --resume
 ```
 
-Each completed temperature is flushed to disk immediately — a crash only loses the current temperature's data.
+Checkpoint granularity depends on the execution mode:
+
+- **Cooldown**: each completed temperature is flushed to disk immediately —
+  a crash only loses the current temperature's data.
+- **Independent**: the batch runs in parallel and every temperature is
+  saved when it returns; on resume, only the missing temperatures run, and
+  they keep the RNG streams they would have had in an uninterrupted run.
+- **Parallel tempering**: all-or-nothing — the replicas form one coupled
+  ensemble, so a partially completed ladder cannot be resumed.

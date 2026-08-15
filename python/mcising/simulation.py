@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Any, Final
 
 import numpy as np
 from numpy.typing import NDArray
@@ -21,13 +21,35 @@ from mcising._core import run_independent_temperatures as _run_independent
 from mcising._core import run_parallel_tempering as _run_pt
 from mcising.config import ExecutionMode, SimulationConfig
 from mcising.constants import INF_TEMP
-from mcising.exceptions import SimulationError
+from mcising.exceptions import ConfigurationError, SimulationError
 
 __all__: Final[list[str]] = [
     "Simulation",
     "SimulationResults",
     "AdaptiveDiagnostics",
 ]
+
+
+def _fill_results_from_raw(
+    raw: list[dict[str, Any]], results: SimulationResults
+) -> None:
+    """Copy per-temperature arrays from Rust runner dicts into results."""
+    for entry in raw:
+        temp = float(entry["temperature"])
+        results.energy[temp] = np.asarray(entry["energies"])
+        results.magnetization[temp] = np.asarray(entry["magnetizations"])
+        if "configurations" in entry:
+            results.configurations[temp] = np.asarray(entry["configurations"])
+        if (
+            "correlation_function" in entry
+            and results.correlation_function is not None
+            and results.correlation_length is not None
+        ):
+            results.correlation_function[temp] = (
+                np.asarray(entry["correlation_distances"]),
+                np.asarray(entry["correlation_function"]),
+            )
+            results.correlation_length[temp] = np.asarray(entry["correlation_length"])
 
 
 @dataclass
@@ -275,26 +297,50 @@ class Simulation:
           descending order. Spins carried from high T to low T.
         - **INDEPENDENT**: Each temperature runs in parallel from random
           initialization. Uses all CPU cores via Rayon.
+        - **PARALLEL_TEMPERING**: All temperatures run as one coupled
+          replica-exchange ensemble with periodic swap attempts.
 
         Parameters
         ----------
         show_progress : bool
             Whether to display a Rich progress bar.
         on_temperature_complete : callable, optional
-            Called after each temperature (cooldown mode only).
+            Called once per completed temperature. In cooldown mode it
+            fires as each temperature finishes; in the parallel modes the
+            batch computes every temperature first and the callback then
+            fires once per temperature.
         skip_temperatures : frozenset[float], optional
-            Temperatures to skip (cooldown mode only).
+            Temperatures to leave out of this run (e.g. already completed
+            in a checkpoint). In independent mode the remaining
+            temperatures keep the RNG streams they would have had in a
+            full run. In parallel tempering only skipping every
+            temperature (or none) is allowed — the replicas form one
+            coupled ensemble.
 
         Returns
         -------
         SimulationResults
             Collected measurements across all temperatures.
+
+        Raises
+        ------
+        ConfigurationError
+            In parallel tempering, when ``skip_temperatures`` covers a
+            non-empty proper subset of the configured temperatures.
         """
         if self.config.mode == ExecutionMode.INDEPENDENT:
-            return self._run_independent(show_progress=show_progress)
+            return self._run_independent(
+                show_progress=show_progress,
+                on_temperature_complete=on_temperature_complete,
+                skip_temperatures=skip_temperatures,
+            )
 
         if self.config.mode == ExecutionMode.PARALLEL_TEMPERING:
-            return self._run_parallel_tempering(show_progress=show_progress)
+            return self._run_parallel_tempering(
+                show_progress=show_progress,
+                on_temperature_complete=on_temperature_complete,
+                skip_temperatures=skip_temperatures,
+            )
 
         return self._run_cooldown(
             show_progress=show_progress,
@@ -302,12 +348,32 @@ class Simulation:
             skip_temperatures=skip_temperatures,
         )
 
-    def _run_independent(self, *, show_progress: bool = True) -> SimulationResults:
-        """Run all temperatures in parallel via Rayon."""
+    def _run_independent(
+        self,
+        *,
+        show_progress: bool = True,
+        on_temperature_complete: (
+            Callable[[float, SimulationResults], None] | None
+        ) = None,
+        skip_temperatures: frozenset[float] | None = None,
+    ) -> SimulationResults:
+        """Run all temperatures in parallel via Rayon.
+
+        ``skip_temperatures`` filters the batch; each surviving temperature
+        keeps the seed offset it has in the full configured scan, so a
+        resumed run reproduces the uninterrupted run's RNG streams. The
+        callback fires once per temperature after the batch returns.
+        """
         import time
 
         start_time = time.monotonic()
-        temps = list(self.config.temperatures)
+        skip = skip_temperatures or frozenset()
+        temps: list[float] = []
+        seed_offsets: list[int] = []
+        for i, temp in enumerate(self.config.temperatures):
+            if temp not in skip:
+                temps.append(temp)
+                seed_offsets.append(i)
 
         results = SimulationResults(
             temperatures=temps,
@@ -319,6 +385,10 @@ class Simulation:
         if self.config.compute_correlation:
             results.correlation_function = {}
             results.correlation_length = {}
+
+        if not temps:
+            results.metadata["elapsed_seconds"] = time.monotonic() - start_time
+            return results
 
         with Progress(
             SpinnerColumn(),
@@ -344,15 +414,16 @@ class Simulation:
                 n_thermalization=self.config.n_thermalization,
                 n_sweeps=self.config.n_sweeps,
                 measurement_interval=self.config.measurement_interval,
-                store_configs=True,
+                store_configs=self.config.store_configs,
+                compute_correlation=self.config.compute_correlation,
+                seed_offsets=seed_offsets,
             )
 
-        for entry in raw:
-            temp = float(entry["temperature"])
-            results.energy[temp] = np.asarray(entry["energies"])
-            results.magnetization[temp] = np.asarray(entry["magnetizations"])
-            if "configurations" in entry:
-                results.configurations[temp] = np.asarray(entry["configurations"])
+        _fill_results_from_raw(raw, results)
+
+        if on_temperature_complete is not None:
+            for temp in temps:
+                on_temperature_complete(temp, results)
 
         elapsed = time.monotonic() - start_time
         results.metadata["elapsed_seconds"] = elapsed
@@ -360,13 +431,27 @@ class Simulation:
         return results
 
     def _run_parallel_tempering(
-        self, *, show_progress: bool = True
+        self,
+        *,
+        show_progress: bool = True,
+        on_temperature_complete: (
+            Callable[[float, SimulationResults], None] | None
+        ) = None,
+        skip_temperatures: frozenset[float] | None = None,
     ) -> SimulationResults:
-        """Run Parallel Tempering via Rayon."""
+        """Run Parallel Tempering via Rayon.
+
+        The replicas form one coupled ensemble, so ``skip_temperatures``
+        is all-or-nothing: skipping every configured temperature returns
+        empty results (nothing left to do), skipping a proper subset
+        raises. The callback fires once per temperature after the run.
+        """
         import time
 
         start_time = time.monotonic()
-        temps = list(self.config.temperatures)
+        skip = skip_temperatures or frozenset()
+        all_temps = list(self.config.temperatures)
+        temps = [t for t in all_temps if t not in skip]
 
         results = SimulationResults(
             temperatures=sorted(temps),
@@ -378,6 +463,23 @@ class Simulation:
         if self.config.compute_correlation:
             results.correlation_function = {}
             results.correlation_length = {}
+
+        if not temps:
+            results.metadata["elapsed_seconds"] = time.monotonic() - start_time
+            return results
+
+        if len(temps) != len(all_temps):
+            # Replica exchange couples every temperature into one ensemble:
+            # removing completed rungs would change the swap ladder and its
+            # dynamics for every remaining replica.
+            raise ConfigurationError(
+                "Parallel tempering cannot resume a partially completed "
+                "temperature ladder: the replicas form one coupled ensemble. "
+                "Delete the checkpoint to rerun the full ladder, or use "
+                "mode='independent' for per-temperature resume. Got "
+                f"{len(all_temps) - len(temps)} completed of "
+                f"{len(all_temps)} temperatures."
+            )
 
         with Progress(
             SpinnerColumn(),
@@ -404,15 +506,15 @@ class Simulation:
                 n_sweeps=self.config.n_sweeps,
                 measurement_interval=self.config.measurement_interval,
                 swap_interval=self.config.swap_interval,
-                store_configs=True,
+                store_configs=self.config.store_configs,
+                compute_correlation=self.config.compute_correlation,
             )
 
-        for entry in raw:
-            temp = float(entry["temperature"])
-            results.energy[temp] = np.asarray(entry["energies"])
-            results.magnetization[temp] = np.asarray(entry["magnetizations"])
-            if "configurations" in entry:
-                results.configurations[temp] = np.asarray(entry["configurations"])
+        _fill_results_from_raw(raw, results)
+
+        if on_temperature_complete is not None:
+            for temp in sorted(temps):
+                on_temperature_complete(temp, results)
 
         elapsed = time.monotonic() - start_time
         results.metadata["elapsed_seconds"] = elapsed
@@ -582,11 +684,13 @@ class Simulation:
 
         energies = np.empty(n_measurements, dtype=np.float64)
         magnetizations = np.empty(n_measurements, dtype=np.float64)
-        spin_shape = self._core.get_spins().shape
-        configs = np.empty(
-            (n_measurements, *spin_shape),
-            dtype=np.int8,
-        )
+        configs: NDArray[np.int8] | None = None
+        if self.config.store_configs:
+            spin_shape = self._core.get_spins().shape
+            configs = np.empty(
+                (n_measurements, *spin_shape),
+                dtype=np.int8,
+            )
 
         corr_lengths: list[float] = []
 
@@ -599,7 +703,8 @@ class Simulation:
 
             energies[m] = self._core.energy()
             magnetizations[m] = self._core.magnetization()
-            configs[m] = self._core.get_spins()
+            if configs is not None:
+                configs[m] = self._core.get_spins()
 
             if self.config.compute_correlation:
                 distances, correlations = self._core.correlation_function()
@@ -609,7 +714,8 @@ class Simulation:
 
         results.energy[temperature] = energies
         results.magnetization[temperature] = magnetizations
-        results.configurations[temperature] = configs
+        if configs is not None:
+            results.configurations[temperature] = configs
 
         if (
             self.config.compute_correlation
@@ -703,12 +809,13 @@ class Simulation:
 
         # Single Rust call for all production measurements
         energies, magnetizations, configs = self._core.production_sweeps(
-            n_measurements, interval, beta, True
+            n_measurements, interval, beta, self.config.store_configs
         )
 
         results.energy[temperature] = np.asarray(energies)
         results.magnetization[temperature] = np.asarray(magnetizations)
-        results.configurations[temperature] = np.asarray(configs)
+        if configs is not None:
+            results.configurations[temperature] = np.asarray(configs)
 
         # Update diagnostics with production info
         if diag is not None:

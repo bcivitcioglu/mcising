@@ -127,3 +127,17 @@ class TestCorrelationComputation:
         assert results.correlation_length is not None
         assert 2.269 in results.correlation_function
         assert 2.269 in results.correlation_length
+
+
+class TestStoreConfigsCooldown:
+    def test_store_configs_false_omits_configurations(self) -> None:
+        config = SimulationConfig(
+            lattice=LatticeConfig(size=4),
+            temperatures=(2.0,),
+            n_sweeps=20,
+            measurement_interval=10,
+            store_configs=False,
+        )
+        results = Simulation(config).run(show_progress=False)
+        assert 2.0 not in results.configurations
+        assert results.energy[2.0].shape == (2,)

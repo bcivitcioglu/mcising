@@ -226,3 +226,75 @@ class TestIndependentManyTemperatures:
             ],
             increasing=True,
         )
+
+
+def _small_independent_config(**overrides: object) -> SimulationConfig:
+    kwargs: dict[str, object] = {
+        "lattice": LatticeConfig(size=4),
+        "temperatures": (3.0, 2.0),
+        "n_sweeps": 50,
+        "measurement_interval": 10,
+        "mode": ExecutionMode.INDEPENDENT,
+    }
+    kwargs.update(overrides)
+    return SimulationConfig(**kwargs)  # type: ignore[arg-type]
+
+
+class TestIndependentCorrelation:
+    """compute_correlation must produce data in independent mode (B8).
+
+    Before P06 the flag was accepted, the result dicts were pre-created
+    empty, and nothing ever filled them — a silent no-op.
+    """
+
+    def test_correlation_populated(self) -> None:
+        config = _small_independent_config(compute_correlation=True)
+        results = Simulation(config).run(show_progress=False)
+        assert results.correlation_function is not None
+        assert results.correlation_length is not None
+        for temp in (3.0, 2.0):
+            distances, correlations = results.correlation_function[temp]
+            assert distances.size > 0
+            assert distances.shape == correlations.shape
+            # One correlation length per measurement (50 // 10).
+            assert results.correlation_length[temp].shape == (5,)
+
+    def test_correlation_absent_when_disabled(self) -> None:
+        results = Simulation(_small_independent_config()).run(show_progress=False)
+        assert results.correlation_function is None
+        assert results.correlation_length is None
+
+
+class TestIndependentStoreConfigs:
+    def test_store_configs_false_omits_configurations(self) -> None:
+        config = _small_independent_config(store_configs=False)
+        results = Simulation(config).run(show_progress=False)
+        for temp in (3.0, 2.0):
+            assert temp not in results.configurations
+            # Scalar observables are unaffected.
+            assert results.energy[temp].shape == (5,)
+
+
+class TestIndependentSkipSeeding:
+    """skip_temperatures must not re-seed the surviving temperatures.
+
+    Independent-mode seeds are base_seed + the temperature's index in the
+    configured scan; a resumed (skipping) run keeps each survivor's
+    original index, so its streams match the uninterrupted run's exactly.
+    """
+
+    def test_skip_preserves_streams(self) -> None:
+        config = _small_independent_config(temperatures=(3.0, 2.0, 1.0))
+        full = Simulation(config).run(show_progress=False)
+        resumed = Simulation(config).run(
+            show_progress=False, skip_temperatures=frozenset({3.0, 2.0})
+        )
+
+        assert resumed.temperatures == [1.0]
+        np.testing.assert_array_equal(resumed.energy[1.0], full.energy[1.0])
+        np.testing.assert_array_equal(
+            resumed.magnetization[1.0], full.magnetization[1.0]
+        )
+        np.testing.assert_array_equal(
+            resumed.configurations[1.0], full.configurations[1.0]
+        )

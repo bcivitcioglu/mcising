@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `checkpoint_run` now works in every execution mode (B4, #15). The
+  independent and parallel-tempering paths previously dropped the
+  checkpoint callback silently: no file was ever created while the CLI
+  reported success. Cooldown still saves after each temperature;
+  independent mode saves the batch when it returns; parallel tempering is
+  all-or-nothing.
+- Parallel tempering no longer drops measurements or panics when
+  `swap_interval` does not divide `measurement_interval` (B5, #16): the
+  cadence is validated at both the config and Rust boundaries, and result
+  arrays derive their shape from the actual measurement count, so short
+  arrays and the reshape `PanicException` are structurally impossible.
+- `flip_spin`/`spin_energy` addressed the wrong site on cubic, honeycomb,
+  and chain lattices (B6, #17): both computed `row*L + col` regardless of
+  geometry, silently flipping/reading a different in-bounds site on 3D and
+  two-sublattice lattices.
+- `compute_correlation` was silently ignored in independent mode (B8,
+  #19): the flag was accepted and empty result dicts were created, but
+  nothing ever filled them. Correlation functions and per-measurement
+  correlation lengths are now computed in both parallel modes.
+- The parallel runners no longer panic on user input: non-positive, NaN,
+  or empty temperature lists and zero intervals now raise `ValueError`
+  instead of `PanicException` (or silently sampling at garbage β).
+- Resuming a checkpoint now restores the driving simulation's spin/RNG
+  state only in cooldown mode, where that state actually advanced.
+
+### Added
+
+- `SimulationConfig.store_configs` (default `True`): disable to skip
+  per-measurement spin snapshots in all three modes (previously hardcoded
+  on in the parallel runners).
+- `compute_correlation` support in parallel tempering (the Rust runner
+  gained the parameter; the cost is serial across replicas).
+- Resume config guard: `checkpoint_run(..., resume=True)` refuses a
+  checkpoint written with a different config (`ConfigurationError`
+  naming the mismatched fields). Only `temperatures` may differ, so a
+  scan can be extended; independent-mode resume keeps each surviving
+  temperature's original RNG stream via seed offsets.
+
+### Changed
+
+- **Breaking**: `_core.IsingSimulation.flip_spin(site)` and
+  `spin_energy(site)` now take a single flat site index instead of
+  `(row, col)` — the only scheme that addresses every lattice geometry.
+- **Breaking**: parallel-tempering configs with
+  `measurement_interval % swap_interval != 0` are now rejected with
+  `ConfigurationError`; they previously ran and silently lost
+  measurements.
+- `on_temperature_complete` and `skip_temperatures` are accepted by
+  `Simulation.run()` in all three modes (previously cooldown-only,
+  silently ignored elsewhere). In parallel tempering, skipping a proper
+  subset of the ladder raises (the replicas form one coupled ensemble).
+
 ## [0.23.0] - 2026-08-13
 
 ### Added

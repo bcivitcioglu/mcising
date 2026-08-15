@@ -45,7 +45,7 @@ class TestLatticeInitialization:
 class TestSpinManipulation:
     def test_flip_spin(self, small_sim: IsingSimulation) -> None:
         original = small_sim.get_spins().copy()
-        small_sim.flip_spin(0, 0)
+        small_sim.flip_spin(0)
         flipped = small_sim.get_spins()
         assert flipped[0, 0] == -original[0, 0]
         # Other spins unchanged
@@ -70,7 +70,7 @@ class TestSpinManipulation:
 
     def test_flip_out_of_bounds_raises(self, small_sim: IsingSimulation) -> None:
         with pytest.raises(ValueError, match="out of bounds"):
-            small_sim.flip_spin(10, 10)
+            small_sim.flip_spin(16)
 
 
 class TestOddSizeBoundary:
@@ -132,3 +132,57 @@ class TestOddSizeBoundary:
                 10,
                 1,
             )
+
+
+class TestFlatSiteIndexing:
+    """flip_spin/spin_energy address sites by flat index on every lattice (B6).
+
+    The old (row, col) API computed idx = row*L + col for ALL lattices —
+    silently wrong for cubic ([L, L, L]) and honeycomb ([L, L, 2]), whose
+    in-bounds-but-misfolded indices flipped the wrong site. Site choices
+    below include indices the old arithmetic could not address at all.
+    """
+
+    CASES = [
+        ("square", 4, [0, 5, 15]),
+        ("triangular", 4, [0, 7, 15]),
+        ("chain", 8, [0, 3, 7]),
+        ("honeycomb", 4, [1, 17, 31]),  # 2*L^2 = 32 sites; odd = B sublattice
+        ("cubic", 4, [17, 21, 63]),  # beyond the old row*L+col reach (max 15)
+    ]
+
+    @pytest.mark.parametrize(("lattice_type", "size", "sites"), CASES)
+    def test_flip_spin_flips_exactly_site(
+        self, lattice_type: str, size: int, sites: list[int]
+    ) -> None:
+        sim = IsingSimulation(size, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", lattice_type)
+        for site in sites:
+            before = sim.get_spins().ravel().copy()
+            sim.flip_spin(site)
+            after = sim.get_spins().ravel()
+            changed = np.nonzero(after != before)[0]
+            assert changed.tolist() == [site], (
+                f"{lattice_type}: flip_spin({site}) changed sites {changed.tolist()}"
+            )
+
+    @pytest.mark.parametrize(("lattice_type", "size", "sites"), CASES)
+    def test_spin_energy_matches_total_energy_change(
+        self, lattice_type: str, size: int, sites: list[int]
+    ) -> None:
+        """Validate spin_energy against the independent total-energy path.
+
+        Flipping site i changes the total energy by -2x the local energy,
+        so N * (e_after - e_before) == -2 * spin_energy(i) exactly. All
+        three couplings and the field are nonzero so every neighbor shell
+        participates.
+        """
+        sim = IsingSimulation(size, 1.0, 0.3, 0.2, 0.1, 42, "metropolis", lattice_type)
+        num_sites = sim.num_sites
+        for site in sites:
+            e_before = sim.energy()
+            local = sim.spin_energy(site)
+            sim.flip_spin(site)
+            e_after = sim.energy()
+            assert (e_after - e_before) * num_sites == pytest.approx(
+                -2.0 * local, abs=1e-10
+            ), f"{lattice_type}: site {site}"

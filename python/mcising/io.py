@@ -8,6 +8,8 @@ from typing import Any, Final, cast
 
 import numpy as np
 
+from mcising.config import ExecutionMode, SimulationConfig
+from mcising.exceptions import ConfigurationError
 from mcising.simulation import AdaptiveDiagnostics, Simulation, SimulationResults
 
 __all__: Final[list[str]] = [
@@ -138,6 +140,12 @@ def checkpoint_run(
     are appended to the checkpoint file. If the process is interrupted,
     already-completed temperatures are preserved.
 
+    Checkpoint granularity depends on the execution mode: cooldown
+    saves after each temperature; independent mode computes the batch
+    in parallel and saves every temperature when it returns; parallel
+    tempering is all-or-nothing (the replicas form one coupled
+    ensemble, so a partial ladder cannot be resumed).
+
     Parameters
     ----------
     sim : Simulation
@@ -148,6 +156,8 @@ def checkpoint_run(
         Whether to display progress bars.
     resume : bool
         If True and the file exists, skip already-completed temperatures.
+        The stored config must match ``sim.config`` (temperatures may
+        differ, so a scan can be extended on resume).
     checkpoint_interval : int
         Save checkpoint every N completed temperatures. Default is 1
         (save after every temperature). Use higher values for speed
@@ -157,16 +167,29 @@ def checkpoint_run(
     -------
     SimulationResults
         Complete simulation results (including resumed data).
+
+    Raises
+    ------
+    ConfigurationError
+        On resume, when the checkpoint was written with a different
+        config than ``sim.config`` (or its config record is unreadable),
+        or when a parallel-tempering ladder is only partially complete.
     """
     path = Path(path)
     skip_temps: frozenset[float] = frozenset()
     resumed_results: SimulationResults | None = None
 
     if resume and path.exists():
+        _check_resume_config(path, sim.config)
         skip_temps = frozenset(load_completed_temperatures(path))
         if skip_temps:
             resumed_results = load_hdf5(path)
-            _restore_simulation_state(path, sim)
+            if sim.config.mode == ExecutionMode.COOLDOWN:
+                # The Python-side sim only advances in cooldown mode; the
+                # parallel modes build their own replicas in Rust, so
+                # restoring spins/RNG here would imply a state continuity
+                # those modes do not have.
+                _restore_simulation_state(path, sim)
 
     temp_counter = 0
     unsaved_temps: list[float] = []
@@ -181,7 +204,8 @@ def checkpoint_run(
                 init_checkpoint_file(path, results)
             for t in unsaved_temps:
                 save_temperature_group(path, t, results)
-            _save_simulation_state(path, sim)
+            if sim.config.mode == ExecutionMode.COOLDOWN:
+                _save_simulation_state(path, sim)
             unsaved_temps.clear()
 
     results = sim.run(
@@ -196,7 +220,8 @@ def checkpoint_run(
             init_checkpoint_file(path, results)
         for t in unsaved_temps:
             save_temperature_group(path, t, results)
-        _save_simulation_state(path, sim)
+        if sim.config.mode == ExecutionMode.COOLDOWN:
+            _save_simulation_state(path, sim)
         unsaved_temps.clear()
 
     # Merge resumed data into results
@@ -375,6 +400,69 @@ def save_json_summary(results: SimulationResults, path: str | Path) -> None:
 
     with open(path, "w") as f:
         json.dump(summary, f, indent=2)
+
+
+def _load_stored_config(path: str | Path) -> dict[str, Any] | None:
+    """Read the config dict recorded in a checkpoint's metadata group.
+
+    Returns None when no config record exists (legacy files; schema
+    compatibility is P07's territory). Raises when a record exists but
+    cannot be parsed back into a dict — an unreadable record must not
+    silently disable the resume-mismatch check.
+    """
+    import h5py
+
+    with h5py.File(path, "r") as f:
+        if "metadata" not in f or "config_json" not in f["metadata"].attrs:
+            return None
+        raw = f["metadata"].attrs["config_json"]
+
+    try:
+        stored = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        stored = None
+    if not isinstance(stored, dict):
+        raise ConfigurationError(
+            f"Checkpoint {path} has an unreadable configuration record; "
+            "cannot rule out a mismatched resume. Start a new checkpoint "
+            "file, or load the data explicitly with load_hdf5()."
+        )
+    return stored
+
+
+def _check_resume_config(path: str | Path, config: SimulationConfig) -> None:
+    """Refuse to resume a checkpoint written with a different config.
+
+    Compares the stored config dict against ``config`` serialized through
+    the same writer (`_config_to_json`), over the keys both sides share.
+    ``temperatures`` is exempt so a scan can be extended on resume; every
+    other difference changes the ensemble or the array shapes being
+    appended into one file.
+    """
+    stored = _load_stored_config(path)
+    if stored is None:
+        return
+
+    current = json.loads(_config_to_json(config))
+    if not isinstance(current, dict):
+        raise ConfigurationError(
+            "The current simulation config does not serialize to a "
+            "comparable record; cannot rule out a mismatched resume."
+        )
+
+    shared_keys = sorted((set(stored) & set(current)) - {"temperatures"})
+    mismatches = [
+        f"{key}: checkpoint={stored[key]!r}, current={current[key]!r}"
+        for key in shared_keys
+        if stored[key] != current[key]
+    ]
+    if mismatches:
+        raise ConfigurationError(
+            "Checkpoint config does not match the current simulation "
+            "config; resuming would mix incompatible ensembles in one "
+            "file. Use the original config (temperatures may differ), or "
+            "start a new checkpoint file. Mismatched fields: " + "; ".join(mismatches)
+        )
 
 
 def _save_simulation_state(path: str | Path, sim: Simulation) -> None:
