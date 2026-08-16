@@ -866,9 +866,9 @@ mod tests {
 
         assert_eq!(full[1].temperature, resumed[0].temperature);
         // Bit-identity is the contract here, not approximate agreement.
-        assert!(full[1].energies == resumed[0].energies);
-        assert!(full[1].magnetizations == resumed[0].magnetizations);
-        assert!(full[1].configs == resumed[0].configs);
+        assert_eq!(full[1].energies, resumed[0].energies);
+        assert_eq!(full[1].magnetizations, resumed[0].magnetizations);
+        assert_eq!(full[1].configs, resumed[0].configs);
     }
 
     #[test]
