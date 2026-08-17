@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import h5py
+import mcising
 import numpy as np
 import pytest
 from mcising.config import ExecutionMode, LatticeConfig, SimulationConfig
@@ -42,17 +43,40 @@ def sim(small_config: SimulationConfig) -> Simulation:
 
 class TestCheckpointPrimitives:
     def test_init_checkpoint_file(self, tmp_path: Path) -> None:
+        # The writer derives version/schema itself (never trusts the
+        # results object); run facts are omitted when no config is known.
         path = tmp_path / "ckpt.h5"
-        results = SimulationResults(metadata={"version": "0.2.0", "config": None})
+        results = SimulationResults(metadata={"config": None})
         init_checkpoint_file(path, results)
 
         assert path.exists()
         with h5py.File(path, "r") as f:
             assert "metadata" in f
-            assert f["metadata"].attrs["version"] == "0.2.0"
+            attrs = f["metadata"].attrs
+            assert attrs["version"] == mcising.__version__
+            assert int(attrs["schema_version"]) == 2
+            assert attrs["config_json"] == "{}"
+            assert "seed" not in attrs
+            assert "mode" not in attrs
+            assert "algorithm" not in attrs
             # No temperature groups yet
             temp_groups = [k for k in f.keys() if k.startswith("T=")]
             assert len(temp_groups) == 0
+
+    def test_checkpoint_file_has_full_provenance(
+        self, sim: Simulation, small_config: SimulationConfig, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "ckpt.h5"
+        checkpoint_run(sim, path, show_progress=False)
+
+        with h5py.File(path, "r") as f:
+            attrs = f["metadata"].attrs
+            assert attrs["version"] == mcising.__version__
+            assert int(attrs["schema_version"]) == 2
+            assert int(attrs["seed"]) == small_config.seed
+            assert attrs["mode"] == small_config.mode.value
+            assert attrs["algorithm"] == small_config.algorithm.value
+            assert attrs["config_json"] != "{}"
 
     def test_save_temperature_group(self, sim: Simulation, tmp_path: Path) -> None:
         path = tmp_path / "ckpt.h5"
@@ -349,3 +373,64 @@ class TestResumeConfigGuard:
             Simulation(small_config), checkpoint, show_progress=False, resume=True
         )
         assert set(results.temperatures) == {3.0, 2.0, 1.0}
+
+
+class TestExistingCheckpointWithoutResume:
+    """resume=False against an existing file refuses before any compute.
+
+    The pre-P07 behavior was a provenance-corruption path: stale metadata
+    kept, colliding temperature groups crashing after the sweeps ran, or
+    two runs' ensembles silently merged into one file.
+    """
+
+    def test_raises_before_running(self, sim: Simulation, tmp_path: Path) -> None:
+        path = tmp_path / "ckpt.h5"
+        init_checkpoint_file(path, SimulationResults(metadata={"config": None}))
+
+        with pytest.raises(ConfigurationError, match="resume=True"):
+            checkpoint_run(sim, path, show_progress=False)
+
+        # Nothing ran and the file was not touched.
+        assert load_completed_temperatures(path) == set()
+
+
+class TestLegacyCheckpoint:
+    """Files written by mcising <= 0.23.0 stay resumable and keep schema v1."""
+
+    def test_resume_legacy_checkpoint_completes(
+        self, small_config: SimulationConfig, tmp_path: Path
+    ) -> None:
+        from mcising.io import _config_to_json
+
+        from tests._legacy_schema import write_legacy_hdf5
+
+        path = tmp_path / "legacy.h5"
+        write_legacy_hdf5(
+            path,
+            config_json=_config_to_json(small_config),
+            temperatures=(3.0, 2.0),
+        )
+
+        results = checkpoint_run(
+            Simulation(small_config), path, show_progress=False, resume=True
+        )
+
+        assert load_completed_temperatures(path) == {3.0, 2.0, 1.0}
+        assert set(results.temperatures) == {3.0, 2.0, 1.0}
+        # A file records the code that created it: resuming must not
+        # upgrade the metadata group to schema v2 in place.
+        with h5py.File(path, "r") as f:
+            assert "schema_version" not in f["metadata"].attrs
+
+    def test_future_schema_checkpoint_refuses_resume(
+        self, sim: Simulation, small_config: SimulationConfig, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "ckpt.h5"
+        checkpoint_run(sim, path, show_progress=False)
+        with h5py.File(path, "a") as f:
+            f["metadata"].attrs["schema_version"] = 99
+
+        with pytest.raises(ConfigurationError, match="schema 99"):
+            checkpoint_run(
+                Simulation(small_config), path, show_progress=False, resume=True
+            )

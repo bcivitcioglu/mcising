@@ -7,8 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-08-17
+
 ### Fixed
 
+- `__version__` reported "0.2.0" regardless of the installed version
+  (B12, #23): it is now read from the installed distribution metadata
+  via `importlib.metadata`, killing the hardcoded-constant drift class
+  permanently. `mcising info` reports the real version.
+- Saved files stamped `version="unknown"`: the HDF5 writer now derives
+  the writing version itself, so every file (including checkpoints) is
+  traceable to the code that wrote it.
+- `load_hdf5` never restored the configuration (B12, #23): loaded files
+  had empty plot legends, generic `mcising` export prefixes, and — with
+  `store_configs=False` — per-site observables (Cv, χ) silently scaled
+  by a wrong site count. The `SimulationConfig` object is now restored,
+  best-effort even for pre-0.24 files.
+- The config serializer's lossy fallback (`str(config)` on
+  serialization failure) is gone: an unserializable config record now
+  raises `ConfigurationError` at write time instead of writing a
+  provenance record that would break the next resume.
 - `checkpoint_run` now works in every execution mode (B4, #15). The
   independent and parallel-tempering paths previously dropped the
   checkpoint callback silently: no file was ever created while the CLI
@@ -36,6 +54,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- HDF5 metadata schema v2: every file now records `schema_version`,
+  `version`, `seed`, `mode`, `algorithm`, the full config, and a
+  best-effort `git_commit`; `load_hdf5` restores all of it. Legacy
+  (mcising <= 0.23.0) files keep loading through an explicit fallback;
+  files from a newer schema are refused with a clear error instead of
+  loading incompletely. The same fields appear in `save_json_summary`.
+- `SimulationConfig.from_dict` (and `LatticeConfig` / `AdaptiveConfig`
+  counterparts): validated reconstruction from plain dicts, the inverse
+  of `dataclasses.asdict` — enum coercion, tuple conversion, unknown
+  keys ignored, missing keys defaulted.
+- `mcising info` shows the git commit (development builds) and the HDF5
+  metadata schema version.
 - `SimulationConfig.store_configs` (default `True`): disable to skip
   per-measurement spin snapshots in all three modes (previously hardcoded
   on in the parallel runners).
@@ -49,6 +79,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking**: `checkpoint_run` with `resume=False` (the default) now
+  raises `ConfigurationError` when the checkpoint file already exists;
+  previously it retained the old file's metadata and either crashed
+  mid-write on colliding temperatures or silently merged two runs'
+  ensembles into one file.
+- **Breaking**: `mcising summary --json` prints an object with
+  top-level provenance fields and the per-temperature rows under
+  `"results"` (previously a bare array of rows).
 - **Breaking**: `_core.IsingSimulation.flip_spin(site)` and
   `spin_energy(site)` now take a single flat site index instead of
   `(row, col)` — the only scheme that addresses every lattice geometry.

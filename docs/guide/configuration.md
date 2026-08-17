@@ -42,6 +42,12 @@ construction. Set `store_configs=False` to skip the per-measurement spin
 snapshots when only scalar observables are needed (smaller memory
 footprint and output files).
 
+Configs round-trip through plain dicts: `dataclasses.asdict(config)`
+serializes (this is what saved files record), and
+`SimulationConfig.from_dict(data)` rebuilds the validated object —
+coercing enum strings, converting `temperatures` to a tuple, ignoring
+unknown keys, and defaulting missing ones.
+
 ## LatticeConfig
 
 | Parameter | Type | Default | Description |

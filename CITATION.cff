@@ -10,8 +10,8 @@ authors:
 repository-code: "https://github.com/bcivitcioglu/mcising"
 url: "https://bcivitcioglu.github.io/mcising/"
 license: MIT
-version: 0.22.0
-date-released: "2026-08-08"
+version: 0.24.0
+date-released: "2026-08-17"
 keywords:
   - "Ising model"
   - "Monte Carlo"

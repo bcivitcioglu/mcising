@@ -19,6 +19,7 @@ from rich.progress import (
 from mcising._core import IsingSimulation as _RustSim
 from mcising._core import run_independent_temperatures as _run_independent
 from mcising._core import run_parallel_tempering as _run_pt
+from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit, package_version
 from mcising.config import ExecutionMode, SimulationConfig
 from mcising.constants import INF_TEMP
 from mcising.exceptions import ConfigurationError, SimulationError
@@ -50,6 +51,22 @@ def _fill_results_from_raw(
                 np.asarray(entry["correlation_function"]),
             )
             results.correlation_length[temp] = np.asarray(entry["correlation_length"])
+
+
+def _run_metadata(config: SimulationConfig) -> dict[str, object]:
+    """Provenance metadata every run path stamps into its results (B12)."""
+    metadata: dict[str, object] = {
+        "config": config,
+        "version": package_version(),
+        "schema_version": HDF5_SCHEMA_VERSION,
+        "seed": config.seed,
+        "mode": config.mode.value,
+        "algorithm": config.algorithm.value,
+    }
+    commit = git_commit()
+    if commit is not None:
+        metadata["git_commit"] = commit
+    return metadata
 
 
 @dataclass
@@ -102,7 +119,11 @@ class SimulationResults:
     correlation_length : dict[float, NDArray[np.float64]] | None
         Correlation length measurements at each temperature, or None.
     metadata : dict[str, object]
-        Simulation metadata (config, timing, seed, etc.).
+        Provenance and timing: the ``SimulationConfig`` object under
+        ``"config"``, plus ``version``, ``schema_version``, ``seed``,
+        ``mode``, ``algorithm``, optional ``git_commit``, and
+        ``elapsed_seconds``. Loaded legacy files (mcising <= 0.23.0)
+        carry whatever subset their file recorded.
     """
 
     temperatures: list[float] = field(default_factory=list)
@@ -377,10 +398,7 @@ class Simulation:
 
         results = SimulationResults(
             temperatures=temps,
-            metadata={
-                "config": self.config,
-                "mode": "independent",
-            },
+            metadata=_run_metadata(self.config),
         )
         if self.config.compute_correlation:
             results.correlation_function = {}
@@ -455,10 +473,7 @@ class Simulation:
 
         results = SimulationResults(
             temperatures=sorted(temps),
-            metadata={
-                "config": self.config,
-                "mode": "parallel_tempering",
-            },
+            metadata=_run_metadata(self.config),
         )
         if self.config.compute_correlation:
             results.correlation_function = {}
@@ -545,10 +560,7 @@ class Simulation:
 
         results = SimulationResults(
             temperatures=list(effective_temps),
-            metadata={
-                "config": self.config,
-                "mode": "cooldown",
-            },
+            metadata=_run_metadata(self.config),
         )
         if self.config.compute_correlation:
             results.correlation_function = {}

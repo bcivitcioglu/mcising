@@ -8,6 +8,7 @@ systems on various lattice geometries with multiple update algorithms.
 from typing import Final
 
 from mcising._core import IsingSimulation
+from mcising._provenance import package_version
 from mcising.config import (
     AdaptiveConfig,
     Algorithm,
@@ -32,7 +33,7 @@ from mcising.plotting import (
 )
 from mcising.simulation import Simulation, SimulationResults
 
-__version__: Final[str] = "0.2.0"
+__version__: Final[str] = package_version()
 
 __all__: Final[list[str]] = [
     # Core Rust binding
