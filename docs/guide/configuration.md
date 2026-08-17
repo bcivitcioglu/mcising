@@ -28,11 +28,19 @@ config = SimulationConfig(
     n_thermalization=100,                  # warmup sweeps
     measurement_interval=10,               # measure every N sweeps
     compute_correlation=False,             # compute C(r) per temperature
+    store_configs=True,                    # keep spin snapshots per measurement
     adaptive=AdaptiveConfig(enabled=False),# adaptive thermalization
     mode=ExecutionMode.COOLDOWN,           # cooldown, independent, parallel_tempering
     swap_interval=1,                       # sweeps between PT swaps
 )
 ```
+
+In parallel tempering, `measurement_interval` must be a multiple of
+`swap_interval` — the ladder advances in `swap_interval`-sized chunks and
+can only measure on chunk boundaries, so any other cadence is rejected at
+construction. Set `store_configs=False` to skip the per-measurement spin
+snapshots when only scalar observables are needed (smaller memory
+footprint and output files).
 
 ## LatticeConfig
 
@@ -81,7 +89,8 @@ temperatures=tuple(np.linspace(1.5, 3.5, 50))
 | `n_sweeps` | `1000` |
 | `n_thermalization` | `100` |
 | `measurement_interval` | `10` |
+| `store_configs` | `True` |
 | `mode` | `COOLDOWN` |
-| `swap_interval` | `1` |
+| `swap_interval` | `1` (must divide `measurement_interval` in PT) |
 
 See the [API Reference](../reference/config.md) for complete documentation of all parameters.

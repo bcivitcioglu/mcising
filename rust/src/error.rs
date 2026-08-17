@@ -14,6 +14,10 @@ pub enum MCIsingError {
     ClusterAlgorithmConstraint(String),
     ClusterCouplingSign(String),
     InvalidLatticeType(String),
+    EmptyTemperatureList,
+    InvalidInterval(&'static str, usize),
+    IncompatibleSwapCadence(usize, usize),
+    InvalidSeedOffsets(usize, usize),
 }
 
 impl fmt::Display for MCIsingError {
@@ -65,6 +69,33 @@ impl fmt::Display for MCIsingError {
                 write!(
                     f,
                     "Unknown lattice type '{name}'. Valid options: square, triangular, chain, honeycomb, cubic"
+                )
+            }
+            Self::EmptyTemperatureList => {
+                write!(f, "At least one temperature is required, got an empty list")
+            }
+            Self::InvalidInterval(name, value) => {
+                write!(f, "{name} must be >= 1, got {value}")
+            }
+            Self::IncompatibleSwapCadence(measurement_interval, swap_interval) => {
+                write!(
+                    f,
+                    "Parallel tempering requires measurement_interval to be a \
+                     multiple of swap_interval: the ladder advances in \
+                     swap_interval-sized chunks and measures only on chunk \
+                     boundaries, so a non-dividing interval silently drops \
+                     measurements. Raise measurement_interval to the next \
+                     multiple of {swap_interval}, or choose a swap_interval \
+                     that divides it. Got \
+                     measurement_interval={measurement_interval}, \
+                     swap_interval={swap_interval}"
+                )
+            }
+            Self::InvalidSeedOffsets(n_offsets, n_temps) => {
+                write!(
+                    f,
+                    "seed_offsets must have one entry per temperature, \
+                     got {n_offsets} offsets for {n_temps} temperatures"
                 )
             }
         }

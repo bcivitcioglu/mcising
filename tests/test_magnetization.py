@@ -41,6 +41,6 @@ class TestMagnetization:
         sim.set_spins(spins)
         assert sim.magnetization() == pytest.approx(1.0)
 
-        sim.flip_spin(0, 0)
+        sim.flip_spin(0)
         # One spin flipped: m = (16 - 2) / 16 = 14/16 = 0.875
         assert sim.magnetization() == pytest.approx(0.875)

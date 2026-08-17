@@ -83,10 +83,23 @@ Independent mode gives the biggest wall-clock speedup. Parallel Tempering is slo
 Each mode handles reproducibility differently:
 
 - **Cooldown**: single seed, single RNG stream
-- **Independent**: `seed + temperature_index` per replica — deterministic and independent
-- **Parallel Tempering**: same as independent, plus a separate swap RNG
+- **Independent**: `seed + temperature_index` per replica — deterministic and
+  independent. The index is the temperature's position in the configured
+  scan, and it sticks to its temperature even when a checkpointed run
+  resumes with some temperatures already done — a resumed scan reproduces
+  the uninterrupted run's streams exactly.
+- **Parallel Tempering**: per-replica seeds as in independent mode, plus a
+  separate swap-decision RNG
 
 All modes are fully deterministic: same seed = same results.
+
+## Checkpointing
+
+All three modes work with `checkpoint_run`. Granularity differs: cooldown
+saves after each temperature, independent mode saves the whole batch when
+it returns (resume runs only the missing temperatures), and parallel
+tempering is all-or-nothing because the replicas form one coupled
+ensemble. See [Saving results](../guide/saving-results.md#checkpointing-crash-recovery).
 
 ## CLI
 

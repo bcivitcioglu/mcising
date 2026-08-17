@@ -5,7 +5,14 @@ from __future__ import annotations
 import math
 
 import pytest
-from mcising.config import Algorithm, LatticeConfig, LatticeType, SimulationConfig
+from mcising.config import (
+    Algorithm,
+    ExecutionMode,
+    LatticeConfig,
+    LatticeType,
+    SimulationConfig,
+)
+from mcising.exceptions import ConfigurationError
 
 
 class TestLatticeConfig:
@@ -91,3 +98,41 @@ class TestEnums:
 
     def test_algorithm_value(self) -> None:
         assert Algorithm.METROPOLIS.value == "metropolis"
+
+
+class TestStoreConfigs:
+    def test_default_true(self) -> None:
+        # Load-bearing default: existing analysis and I/O paths expect
+        # configurations to be stored unless explicitly disabled.
+        assert SimulationConfig().store_configs is True
+
+    def test_disable(self) -> None:
+        cfg = SimulationConfig(store_configs=False)
+        assert cfg.store_configs is False
+
+
+class TestSwapCadence:
+    """PT requires measurement_interval to be a multiple of swap_interval (B5)."""
+
+    def test_pt_rejects_nondividing(self) -> None:
+        with pytest.raises(ConfigurationError, match="multiple of swap_interval"):
+            SimulationConfig(
+                mode=ExecutionMode.PARALLEL_TEMPERING,
+                measurement_interval=15,
+                swap_interval=10,
+            )
+
+    @pytest.mark.parametrize("swap_interval", [1, 5, 10])
+    def test_pt_accepts_dividing(self, swap_interval: int) -> None:
+        cfg = SimulationConfig(
+            mode=ExecutionMode.PARALLEL_TEMPERING,
+            measurement_interval=10,
+            swap_interval=swap_interval,
+        )
+        assert cfg.swap_interval == swap_interval
+
+    def test_cadence_unchecked_outside_pt(self) -> None:
+        # swap_interval is inert outside PT; the guard must not reject
+        # configs it does not apply to.
+        cfg = SimulationConfig(measurement_interval=15, swap_interval=10)
+        assert cfg.measurement_interval == 15

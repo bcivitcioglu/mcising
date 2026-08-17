@@ -284,41 +284,43 @@ impl IsingSimulation {
         Ok(())
     }
 
-    /// Flip the spin at flat index.
-    fn flip_spin(&mut self, row: usize, col: usize) -> PyResult<()> {
-        let idx = row * self.lattice_size + col;
-        if idx >= self.spins.len() {
+    /// Flip the spin at a flat site index.
+    ///
+    /// Flat (row-major) indexing is the one scheme every lattice shares —
+    /// a (row, col) pair cannot address cubic ([L, L, L]) or honeycomb
+    /// ([L, L, 2]) sites (B6).
+    fn flip_spin(&mut self, site: usize) -> PyResult<()> {
+        if site >= self.spins.len() {
             return Err(MCIsingError::InvalidSpinConfiguration(format!(
-                "Position ({row}, {col}) out of bounds for lattice size {size}",
-                size = self.lattice_size
+                "Site index {site} out of bounds for lattice with {n} sites",
+                n = self.spins.len()
             ))
             .into());
         }
-        self.spins[idx] = -self.spins[idx];
+        self.spins[site] = -self.spins[site];
         Ok(())
     }
 
-    /// Compute the energy of a single spin at (row, col).
-    fn spin_energy(&self, row: usize, col: usize) -> PyResult<f64> {
-        let idx = row * self.lattice_size + col;
-        if idx >= self.spins.len() {
+    /// Compute the local energy of the spin at a flat site index.
+    fn spin_energy(&self, site: usize) -> PyResult<f64> {
+        if site >= self.spins.len() {
             return Err(MCIsingError::InvalidSpinConfiguration(format!(
-                "Position ({row}, {col}) out of bounds for lattice size {size}",
-                size = self.lattice_size
+                "Site index {site} out of bounds for lattice with {n} sites",
+                n = self.spins.len()
             ))
             .into());
         }
 
         with_lattice!(&self.lattice, lat => {
-            let spin = f64::from(self.spins[idx]);
+            let spin = f64::from(self.spins[site]);
             let mut local_field: f64 = 0.0;
-            for &nbr in lat.nearest_neighbors(idx) {
+            for &nbr in lat.nearest_neighbors(site) {
                 local_field += self.j1 * f64::from(self.spins[nbr]);
             }
-            for &nbr in lat.next_nearest_neighbors(idx) {
+            for &nbr in lat.next_nearest_neighbors(site) {
                 local_field += self.j2 * f64::from(self.spins[nbr]);
             }
-            for &nbr in lat.third_nearest_neighbors(idx) {
+            for &nbr in lat.third_nearest_neighbors(site) {
                 local_field += self.j3 * f64::from(self.spins[nbr]);
             }
             Ok(-spin * local_field - self.h * spin)
@@ -375,6 +377,8 @@ impl IsingSimulation {
     }
 
     fn get_rng_state(&self) -> Vec<u8> {
+        // Infallible in practice: serializing a fixed 4×u64 generator state
+        // to a Vec cannot hit an I/O or unsupported-type error.
         serde_json::to_vec(&self.rng).expect("Xoshiro256StarStar serialization should not fail")
     }
 
@@ -484,15 +488,15 @@ impl IsingSimulation {
 
         let py_energies = energies.into_pyarray(py);
         let py_mags = magnetizations.into_pyarray(py);
-        let py_configs = configs.map(|c| {
-            let flat = numpy::PyArray1::from_vec(py, c);
-            let mut reshape_dims: Vec<usize> = vec![n_measurements];
-            reshape_dims.extend_from_slice(&self.shape);
-            flat.reshape(reshape_dims)
-                .expect("reshape should not fail for correct dimensions")
-                .into_any()
-                .unbind()
-        });
+        let py_configs = match configs {
+            Some(c) => {
+                let flat = numpy::PyArray1::from_vec(py, c);
+                let mut reshape_dims: Vec<usize> = vec![n_measurements];
+                reshape_dims.extend_from_slice(&self.shape);
+                Some(flat.reshape(reshape_dims)?.into_any().unbind())
+            }
+            None => None,
+        };
 
         Ok((py_energies, py_mags, py_configs))
     }
@@ -522,6 +526,10 @@ impl IsingSimulation {
 
     /// Dispatch a single sweep via with_lattice! × algorithm match.
     /// Each combination is monomorphized — no virtual dispatch.
+    ///
+    /// The `.expect()`s on the cluster-algorithm `Option`s are unreachable:
+    /// the constructor pairs each `AlgorithmKind` with its initialized
+    /// algorithm state, and nothing mutates `self.algorithm` afterwards.
     fn dispatch_sweep(&mut self, beta: f64) -> SweepResult {
         // We need to split borrows: lattice is immutable, everything else mutable.
         // Use with_lattice! on a reference to avoid moving self.lattice.

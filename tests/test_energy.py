@@ -100,5 +100,5 @@ class TestSpinEnergy:
         spins = np.ones((4, 4), dtype=np.int8)
         sim.set_spins(spins)
         # All-up: each spin has local energy = -J1 * 4 = -4.0 (4 aligned NN)
-        e = sim.spin_energy(1, 1)
+        e = sim.spin_energy(5)  # flat site 5 = (row 1, col 1) on the 4x4
         assert e == pytest.approx(-4.0)

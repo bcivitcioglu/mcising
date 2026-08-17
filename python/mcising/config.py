@@ -60,6 +60,10 @@ class ExecutionMode(str, Enum):
         Best for avoiding metastable states. Single-threaded.
     INDEPENDENT: Each temperature runs independently from random init.
         Fully parallelized via Rayon. Uses all CPU cores.
+    PARALLEL_TEMPERING: All temperatures run as one coupled
+        replica-exchange ensemble with periodic swap attempts between
+        adjacent temperatures. Not resumable per temperature — the
+        replicas advance together.
     """
 
     COOLDOWN = "cooldown"
@@ -211,13 +215,22 @@ class SimulationConfig:
     n_thermalization : int
         Number of thermalization sweeps before measurement.
     measurement_interval : int
-        Collect a measurement every this many sweeps.
+        Collect a measurement every this many sweeps. In parallel
+        tempering it must be a multiple of ``swap_interval``.
     compute_correlation : bool
         Whether to compute the correlation function.
+    store_configs : bool
+        Whether to store spin configurations at every measurement.
+        Disable to cut memory and file size when only scalar
+        observables are needed.
     mode : ExecutionMode
         Execution strategy. COOLDOWN (default) processes temperatures
         sequentially via cool-down. INDEPENDENT runs each temperature
         in parallel from random initialization using all CPU cores.
+        PARALLEL_TEMPERING runs one coupled replica-exchange ensemble.
+    swap_interval : int
+        Sweeps between replica swap attempts (parallel tempering only).
+        Must divide ``measurement_interval``.
     """
 
     lattice: LatticeConfig = field(default_factory=LatticeConfig)
@@ -228,6 +241,7 @@ class SimulationConfig:
     n_thermalization: int = DEFAULT_N_THERMALIZATION
     measurement_interval: int = DEFAULT_MEASUREMENT_INTERVAL
     compute_correlation: bool = False
+    store_configs: bool = True
     adaptive: AdaptiveConfig = field(default_factory=AdaptiveConfig)
     mode: ExecutionMode = ExecutionMode.COOLDOWN
     swap_interval: int = 1
@@ -245,6 +259,22 @@ class SimulationConfig:
         if self.swap_interval < 1:
             msg = f"swap_interval must be >= 1, got {self.swap_interval}"
             raise ValueError(msg)
+        if (
+            self.mode == ExecutionMode.PARALLEL_TEMPERING
+            and self.measurement_interval % self.swap_interval != 0
+        ):
+            # The PT ladder advances in swap_interval-sized chunks, so a
+            # measurement can only happen on a chunk boundary; a non-dividing
+            # measurement_interval silently drops measurements and the short
+            # arrays used to panic at the reshape boundary (B5).
+            raise ConfigurationError(
+                "Parallel tempering requires measurement_interval to be a "
+                "multiple of swap_interval; raise measurement_interval to "
+                f"the next multiple of {self.swap_interval} or choose a "
+                "swap_interval that divides it. Got "
+                f"measurement_interval={self.measurement_interval}, "
+                f"swap_interval={self.swap_interval}."
+            )
         for temp in self.temperatures:
             if temp <= 0 or not _is_finite(temp):
                 msg = f"All temperatures must be positive and finite, got {temp}"

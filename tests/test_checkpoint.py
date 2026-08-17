@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import h5py
 import numpy as np
 import pytest
-from mcising.config import LatticeConfig, SimulationConfig
+from mcising.config import ExecutionMode, LatticeConfig, SimulationConfig
+from mcising.exceptions import ConfigurationError
 from mcising.io import (
     checkpoint_run,
     init_checkpoint_file,
@@ -15,6 +17,12 @@ from mcising.io import (
     save_temperature_group,
 )
 from mcising.simulation import Simulation, SimulationResults
+
+ALL_MODES = [
+    ExecutionMode.COOLDOWN,
+    ExecutionMode.INDEPENDENT,
+    ExecutionMode.PARALLEL_TEMPERING,
+]
 
 
 @pytest.fixture
@@ -199,3 +207,145 @@ class TestCheckpointRun:
             assert temp in loaded.energy
             assert temp in loaded.magnetization
             assert temp in loaded.configurations
+
+
+def _mode_config(mode: ExecutionMode) -> SimulationConfig:
+    return SimulationConfig(
+        lattice=LatticeConfig(size=4),
+        temperatures=(3.0, 2.0, 1.0),
+        n_sweeps=20,
+        measurement_interval=10,
+        mode=mode,
+    )
+
+
+class TestCheckpointAllModes:
+    """checkpoint_run must produce a real file in every execution mode (B4).
+
+    Before P06 the parallel modes silently ignored the checkpoint
+    callback: no file was ever created while the CLI reported success.
+    """
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_writes_all_temperature_groups(
+        self, tmp_path: Path, mode: ExecutionMode
+    ) -> None:
+        path = tmp_path / "ckpt.h5"
+        checkpoint_run(Simulation(_mode_config(mode)), path, show_progress=False)
+        assert path.exists(), f"no checkpoint file written in {mode.value} mode"
+        assert load_completed_temperatures(path) == {3.0, 2.0, 1.0}
+
+    @pytest.mark.parametrize(
+        "mode", [ExecutionMode.INDEPENDENT, ExecutionMode.PARALLEL_TEMPERING]
+    )
+    def test_callback_fires_once_per_temperature(self, mode: ExecutionMode) -> None:
+        seen: list[float] = []
+        Simulation(_mode_config(mode)).run(
+            show_progress=False,
+            on_temperature_complete=lambda t, _results: seen.append(t),
+        )
+        assert sorted(seen) == [1.0, 2.0, 3.0]
+
+
+class TestResumeIndependent:
+    """Independent-mode resume completes the scan with unchanged streams."""
+
+    def test_resume_completes_scan_and_preserves_streams(self, tmp_path: Path) -> None:
+        config = _mode_config(ExecutionMode.INDEPENDENT)
+        full = Simulation(config).run(show_progress=False)
+
+        # Forge an interrupted checkpoint: only T=3.0 and T=2.0 finished.
+        path = tmp_path / "ckpt.h5"
+        partial = Simulation(config).run(
+            show_progress=False, skip_temperatures=frozenset({1.0})
+        )
+        init_checkpoint_file(path, partial)
+        for temp in (3.0, 2.0):
+            save_temperature_group(path, temp, partial)
+
+        resumed = checkpoint_run(
+            Simulation(config), path, show_progress=False, resume=True
+        )
+
+        assert load_completed_temperatures(path) == {3.0, 2.0, 1.0}
+        assert set(resumed.temperatures) == {3.0, 2.0, 1.0}
+        # The seed-offset contract: the resumed T=1.0 arrays are
+        # byte-identical to the uninterrupted full run's.
+        np.testing.assert_array_equal(resumed.energy[1.0], full.energy[1.0])
+        np.testing.assert_array_equal(
+            resumed.magnetization[1.0], full.magnetization[1.0]
+        )
+
+
+class TestResumeParallelTempering:
+    """PT resume is all-or-nothing: the replicas form one coupled ensemble."""
+
+    def test_fully_complete_ladder_resumes_from_file(self, tmp_path: Path) -> None:
+        config = _mode_config(ExecutionMode.PARALLEL_TEMPERING)
+        path = tmp_path / "ckpt.h5"
+        first = checkpoint_run(Simulation(config), path, show_progress=False)
+
+        resumed = checkpoint_run(
+            Simulation(config), path, show_progress=False, resume=True
+        )
+        assert set(resumed.temperatures) == {3.0, 2.0, 1.0}
+        for temp in (3.0, 2.0, 1.0):
+            np.testing.assert_array_equal(resumed.energy[temp], first.energy[temp])
+
+    def test_partial_ladder_raises(self, tmp_path: Path) -> None:
+        config = _mode_config(ExecutionMode.PARALLEL_TEMPERING)
+        full = Simulation(config).run(show_progress=False)
+
+        path = tmp_path / "ckpt.h5"
+        init_checkpoint_file(path, full)
+        for temp in (3.0, 2.0):
+            save_temperature_group(path, temp, full)
+
+        with pytest.raises(ConfigurationError, match="coupled"):
+            checkpoint_run(Simulation(config), path, show_progress=False, resume=True)
+
+
+class TestResumeConfigGuard:
+    """Resume refuses a checkpoint written with a different config."""
+
+    @pytest.fixture
+    def checkpoint(self, tmp_path: Path, small_config: SimulationConfig) -> Path:
+        path = tmp_path / "ckpt.h5"
+        checkpoint_run(Simulation(small_config), path, show_progress=False)
+        return path
+
+    def test_changed_j1_raises(
+        self, checkpoint: Path, small_config: SimulationConfig
+    ) -> None:
+        changed = replace(small_config, lattice=LatticeConfig(size=4, j1=2.0))
+        with pytest.raises(ConfigurationError, match="j1"):
+            checkpoint_run(
+                Simulation(changed), checkpoint, show_progress=False, resume=True
+            )
+
+    def test_changed_seed_raises(
+        self, checkpoint: Path, small_config: SimulationConfig
+    ) -> None:
+        changed = replace(small_config, seed=7)
+        with pytest.raises(ConfigurationError, match="seed"):
+            checkpoint_run(
+                Simulation(changed), checkpoint, show_progress=False, resume=True
+            )
+
+    def test_extended_temperatures_allowed(
+        self, checkpoint: Path, small_config: SimulationConfig
+    ) -> None:
+        extended = replace(small_config, temperatures=(3.0, 2.0, 1.0, 0.5))
+        results = checkpoint_run(
+            Simulation(extended), checkpoint, show_progress=False, resume=True
+        )
+        assert set(results.temperatures) == {3.0, 2.0, 1.0, 0.5}
+        assert load_completed_temperatures(checkpoint) == {3.0, 2.0, 1.0, 0.5}
+
+    def test_identical_config_resumes(
+        self, checkpoint: Path, small_config: SimulationConfig
+    ) -> None:
+        results = checkpoint_run(
+            Simulation(small_config), checkpoint, show_progress=False, resume=True
+        )
+        assert set(results.temperatures) == {3.0, 2.0, 1.0}
