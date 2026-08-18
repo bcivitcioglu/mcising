@@ -76,11 +76,11 @@ impl TempResult {
             c.extend_from_slice(spins);
         }
         if let Some(ref mut corr) = self.correlation {
-            let (distances, values) = observables::correlation_function(spins, lattice);
+            let bins = observables::correlation_bins(spins, lattice);
             corr.lengths
-                .push(observables::correlation_length(&values, &distances));
-            corr.distances = distances;
-            corr.values = values;
+                .push(observables::correlation_length(&bins, lattice.dimension()));
+            corr.distances = bins.distances();
+            corr.values = bins.correlations;
         }
     }
 }

@@ -23,6 +23,11 @@ use super::Lattice;
 /// on row parity). The three shells, with exact squared distances in
 /// this embedding:
 ///
+/// Note the real-space torus of L×L unit cells is 3L × (√3/2)L — an
+/// aspect ratio of ~3.46:1 — so observables limited by the shorter
+/// (vertical) extent, like the correlation length, saturate near
+/// (√3/4)L, not 3L/2.
+///
 ///   NN  (3 per site, opposite sublattice, d² = 1)
 ///   NNN (6 per site, same sublattice,     d² = 3): the sublattice's
 ///       own triangular-lattice NN shell; offsets depend only on row
@@ -152,6 +157,10 @@ impl Lattice for HoneycombLattice {
         &self.shape
     }
 
+    fn dimension(&self) -> usize {
+        2
+    }
+
     fn coordination_number(&self) -> usize {
         3
     }
@@ -169,24 +178,48 @@ impl Lattice for HoneycombLattice {
     }
 
     fn distance_squared(&self, idx_a: usize, idx_b: usize) -> usize {
-        // Approximate distance for correlation function binning.
-        // Use unit-cell distance (ignoring sublattice offset).
+        // Exact Euclidean squared distance in NN-bond-length units (#35).
+        // Doubling the struct-level armchair embedding to keep integers
+        // (X = 2x = 6·col + t with t ∈ {0, +2, −3, −1} by (row parity,
+        // sublattice); Y = row, so y = Y·√3/2) gives
+        //
+        //   4·d² = ΔX² + 3·ΔY²
+        //
+        // X and Y always share the row's parity, so ΔX ≡ ΔY (mod 2) and
+        // ΔX² + 3ΔY² ≡ 0 (mod 4): d² is an exact integer — the shells
+        // come out at d² = 1 (NN), 3 (NNN), 4 (TNN). Periodic images: a
+        // column wrap shifts X by 6L, a row wrap shifts Y by L (parity
+        // preserved, L even, so t is unchanged); minimize over the 9
+        // images — exact because the torus generators are orthogonal.
         let stride = 2 * self.size;
-        let row_a = idx_a / stride;
-        let col_a = (idx_a % stride) / 2;
-        let row_b = idx_b / stride;
-        let col_b = (idx_b % stride) / 2;
-
-        let dr = {
-            let d = row_a.abs_diff(row_b);
-            d.min(self.size - d)
+        let coords = |idx: usize| -> (isize, isize) {
+            let row = idx / stride;
+            let col = (idx % stride) / 2;
+            let sub = idx % 2;
+            let t: isize = match (row % 2, sub) {
+                (0, 0) => 0,
+                (0, _) => 2,
+                (_, 0) => -3,
+                _ => -1,
+            };
+            (6 * col as isize + t, row as isize)
         };
-        let dc = {
-            let d = col_a.abs_diff(col_b);
-            d.min(self.size - d)
-        };
+        let (x_a, y_a) = coords(idx_a);
+        let (x_b, y_b) = coords(idx_b);
+        let dx0 = x_b - x_a;
+        let dy0 = y_b - y_a;
+        let l = self.size as isize;
 
-        dr * dr + dc * dc
+        let mut best = usize::MAX;
+        for m in [-1isize, 0, 1] {
+            for n in [-1isize, 0, 1] {
+                let dx = dx0 + 6 * n * l;
+                let dy = dy0 + m * l;
+                let four_d2 = (dx * dx + 3 * dy * dy) as usize;
+                best = best.min(four_d2);
+            }
+        }
+        best / 4
     }
 
     fn flat_to_multi(&self, idx: usize) -> Vec<usize> {
@@ -420,6 +453,52 @@ mod tests {
     fn test_distance_same_site() {
         let lat = HoneycombLattice::new(4).unwrap();
         assert_eq!(lat.distance_squared(0, 0), 0);
+    }
+
+    #[test]
+    fn test_distance_squared_shells() {
+        // Every table entry sits at its shell's exact squared distance in
+        // NN-bond-length units: NN d²=1, NNN d²=3, TNN d²=4.
+        let lat = HoneycombLattice::new(8).unwrap();
+        for idx in 0..lat.num_sites() {
+            for &nbr in lat.nearest_neighbors(idx) {
+                assert_eq!(lat.distance_squared(idx, nbr), 1, "NN of {idx}");
+            }
+            for &nbr in lat.next_nearest_neighbors(idx) {
+                assert_eq!(lat.distance_squared(idx, nbr), 3, "NNN of {idx}");
+            }
+            for &nbr in lat.third_nearest_neighbors(idx) {
+                assert_eq!(lat.distance_squared(idx, nbr), 4, "TNN of {idx}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_distance_same_cell_ab_is_nn_not_zero() {
+        // The #35 regression: the old unit-cell metric ignored the
+        // sublattice index, so the same-cell A–B nearest-neighbor bond
+        // landed in the d²=0 bin and honeycomb correlation output never
+        // reported its NN shell.
+        let lat = HoneycombLattice::new(4).unwrap();
+        for cell in 0..lat.num_sites() / 2 {
+            let a = 2 * cell;
+            let b = 2 * cell + 1;
+            assert_eq!(lat.distance_squared(a, b), 1, "cell {cell}");
+        }
+    }
+
+    #[test]
+    fn test_distance_squared_symmetric() {
+        let lat = HoneycombLattice::new(6).unwrap();
+        for a in 0..lat.num_sites() {
+            for b in 0..lat.num_sites() {
+                assert_eq!(
+                    lat.distance_squared(a, b),
+                    lat.distance_squared(b, a),
+                    "d²({a},{b}) != d²({b},{a})"
+                );
+            }
+        }
     }
 
     #[test]

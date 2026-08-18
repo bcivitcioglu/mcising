@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-08-18
+
 ### Added
 
 - `mcising.statistics`: autocorrelation-aware error estimation as a
@@ -31,6 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LatticeConfig.num_sites` and cached `SimulationResults.num_sites`
   (thanks @ChickenisLegit, #24): the site count is now a pure function
   of the lattice geometry — no throwaway Rust simulation per call.
+- `Lattice::dimension()` in the Rust core: the spatial dimension of
+  each lattice (chain 1; square/triangular/honeycomb 2; cubic 3),
+  feeding the dimension-correct correlation-length constant.
+- `AdaptiveDiagnostics.stationary_sweeps`: how many fixed-temperature
+  sweeps the stationarity and tau_int estimates are based on (never
+  includes the annealing ramp). Written as an additive HDF5 attribute —
+  no schema bump; files from older versions load with 0.
+- Adaptive mode now warns (`UserWarning`) when `max_total_sweeps`
+  cannot afford `min_independent_samples` at the tau-derived interval,
+  and when `max_thermalization_sweeps` runs out before stationarity is
+  detected — instead of silently delivering less than asked.
 
 ### Fixed
 
@@ -49,6 +62,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plotting a results object whose temperature list and series dicts
   disagreed crashed with length-mismatched arrays; missing temperatures
   are now skipped consistently.
+- Correlation length was systematically wrong (B7, #18) — three
+  compounding defects: the second-moment normalization hardcoded the
+  3D constant (6 = 2d) for every lattice, inflating 2D values by √1.5
+  and 1D by √3; the r=0 self-term C(0) = 1 − m² entered the
+  denominator, biasing ξ low; and shells were summed bin-averaged with
+  their pair multiplicities discarded — the dominant error (−14.5% in
+  2D even after the other two fixes). The estimator is now
+  ξ² = Σ n(r)·r²·C(r) / (2d·Σ n(r)·C(r)) over r > 0, truncated at the
+  first non-positive shell, validated by synthetic Ornstein–Zernike
+  recovery within 5% in 2D and 3D and by a machine-precision discrete
+  closed form in 1D.
+- Honeycomb `distance_squared` used a unit-cell square metric that
+  ignored the sublattice offset (#35): the same-cell A–B
+  nearest-neighbor bond sat in the d²=0 bin, so honeycomb correlation
+  output never contained its NN shell and every reported distance was
+  a cell index, not a length. Now the exact Euclidean metric in
+  NN-bond-length units (integer form 4d² = ΔX² + 3ΔY² from the
+  armchair embedding; shells at d² = 1/3/4), verified for every site
+  pair against an independent embedding oracle.
+- Adaptive mode estimated tau_int across the cooldown temperature ramp
+  (B9, #20): the analyzed energy series was non-stationary by
+  construction and its tau set the production measurement interval.
+  The ramp is now pure annealing; MSER and Sokal's method run
+  exclusively on a fixed-temperature diagnostic series recorded after
+  it, and the measurement interval derives from that series' stationary
+  tail only.
+- MSER's not-thermalized verdict was unreachable for most series
+  lengths (B9, #20): the truncation search evaluated a 20-point grid
+  whose largest candidate reached the classical n/2 decision boundary
+  only when 20 divided n/2 — a pure linear ramp of 500 points was
+  declared thermalized. Every candidate in [0, n/2] is now evaluated
+  exactly (O(n) backward Welford pass), making the adaptive extension
+  loop genuinely reachable; tau is additionally estimated on the
+  truncation tail even when stationarity is not detected (previously a
+  silently optimistic 0.5), with `is_thermalized` as the honesty flag.
 
 ### Changed
 
@@ -58,6 +106,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unquotable values are omitted from JSON and left empty in CSV, never
   emitted as NaN. `save_json_summary` per-temperature entries likewise
   gain error fields.
+- Correlation-length values change for every lattice (dimension-correct
+  constant, r=0 exclusion, pair-multiplicity weights), and honeycomb
+  correlation distances are now true bond-length distances. Raw spin
+  trajectories of non-adaptive runs are bit-identical to 0.24.0.
+- Adaptive-mode trajectories differ from 0.24.0: each temperature now
+  runs fixed-temperature diagnostic sweeps after the annealing ramp
+  (the sweeps the estimates are actually based on).
 
 ## [0.24.0] - 2026-08-17
 

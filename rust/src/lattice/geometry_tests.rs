@@ -263,6 +263,36 @@ mod tests {
         assert_eq!(checked, 44, "expected 45 combos minus chain TNN at L=4");
     }
 
+    // ── Metric agreement: every pair, every lattice (P09/#35) ────────
+
+    #[test]
+    fn test_matrix_distance_squared_matches_embedding() {
+        // `distance_squared` must equal the min-image distance of the
+        // embedding the NN table realizes — for ALL site pairs, not just
+        // shell entries. Both sides minimize over the same 3×3(×3) torus
+        // images, so no torus-validity guard is needed. This is the
+        // oracle that catches #35 (honeycomb ignored the sublattice
+        // offset, so the same-cell A–B NN bond sat in the d²=0 bin).
+        for l in SIZES {
+            for case in cases(l) {
+                let lat = case.lattice.as_ref();
+                let n = lat.num_sites();
+                for i in 0..n {
+                    for j in 0..n {
+                        let expected = min_image_d2(&case, i, j);
+                        let actual = lat.distance_squared(i, j) as f64;
+                        assert!(
+                            (actual - expected).abs() < 1e-9,
+                            "{} L={}: d²({i},{j}) = {actual}, embedding says {expected}",
+                            case.name,
+                            l,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     // ── Uniqueness + disjointness: guarded by 2r + 1 <= L ────────────
 
     #[test]

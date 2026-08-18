@@ -60,6 +60,10 @@ impl Lattice for ChainLattice {
         &self.shape
     }
 
+    fn dimension(&self) -> usize {
+        1
+    }
+
     fn coordination_number(&self) -> usize {
         2
     }

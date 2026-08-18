@@ -333,16 +333,16 @@ impl IsingSimulation {
         py: Python<'py>,
     ) -> (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>) {
         with_lattice!(&self.lattice, lat => {
-            let (distances, correlations) = observables::correlation_function(&self.spins, lat);
-            (distances.into_pyarray(py), correlations.into_pyarray(py))
+            let bins = observables::correlation_bins(&self.spins, lat);
+            (bins.distances().into_pyarray(py), bins.correlations.into_pyarray(py))
         })
     }
 
     /// Compute the correlation length from the current spin configuration.
     fn correlation_length(&self) -> f64 {
         with_lattice!(&self.lattice, lat => {
-            let (distances, correlations) = observables::correlation_function(&self.spins, lat);
-            observables::correlation_length(&correlations, &distances)
+            let bins = observables::correlation_bins(&self.spins, lat);
+            observables::correlation_length(&bins, lat.dimension())
         })
     }
 

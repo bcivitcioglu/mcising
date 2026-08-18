@@ -73,6 +73,10 @@ impl Lattice for SquareLattice {
         &self.shape
     }
 
+    fn dimension(&self) -> usize {
+        2
+    }
+
     fn coordination_number(&self) -> usize {
         4
     }

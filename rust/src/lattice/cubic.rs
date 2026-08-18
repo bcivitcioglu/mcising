@@ -101,6 +101,10 @@ impl Lattice for CubicLattice {
         &self.shape
     }
 
+    fn dimension(&self) -> usize {
+        3
+    }
+
     fn coordination_number(&self) -> usize {
         6
     }

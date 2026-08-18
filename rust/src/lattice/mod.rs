@@ -26,6 +26,14 @@ pub trait Lattice: Send + Sync {
     /// Linear extent(s) of the lattice.
     fn shape(&self) -> &[usize];
 
+    /// Spatial dimension of the lattice embedding.
+    ///
+    /// This is the `d` in the second-moment correlation length
+    /// ξ² = Σ r²C(r) / (2d Σ C(r)). It is not `shape().len()`:
+    /// honeycomb's shape is `[L, L, 2]` — two spatial dimensions plus
+    /// a sublattice index.
+    fn dimension(&self) -> usize;
+
     /// Number of nearest neighbors per site.
     fn coordination_number(&self) -> usize;
 

@@ -187,10 +187,13 @@ class LatticeConfig:
 class AdaptiveConfig:
     """Configuration for adaptive thermalization and measurement spacing.
 
-    When enabled, the simulation records energy during thermalization sweeps,
-    uses MSER to verify equilibration, estimates the integrated autocorrelation
-    time (tau_int) via Sokal's windowing method, and sets the measurement
-    interval to ``tau_multiplier * tau_int`` for independent samples.
+    When enabled, each temperature is annealed with a cool-down ramp and
+    then probed with a fixed-temperature diagnostic energy series: MSER
+    verifies equilibration and Sokal's windowing method estimates the
+    integrated autocorrelation time (tau_int) on the stationary tail of
+    that series — never across the ramp, whose energy trace is
+    non-stationary by construction. The measurement interval is set to
+    ``tau_multiplier * tau_int`` for independent samples.
 
     Parameters
     ----------
@@ -198,7 +201,9 @@ class AdaptiveConfig:
         Whether to use adaptive mode. When False (default), the simulation
         uses fixed n_sweeps / measurement_interval / n_thermalization.
     min_thermalization_sweeps : int
-        Minimum thermalization sweeps per temperature (including cool-down).
+        Floor for the annealing-ramp length and the length of each
+        fixed-temperature diagnostic block (itself floored at
+        ``MIN_DIAGNOSTIC_SWEEPS``).
     max_thermalization_sweeps : int
         Maximum thermalization sweeps (cap to prevent runaway near T_c).
     c_window : float

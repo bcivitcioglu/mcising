@@ -33,3 +33,7 @@ DEFAULT_ADAPTIVE_C_WINDOW: Final[float] = 6.0
 DEFAULT_ADAPTIVE_MIN_INDEPENDENT_SAMPLES: Final[int] = 100
 DEFAULT_ADAPTIVE_MAX_TOTAL_SWEEPS: Final[int] = 100_000
 DEFAULT_ADAPTIVE_TAU_MULTIPLIER: Final[float] = 2.0
+# Floor on the fixed-temperature diagnostic block the adaptive scheme
+# analyzes for stationarity and tau_int: MSER's boundary verdict needs
+# enough points to be meaningful. A floor, not a target (B9, #20).
+MIN_DIAGNOSTIC_SWEEPS: Final[int] = 64
