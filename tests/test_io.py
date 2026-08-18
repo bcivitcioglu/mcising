@@ -9,6 +9,7 @@ import h5py
 import mcising
 import numpy as np
 import pytest
+from mcising._provenance import HDF5_SCHEMA_VERSION
 from mcising.config import ExecutionMode, LatticeConfig, SimulationConfig
 from mcising.exceptions import ConfigurationError
 from mcising.io import _config_to_json, load_hdf5, save_hdf5, save_json_summary
@@ -96,7 +97,7 @@ class TestJSON:
         with open(path) as f:
             data = json.load(f)
         assert data["version"] == mcising.__version__
-        assert data["schema_version"] == 2
+        assert data["schema_version"] == HDF5_SCHEMA_VERSION
         assert data["seed"] == 42
         assert data["mode"] == "cooldown"
         assert data["algorithm"] == "metropolis"
@@ -166,7 +167,7 @@ class TestProvenanceRoundTrip:
         path = tmp_path / "results.h5"
         save_hdf5(sim_results, path)
         loaded = load_hdf5(path)
-        assert loaded.metadata["schema_version"] == 2
+        assert loaded.metadata["schema_version"] == HDF5_SCHEMA_VERSION
 
     def test_git_commit_absent_or_nonempty_str(
         self, sim_results, tmp_path: Path
@@ -291,3 +292,98 @@ class TestDerivedObservablesFromLoadedFile:
             assert loaded.susceptibility(temp) == pytest.approx(
                 results.susceptibility(temp)
             )
+
+
+class TestStatisticsGroup:
+    """Schema v3: derived statistics written per temperature, never read."""
+
+    def test_schema_version_pin(self) -> None:
+        # Deliberate pin: bumping the schema is a conscious decision
+        # with a CHANGELOG entry, not a drive-by.
+        assert HDF5_SCHEMA_VERSION == 3
+
+    def test_statistics_attrs_match_recomputed(
+        self, sim_results, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "results.h5"
+        save_hdf5(sim_results, path)
+        with h5py.File(path, "r") as f:
+            for temp in sim_results.temperatures:
+                grp = f[f"T={temp:.6f}"]
+                assert "statistics" in grp
+                attrs = grp["statistics"].attrs
+                stats = sim_results.statistics(temp)
+                assert int(attrs["n_samples"]) == stats.n_samples
+                assert float(attrs["energy"]) == stats.energy.value
+                assert float(attrs["energy_error"]) == stats.energy.error
+                assert (
+                    float(attrs["specific_heat"]) == stats.specific_heat.value
+                )
+                assert (
+                    float(attrs["binder_cumulant"])
+                    == stats.binder_cumulant.value
+                )
+
+    def test_non_finite_attrs_omitted(self, sim_results, tmp_path: Path) -> None:
+        # n=2 samples: jackknife errors are NaN by policy and must be
+        # absent from the file, never stored as NaN.
+        path = tmp_path / "results.h5"
+        save_hdf5(sim_results, path)
+        with h5py.File(path, "r") as f:
+            attrs = f["T=2.000000/statistics"].attrs
+            assert "specific_heat" in attrs
+            assert "specific_heat_error" not in attrs
+
+    def test_loading_ignores_stored_statistics(
+        self, sim_results, tmp_path: Path
+    ) -> None:
+        # The subgroup is written for external inspection only; loading
+        # recomputes from the raw series, so a tampered value must have
+        # no effect (no dual source of truth).
+        path = tmp_path / "results.h5"
+        save_hdf5(sim_results, path)
+        with h5py.File(path, "r+") as f:
+            f["T=2.000000/statistics"].attrs["energy"] = 123.456
+        loaded = load_hdf5(path)
+        assert loaded.statistics(2.0).energy.value == pytest.approx(
+            float(np.mean(sim_results.energy[2.0]))
+        )
+
+    def test_v2_file_without_statistics_group_loads(
+        self, sim_results, tmp_path: Path
+    ) -> None:
+        # A schema-2 file (mcising 0.24.0) is exactly a v3 file without
+        # the statistics subgroups.
+        path = tmp_path / "v2.h5"
+        save_hdf5(sim_results, path)
+        with h5py.File(path, "r+") as f:
+            f["metadata"].attrs["schema_version"] = 2
+            for temp in sim_results.temperatures:
+                del f[f"T={temp:.6f}/statistics"]
+        loaded = load_hdf5(path)
+        assert loaded.metadata["schema_version"] == 2
+        assert loaded.statistics(2.0).n_samples == 2
+
+
+class TestJsonSummaryErrors:
+    def test_error_fields_present_and_nan_omitted(self, tmp_path: Path) -> None:
+        results = Simulation(
+            _small_config(n_sweeps=400, lattice=LatticeConfig(size=8))
+        ).run(show_progress=False)
+        path = tmp_path / "summary.json"
+        save_json_summary(results, path)
+        with open(path) as f:
+            entry = json.load(f)["results"]["2.000000"]
+        assert entry["energy_error"] > 0.0
+        assert entry["specific_heat_error"] > 0.0
+        assert entry["binder_cumulant"] <= 2.0 / 3.0 + 1e-12
+        assert entry["n_samples"] == 40
+
+        short = Simulation(_small_config()).run(show_progress=False)
+        short_path = tmp_path / "short.json"
+        save_json_summary(short, short_path)
+        with open(short_path) as f:
+            entry = json.load(f)["results"]["2.000000"]
+        # 2 samples: jackknife error is NaN -> key omitted, valid JSON.
+        assert "specific_heat" in entry
+        assert "specific_heat_error" not in entry

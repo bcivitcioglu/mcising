@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from mcising.config import LatticeConfig, SimulationConfig
-from mcising.exceptions import SimulationError
+from mcising._core import IsingSimulation
+from mcising.config import LatticeConfig, LatticeType, SimulationConfig
+from mcising.exceptions import ConfigurationError, SimulationError
 from mcising.simulation import Simulation, SimulationResults
 
 
@@ -141,3 +142,124 @@ class TestStoreConfigsCooldown:
         results = Simulation(config).run(show_progress=False)
         assert 2.0 not in results.configurations
         assert results.energy[2.0].shape == (2,)
+
+
+class TestNumSites:
+    """B11 (#22): the site count is exact or a hard error, never 1."""
+
+    @pytest.mark.parametrize(
+        ("lattice_type", "expected"),
+        [
+            (LatticeType.SQUARE, 1024),
+            (LatticeType.TRIANGULAR, 1024),
+            (LatticeType.HONEYCOMB, 2048),
+            (LatticeType.CUBIC, 32768),
+            (LatticeType.CHAIN, 32),
+        ],
+    )
+    def test_per_lattice_site_count_at_l32(
+        self, lattice_type: LatticeType, expected: int
+    ) -> None:
+        assert LatticeConfig(lattice_type, 32).num_sites == expected
+
+    @pytest.mark.parametrize("lattice_type", list(LatticeType))
+    @pytest.mark.parametrize("size", [4, 6])
+    def test_formula_matches_rust_core(
+        self, lattice_type: LatticeType, size: int
+    ) -> None:
+        # The pure-Python formula is licensed by parity with the Rust
+        # constructors, which own the geometry.
+        sim = IsingSimulation(
+            size, 1.0, 0.0, 0.0, 0.0, 0, "metropolis", lattice_type.value
+        )
+        assert LatticeConfig(lattice_type, size).num_sites == sim.num_sites
+
+    def test_results_num_sites_from_config(self) -> None:
+        config = SimulationConfig(lattice=LatticeConfig(size=4))
+        results = SimulationResults(metadata={"config": config})
+        assert results.num_sites == 16
+
+    def test_results_num_sites_from_configurations_shape(self) -> None:
+        # Config-less legacy files fall back to the stored spin shape.
+        results = SimulationResults(
+            configurations={2.0: np.ones((3, 4, 4), dtype=np.int8)}
+        )
+        assert results.num_sites == 16
+
+    def test_results_num_sites_raises_on_missing_info(self) -> None:
+        results = SimulationResults(metadata={})
+        with pytest.raises(ConfigurationError, match="number of lattice sites"):
+            _ = results.num_sites
+
+    def test_no_rust_simulation_constructed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The old code built a throwaway Rust sim per call (B11).
+        import mcising.simulation as sim_module
+
+        def _boom(*args: object, **kwargs: object) -> None:
+            raise AssertionError("num_sites must not construct a Rust sim")
+
+        monkeypatch.setattr(sim_module, "_RustSim", _boom)
+        config = SimulationConfig(lattice=LatticeConfig(size=4))
+        results = SimulationResults(metadata={"config": config})
+        assert results.num_sites == 16
+
+
+class TestResultsStatistics:
+    """B10 (#21): every quoted observable carries an uncertainty."""
+
+    @pytest.fixture
+    def run_results(self) -> SimulationResults:
+        config = SimulationConfig(
+            lattice=LatticeConfig(size=8),
+            temperatures=(2.0,),
+            n_sweeps=400,
+            measurement_interval=10,
+        )
+        return Simulation(config).run(show_progress=False)
+
+    def test_statistics_fields_and_consistency(
+        self, run_results: SimulationResults
+    ) -> None:
+        stats = run_results.statistics(2.0)
+        assert stats.n_samples == 40
+        assert stats.tau_int >= 0.5
+        # Point values are exactly the legacy scalar methods.
+        assert stats.specific_heat.value == pytest.approx(
+            run_results.specific_heat(2.0)
+        )
+        assert stats.susceptibility.value == pytest.approx(
+            run_results.susceptibility(2.0)
+        )
+        assert stats.binder_cumulant.value == pytest.approx(
+            run_results.binder_cumulant(2.0)
+        )
+        e = run_results.energy[2.0]
+        assert stats.energy.value == pytest.approx(float(np.mean(e)))
+        for est in (
+            stats.energy,
+            stats.abs_magnetization,
+            stats.specific_heat,
+            stats.susceptibility,
+        ):
+            assert np.isfinite(est.error)
+            assert est.error >= 0.0
+
+    def test_statistics_memoized(self, run_results: SimulationResults) -> None:
+        assert run_results.statistics(2.0) is run_results.statistics(2.0)
+
+    def test_statistics_total_for_missing_temperature(
+        self, run_results: SimulationResults
+    ) -> None:
+        stats = run_results.statistics(99.0)
+        assert stats.n_samples == 0
+        assert np.isnan(stats.energy.value)
+
+    def test_binder_cumulant_in_physical_range(
+        self, run_results: SimulationResults
+    ) -> None:
+        # U4 <= 2/3 for any distribution reachable here; at T=2.0 < Tc
+        # on an 8x8 square lattice the ordered phase pins it near 2/3.
+        u4 = run_results.binder_cumulant(2.0)
+        assert 0.0 <= u4 <= 2.0 / 3.0 + 1e-12

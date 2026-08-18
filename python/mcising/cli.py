@@ -617,6 +617,7 @@ def summary(
 ) -> None:
     """Inspect simulation results from an HDF5 file."""
     import json as json_mod
+    import math
 
     import numpy as np
 
@@ -625,22 +626,48 @@ def summary(
     results = load_hdf5(file)
 
     if json_output or csv_output:
+        columns = (
+            "T",
+            "E_mean",
+            "E_err",
+            "E_std",
+            "M_mean",
+            "M_err",
+            "Cv",
+            "Cv_err",
+            "chi",
+            "chi_err",
+            "U4",
+            "U4_err",
+            "tau_int",
+            "samples",
+        )
         rows = []
         for t in sorted(results.temperatures):
             if t not in results.energy:
                 continue
             e = results.energy[t]
-            m = results.magnetization.get(t)
-            row = {
+            stats = results.statistics(t)
+            row: dict[str, float | int] = {
                 "T": t,
-                "E_mean": float(np.mean(e)),
+                "E_mean": stats.energy.value,
+                "E_err": stats.energy.error,
                 "E_std": float(np.std(e)),
-                "M_mean": float(np.mean(np.abs(m))) if m is not None else 0,
-                "Cv": results.specific_heat(t),
-                "chi": results.susceptibility(t),
-                "samples": len(e),
+                "M_mean": stats.abs_magnetization.value,
+                "M_err": stats.abs_magnetization.error,
+                "Cv": stats.specific_heat.value,
+                "Cv_err": stats.specific_heat.error,
+                "chi": stats.susceptibility.value,
+                "chi_err": stats.susceptibility.error,
+                "U4": stats.binder_cumulant.value,
+                "U4_err": stats.binder_cumulant.error,
+                "tau_int": stats.tau_int,
+                "samples": stats.n_samples,
             }
             rows.append(row)
+
+        def _is_nan(value: float | int) -> bool:
+            return isinstance(value, float) and math.isnan(value)
 
         if json_output:
             payload: dict[str, object] = {}
@@ -654,15 +681,20 @@ def summary(
             ):
                 if key in results.metadata:
                     payload[key] = results.metadata[key]
-            payload["results"] = rows
+            # NaN is invalid strict JSON; unknown values are omitted,
+            # never written as null (P07 policy).
+            payload["results"] = [
+                {k: v for k, v in row.items() if not _is_nan(v)} for row in rows
+            ]
             print(json_mod.dumps(payload, indent=2))
         else:
-            print("T,E_mean,E_std,M_mean,Cv,chi,samples")
-            for r in rows:
+            print(",".join(columns))
+            for row in rows:
                 print(
-                    f"{r['T']},{r['E_mean']},{r['E_std']},"
-                    f"{r['M_mean']},{r['Cv']},{r['chi']},"
-                    f"{r['samples']}"
+                    ",".join(
+                        "" if _is_nan(row[col]) else str(row[col])
+                        for col in columns
+                    )
                 )
     else:
         results.summary()

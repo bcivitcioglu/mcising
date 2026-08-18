@@ -52,6 +52,7 @@ nav:
   - API Reference:
     - Simulation: reference/simulation.md
     - Configuration: reference/config.md
+    - Statistics: reference/statistics.md
     - I/O: reference/io.md
     - Plotting: reference/plotting.md
     - Exceptions: reference/exceptions.md

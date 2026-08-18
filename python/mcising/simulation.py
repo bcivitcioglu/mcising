@@ -17,6 +17,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
+import mcising.statistics as _mcstats
 from mcising._core import IsingSimulation as _RustSim
 from mcising._core import run_independent_temperatures as _run_independent
 from mcising._core import run_parallel_tempering as _run_pt
@@ -24,6 +25,7 @@ from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit, package_version
 from mcising.config import ExecutionMode, SimulationConfig
 from mcising.constants import INF_TEMP
 from mcising.exceptions import ConfigurationError, SimulationError
+from mcising.statistics import ObservableStatistics
 
 __all__: Final[list[str]] = [
     "Simulation",
@@ -137,31 +139,79 @@ class SimulationResults:
     correlation_length: dict[float, NDArray[np.float64]] | None = None
     adaptive_diagnostics: dict[float, AdaptiveDiagnostics] | None = None
     metadata: dict[str, object] = field(default_factory=dict)
+    _statistics_cache: dict[float, ObservableStatistics] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     @cached_property
     def num_sites(self) -> int:
-        """Infer number of sites from stored configurations or config."""
-        config = self.metadata.get("config")
-        if config is not None and hasattr(config, "lattice"):
-            from mcising._core import IsingSimulation as _Sim
+        """Total number of spins N, resolved from provenance.
 
-            sim = _Sim(
-                config.lattice.size,
-                1.0,
-                0.0,
-                0.0,
-                0.0,
-                0,
-                "metropolis",
-                config.lattice.lattice_type.value,
+        Prefers the restored :class:`~mcising.config.SimulationConfig`
+        (present for every run and every loaded file with provenance);
+        falls back to the shape of stored spin configurations for
+        config-less legacy files. Never guesses: a wrong N silently
+        mis-scales specific heat and susceptibility (B11).
+
+        Raises
+        ------
+        ConfigurationError
+            If neither the config metadata nor stored configurations
+            can supply the site count.
+        """
+        n = self._num_sites_or_none()
+        if n is None:
+            msg = (
+                "Cannot determine the number of lattice sites: results "
+                "carry no config metadata and no stored spin "
+                "configurations. Re-save the file with mcising >= 0.24.0 "
+                "or attach a config to results.metadata['config']."
             )
-            return int(sim.num_sites)
-        # Fallback: infer from first config shape
+            raise ConfigurationError(msg)
+        return n
+
+    def _num_sites_or_none(self) -> int | None:
+        """Non-raising twin of :attr:`num_sites` for display paths."""
+        config = self.metadata.get("config")
+        lattice = getattr(config, "lattice", None)
+        if lattice is not None:
+            return int(lattice.num_sites)
         for cfg in self.configurations.values():
             if cfg.ndim >= 2:
                 return int(np.prod(cfg.shape[1:]))
-        # Last resort: raise hard error
-        raise ValueError("Cannot infer number of sites: config missing and no configurations stored.")
+        return None
+
+    def statistics(self, temperature: float) -> ObservableStatistics:
+        """Observable estimates with standard errors at one temperature.
+
+        Computed lazily from the stored measurement series and memoized.
+        Means (E, M, |M|) carry blocking standard errors; specific heat,
+        susceptibility, and the Binder cumulant carry delete-one-block
+        jackknife errors (see :mod:`mcising.statistics`). Total: a
+        temperature with no or degenerate data yields ``nan`` estimates
+        rather than an exception.
+
+        Parameters
+        ----------
+        temperature : float
+            Temperature to compute statistics at.
+
+        Returns
+        -------
+        ObservableStatistics
+            Per-temperature estimates; errors are ``nan`` where the
+            series is too short to quote a principled uncertainty.
+        """
+        cached = self._statistics_cache.get(temperature)
+        if cached is None:
+            cached = _mcstats.observable_statistics(
+                temperature,
+                self.energy.get(temperature, ()),
+                self.magnetization.get(temperature, ()),
+                self._num_sites_or_none(),
+            )
+            self._statistics_cache[temperature] = cached
+        return cached
 
     def specific_heat(self, temperature: float) -> float:
         """Specific heat per site: Cv = N * Var(E) / T^2.
@@ -174,14 +224,21 @@ class SimulationResults:
         Returns
         -------
         float
-            Specific heat per site.
+            Specific heat per site. For the standard error use
+            ``statistics(temperature).specific_heat.error``.
         """
-        e = self.energy[temperature]
-        n = self.num_sites
-        return float(n * np.var(e) / (temperature * temperature))
+        return _mcstats.specific_heat(
+            self.energy[temperature],
+            temperature=temperature,
+            num_sites=self.num_sites,
+        )
 
     def susceptibility(self, temperature: float) -> float:
         """Magnetic susceptibility per site: chi = N * Var(M) / T.
+
+        Uses the signed magnetization series (see
+        :func:`mcising.statistics.susceptibility` for the convention
+        and its ordered-phase caveat).
 
         Parameters
         ----------
@@ -191,17 +248,39 @@ class SimulationResults:
         Returns
         -------
         float
-            Susceptibility per site.
+            Susceptibility per site. For the standard error use
+            ``statistics(temperature).susceptibility.error``.
         """
-        m = self.magnetization[temperature]
-        n = self.num_sites
-        return float(n * np.var(m) / temperature)
+        return _mcstats.susceptibility(
+            self.magnetization[temperature],
+            temperature=temperature,
+            num_sites=self.num_sites,
+        )
+
+    def binder_cumulant(self, temperature: float) -> float:
+        """Binder cumulant U4 = 1 - <m^4> / (3 <m^2>^2).
+
+        Parameters
+        ----------
+        temperature : float
+            Temperature to compute U4 at.
+
+        Returns
+        -------
+        float
+            Binder cumulant (dimensionless; no site count needed). For
+            the standard error use
+            ``statistics(temperature).binder_cumulant.error``.
+        """
+        return _mcstats.binder_cumulant(self.magnetization[temperature])
 
     def summary(self) -> None:
         """Print a Rich table summarizing results per temperature.
 
-        Shows mean energy, magnetization, specific heat, and
-        susceptibility for each temperature.
+        Shows mean energy, magnetization, specific heat,
+        susceptibility, and Binder cumulant with standard errors
+        (``value ± error``; ``n/a`` where the series is too short to
+        quote one).
         """
         from rich.console import Console
         from rich.table import Table
@@ -212,22 +291,21 @@ class SimulationResults:
         table.add_column("<|M|>/N", justify="right")
         table.add_column("Cv/N", justify="right")
         table.add_column("chi/N", justify="right")
+        table.add_column("U4", justify="right")
         table.add_column("samples", justify="right", style="dim")
 
         for t in sorted(self.temperatures):
             if t not in self.energy:
                 continue
-            e = self.energy[t]
-            m = self.magnetization[t]
-            cv = self.specific_heat(t)
-            chi = self.susceptibility(t)
+            stats = self.statistics(t)
             table.add_row(
                 f"{t:.4f}",
-                f"{float(np.mean(e)):.4f}",
-                f"{float(np.mean(np.abs(m))):.4f}",
-                f"{cv:.4f}",
-                f"{chi:.4f}",
-                str(len(e)),
+                str(stats.energy),
+                str(stats.abs_magnetization),
+                str(stats.specific_heat),
+                str(stats.susceptibility),
+                str(stats.binder_cumulant),
+                str(stats.n_samples),
             )
 
         Console().print(table)
@@ -235,8 +313,13 @@ class SimulationResults:
     def to_dataframe(self) -> object:
         """Convert results to a pandas DataFrame.
 
-        Returns a DataFrame with columns: T, E_mean, E_std,
-        M_mean, M_std, Cv, chi.
+        Returns a DataFrame with columns: T, E_mean, E_err, E_std,
+        M_mean, M_err, M_std, Cv, Cv_err, chi, chi_err, U4, U4_err,
+        tau_int, samples. The ``*_err`` columns are standard errors of
+        the mean/estimator (blocking for means, jackknife for derived
+        quantities); ``E_std``/``M_std`` remain the sample spread of
+        the series (not an uncertainty). Errors are ``nan`` where the
+        series is too short to quote one.
 
         Returns
         -------
@@ -254,17 +337,24 @@ class SimulationResults:
         for t in sorted(self.temperatures):
             if t not in self.energy:
                 continue
-            e = self.energy[t]
-            m = self.magnetization[t]
+            stats = self.statistics(t)
             rows.append(
                 {
                     "T": t,
-                    "E_mean": float(np.mean(e)),
-                    "E_std": float(np.std(e)),
-                    "M_mean": float(np.mean(np.abs(m))),
-                    "M_std": float(np.std(m)),
-                    "Cv": self.specific_heat(t),
-                    "chi": self.susceptibility(t),
+                    "E_mean": stats.energy.value,
+                    "E_err": stats.energy.error,
+                    "E_std": float(np.std(self.energy[t])),
+                    "M_mean": stats.abs_magnetization.value,
+                    "M_err": stats.abs_magnetization.error,
+                    "M_std": float(np.std(self.magnetization[t])),
+                    "Cv": stats.specific_heat.value,
+                    "Cv_err": stats.specific_heat.error,
+                    "chi": stats.susceptibility.value,
+                    "chi_err": stats.susceptibility.error,
+                    "U4": stats.binder_cumulant.value,
+                    "U4_err": stats.binder_cumulant.error,
+                    "tau_int": stats.tau_int,
+                    "samples": stats.n_samples,
                 }
             )
         return pd.DataFrame(rows)

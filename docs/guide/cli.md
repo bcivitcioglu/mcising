@@ -71,20 +71,29 @@ mcising summary results.h5 --csv
 `--json` emits an object with the file's provenance (`version`,
 `schema_version`, `seed`, `mode`, `algorithm`, `git_commit` when
 recorded) at the top level and the per-temperature rows under
-`results`. (Before 0.24.0 it printed a bare array of rows.)
+`results`. (Before 0.24.0 it printed a bare array of rows.) Since
+0.25.0 every row quotes standard errors (`E_err`, `Cv_err`, `chi_err`,
+`U4_err`, ...) plus `tau_int`; values too uncertain to estimate are
+omitted from JSON and left empty in CSV, never written as NaN.
 
-Example output:
+Example output — every observable carries its standard error in
+compact notation (`-1.9563(32)` means -1.9563 ± 0.0032):
 
 ```
-                    Simulation Results
-┏━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━┓
-┃      T ┃   <E>/N ┃ <|M|>/N ┃   Cv/N ┃    chi/N ┃ samples ┃
-┡━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━┩
-│ 1.5000 │ -1.9523 │  0.9868 │ 0.2210 │   0.0305 │     200 │
-│ 2.2690 │ -1.4144 │  0.6503 │ 1.8544 │ 195.7559 │     200 │
-│ 3.5000 │ -0.6630 │  0.0605 │ 0.2657 │   1.5562 │     200 │
-└────────┴─────────┴─────────┴────────┴──────────┴─────────┘
+                                   Simulation Results
+┏━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━┓
+┃      T ┃       <E>/N ┃     <|M|>/N ┃      Cv/N ┃      chi/N ┃           U4 ┃ samples ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━┩
+│ 1.5000 │ -1.9563(32) │ 0.98805(92) │ 0.168(23) │ 0.0227(40) │ 0.666488(31) │     200 │
+│ 2.2690 │  -1.467(14) │   0.741(13) │  1.42(14) │    39 ± 18 │   0.6280(55) │     200 │
+│ 3.5000 │ -0.6591(88) │  0.1199(65) │ 0.211(24) │   1.65(16) │    0.064(58) │     200 │
+└────────┴─────────────┴─────────────┴───────────┴────────────┴──────────────┴─────────┘
 ```
+
+(16×16 square lattice, 200 correlated samples per temperature — note
+the honest ±46% error on chi/N at criticality: near Tc the signed-
+magnetization susceptibility fluctuates enormously, and the error bar
+now says so.)
 
 ## `mcising plot`
 

@@ -131,6 +131,26 @@ class LatticeConfig:
             msg = f"h must be a finite number, got {self.h}"
             raise ValueError(msg)
 
+    @property
+    def num_sites(self) -> int:
+        """Total number of spins N for this geometry.
+
+        Pure function of ``(lattice_type, size)``; kept in lockstep with
+        the Rust constructors by a parity test over every lattice type
+        (``tests/test_simulation.py::TestNumSites``).
+        """
+        length = self.size
+        if self.lattice_type in (LatticeType.SQUARE, LatticeType.TRIANGULAR):
+            return length * length
+        if self.lattice_type is LatticeType.HONEYCOMB:
+            return 2 * length * length
+        if self.lattice_type is LatticeType.CUBIC:
+            return length * length * length
+        if self.lattice_type is LatticeType.CHAIN:
+            return length
+        msg = f"unhandled lattice type: {self.lattice_type!r}"
+        raise ConfigurationError(msg)
+
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> LatticeConfig:
         """Build a LatticeConfig from a mapping.
