@@ -377,6 +377,9 @@ def load_hdf5(path: str | Path) -> SimulationResults:
                     measurement_interval=int(ad.attrs["measurement_interval"]),
                     production_sweeps=int(ad.attrs["production_sweeps"]),
                     n_samples=int(ad.attrs["n_samples"]),
+                    # Added in P09 (additive, no schema bump): files
+                    # written before it load with the dataclass default.
+                    stationary_sweeps=int(ad.attrs.get("stationary_sweeps", 0)),
                 )
 
         return SimulationResults(
@@ -753,6 +756,7 @@ def _write_temperature_group(f: Any, temp: float, results: SimulationResults) ->
         ad_grp.attrs["measurement_interval"] = diag.measurement_interval
         ad_grp.attrs["production_sweeps"] = diag.production_sweeps
         ad_grp.attrs["n_samples"] = diag.n_samples
+        ad_grp.attrs["stationary_sweeps"] = diag.stationary_sweeps
 
     if temp in results.energy or temp in results.magnetization:
         _write_statistics_group(grp, results.statistics(temp))

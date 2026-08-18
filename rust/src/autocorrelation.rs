@@ -42,7 +42,20 @@ pub struct ThermalizationAnalysis {
 ///
 /// MSER statistic at truncation point d: Var(x_d..x_N) / (N - d)
 ///
-/// The series is considered thermalized if d < N/2.
+/// Every candidate d in [0, N/2] is evaluated exactly (single backward
+/// Welford pass, O(N)). The classical acceptance rule (White 1997) is
+/// kept: the series is thermalized only if the minimizing d falls in the
+/// first half — an argmin at the boundary means the data cannot
+/// demonstrate stationarity ("insufficient data"). Restricting candidates
+/// to d ≤ N/2 also guarantees every evaluated tail has ≥ N/2 points, so
+/// the small-tail pathology (a noisy variance estimate on a tiny tail
+/// winning the argmin) is structurally impossible and no minimum-tail
+/// constant is needed. Ties resolve to the smallest d, so a zero-variance
+/// (frozen) series is thermalized at d = 0, not data-starved.
+///
+/// Before P09 the search used a 20-point grid whose largest candidate,
+/// `20·⌊(N/2)/20⌋`, reached the boundary only when 20 | (N/2) — making
+/// the not-thermalized verdict unreachable for most N (B9, #20).
 pub fn detect_thermalization(series: &[f64]) -> ThermalizationResult {
     let n = series.len();
     if n < 4 {
@@ -52,29 +65,31 @@ pub fn detect_thermalization(series: &[f64]) -> ThermalizationResult {
         };
     }
 
-    // Evaluate candidate truncation points at regular intervals.
-    // Use ~20 candidates to keep cost O(N), not O(N^2).
-    let n_candidates = 20.min(n / 2);
-    let step = (n / 2).max(1) / n_candidates.max(1);
-
     let mut best_d = 0;
     let mut best_mser = f64::MAX;
 
-    for k in 0..=n_candidates {
-        let d = (k * step).min(n - 2);
-        let tail = &series[d..];
-        let tail_n = tail.len();
-        if tail_n < 2 {
-            continue;
-        }
+    // Backward Welford pass: extend the tail one sample leftward per
+    // step; at d ≤ n/2 the tail has n−d ≥ 2 samples, so the variance is
+    // always defined.
+    let mut count = 0usize;
+    let mut mean = 0.0;
+    let mut m2 = 0.0;
 
-        let mean = tail.iter().sum::<f64>() / tail_n as f64;
-        let var = tail.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (tail_n - 1) as f64;
-        let mser = var / tail_n as f64;
+    for d in (0..n).rev() {
+        count += 1;
+        let x = series[d];
+        let delta = x - mean;
+        mean += delta / count as f64;
+        m2 += delta * (x - mean);
 
-        if mser < best_mser {
-            best_mser = mser;
-            best_d = d;
+        if d <= n / 2 {
+            let var = m2 / (count - 1) as f64;
+            let mser = var / count as f64;
+            // `<=`: iterating d downward, so on ties the smallest d wins.
+            if mser <= best_mser {
+                best_mser = mser;
+                best_d = d;
+            }
         }
     }
 
@@ -161,16 +176,14 @@ pub fn analyze_thermalization(
 ) -> ThermalizationAnalysis {
     let therm = detect_thermalization(series);
 
-    let autocorr = if therm.is_thermalized && therm.truncation_point < series.len() {
-        let tail = &series[therm.truncation_point..];
-        if tail.len() >= 4 {
-            integrated_autocorrelation_time(tail, c_window)
-        } else {
-            AutocorrelationResult {
-                tau_int: 0.5,
-                window: 0,
-            }
-        }
+    // Estimate tau on the post-truncation tail whenever it has enough
+    // points — even when not thermalized: the caller may have exhausted
+    // its sweep budget and must act on the best available estimate
+    // rather than a silently optimistic tau = 0.5. `is_thermalized`
+    // remains the honesty flag.
+    let tail = &series[therm.truncation_point.min(series.len())..];
+    let autocorr = if tail.len() >= 4 {
+        integrated_autocorrelation_time(tail, c_window)
     } else {
         AutocorrelationResult {
             tau_int: 0.5,
@@ -282,6 +295,101 @@ mod tests {
             "Truncation point should be near the transient end (~200), got {}",
             result.truncation_point
         );
+    }
+
+    #[test]
+    fn test_mser_rejects_linear_ramp() {
+        // The P09 gate: a pure linear ramp is never stationary, so MSER
+        // must return not-thermalized — at EVERY length. The variance of
+        // a length-k ramp tail grows like k², so MSER(d) ~ (n-d) is
+        // minimized at the largest candidate d = n/2, which is exactly
+        // the "insufficient data" boundary. The pre-P09 20-point grid
+        // reached n/2 only when 20 | (n/2): n=500 (max candidate 240 <
+        // 250) and n=317 (140 < 158) were declared thermalized.
+        for n in [200usize, 317, 500, 1000] {
+            let series: Vec<f64> = (0..n).map(|i| i as f64).collect();
+            let result = detect_thermalization(&series);
+            assert!(
+                !result.is_thermalized,
+                "n={n}: linear ramp declared thermalized (d={})",
+                result.truncation_point
+            );
+        }
+    }
+
+    #[test]
+    fn test_mser_rejects_cooldown_shaped_ramp() {
+        // The actual annealing shape the adaptive path produces: a
+        // monotone drift from a hot value toward a cold one.
+        let n = 200;
+        let series: Vec<f64> = (0..n)
+            .map(|i| 100.0 + (2.269 - 100.0) * f64::from(i) / f64::from(n - 1))
+            .collect();
+        let result = detect_thermalization(&series);
+        assert!(
+            !result.is_thermalized,
+            "cooldown ramp declared thermalized (d={})",
+            result.truncation_point
+        );
+    }
+
+    #[test]
+    fn test_mser_boundary_argmin_is_not_thermalized() {
+        // First half transient, second half stationary: the argmin sits
+        // exactly at d = n/2, the classical "insufficient data" verdict.
+        // n = 502 makes n/2 = 251 unreachable for the old 20-point grid.
+        let n = 502;
+        let series: Vec<f64> = (0..n)
+            .map(|i| {
+                if i < n / 2 {
+                    100.0
+                } else {
+                    (i % 7) as f64 * 0.01
+                }
+            })
+            .collect();
+        let result = detect_thermalization(&series);
+        assert_eq!(result.truncation_point, n / 2);
+        assert!(!result.is_thermalized);
+    }
+
+    #[test]
+    fn test_mser_accepts_stationary_ar1() {
+        // Correlated but stationary series must stay accepted, over
+        // several correlation strengths and seeds.
+        use rand::Rng;
+        use rand::SeedableRng;
+        use rand_xoshiro::Xoshiro256StarStar;
+
+        for phi in [0.5, 0.8, 0.9] {
+            for seed in [42u64, 123, 7, 2024, 31337] {
+                let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
+                let n = 1000;
+                let mut series = Vec::with_capacity(n);
+                let mut x = 0.0;
+                for _ in 0..n {
+                    x = phi * x + rng.gen::<f64>() - 0.5;
+                    series.push(x);
+                }
+                let result = detect_thermalization(&series);
+                assert!(
+                    result.is_thermalized,
+                    "phi={phi} seed={seed}: stationary AR(1) rejected (d={})",
+                    result.truncation_point
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_mser_constant_series_is_thermalized() {
+        // Zero variance everywhere: every truncation point ties at
+        // MSER = 0. Ties must resolve to the smallest d (a frozen,
+        // perfectly equilibrated series is thermalized, not data-starved).
+        let series = vec![42.0; 1000];
+        let result = detect_thermalization(&series);
+        assert_eq!(result.truncation_point, 0);
+        assert!(result.is_thermalized);
     }
 
     #[test]

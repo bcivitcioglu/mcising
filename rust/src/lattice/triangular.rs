@@ -142,6 +142,10 @@ impl Lattice for TriangularLattice {
         &self.shape
     }
 
+    fn dimension(&self) -> usize {
+        2
+    }
+
     fn coordination_number(&self) -> usize {
         6
     }

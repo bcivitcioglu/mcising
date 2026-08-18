@@ -13,6 +13,9 @@
 
 pub mod algorithm;
 pub mod autocorrelation;
+/// Synthetic-kernel recovery suite for the correlation length (test-only).
+#[cfg(test)]
+mod correlation_tests;
 pub mod error;
 /// Exact-enumeration oracle for small systems (test-only).
 #[cfg(test)]

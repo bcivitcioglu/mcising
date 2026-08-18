@@ -33,12 +33,20 @@ config = SimulationConfig(
 results = Simulation(config).run()
 ```
 
-That's it. mcising will automatically:
+That's it. For each temperature, mcising will automatically:
 
-1. **Detect thermalization** using MSER (Marginal Standard Error Rule)
-2. **Estimate autocorrelation time** using Sokal's windowing method
-3. **Set measurement spacing** to `2 * tau_int` for approximately independent samples
-4. **Collect** at least `min_independent_samples` measurements
+1. **Anneal** with a cool-down ramp (never analyzed — its energy trace
+   is non-stationary by construction)
+2. **Probe** with a fixed-temperature diagnostic series and **detect
+   thermalization** on it using MSER (Marginal Standard Error Rule),
+   extending the run while stationarity is not detected (up to
+   `max_thermalization_sweeps`; a `UserWarning` is raised if the budget
+   runs out first)
+3. **Estimate the autocorrelation time** with Sokal's windowing method
+   on the stationary tail of that fixed-temperature series
+4. **Set measurement spacing** to `2 * tau_int` for approximately independent samples
+5. **Collect** at least `min_independent_samples` measurements (with a
+   `UserWarning` if the `max_total_sweeps` budget cannot afford them)
 
 ## Inspect diagnostics
 
@@ -51,11 +59,12 @@ for T in results.temperatures:
         f"T={T:.3f}: "
         f"tau_int={diag.tau_int:.1f}, "
         f"interval={diag.measurement_interval}, "
-        f"samples={diag.n_samples}"
+        f"samples={diag.n_samples}, "
+        f"stationary_sweeps={diag.stationary_sweeps}"
     )
 ```
 
-You'll see that `tau_int` is larger near Tc (critical slowing down) and the measurement interval adjusts accordingly.
+You'll see that `tau_int` is larger near Tc (critical slowing down) and the measurement interval adjusts accordingly. `stationary_sweeps` records how many fixed-temperature sweeps the estimates are based on — the annealing ramp is never part of them.
 
 ## Configuration options
 
@@ -76,9 +85,11 @@ AdaptiveConfig(
 
 ## How it works
 
-**MSER (thermalization detection):** Scans the energy time series to find the truncation point that minimizes the marginal standard error. Points before this are discarded as transient.
+**Ramp / diagnostics split:** The cool-down ramp is pure annealing. All statistical decisions come from a fixed-temperature energy series recorded *after* the ramp — estimating `tau_int` across a temperature ramp would measure the ramp, not the physics.
 
-**Sokal windowing (autocorrelation):** Computes the integrated autocorrelation time `tau_int` from the stationary tail of the energy series. Uses a self-consistent cutoff to avoid summing noise.
+**MSER (thermalization detection):** Scans the fixed-temperature energy series to find the truncation point that minimizes the marginal standard error, evaluating every candidate in the first half exactly. Points before the truncation point are discarded as transient; an argmin at or beyond the midpoint means the series cannot demonstrate stationarity and is reported as not thermalized.
+
+**Sokal windowing (autocorrelation):** Computes the integrated autocorrelation time `tau_int` from the stationary tail of the fixed-temperature series. Uses a self-consistent cutoff to avoid summing noise.
 
 **Measurement interval:** Set to `tau_multiplier * tau_int` (default 2.0). With `tau_multiplier=2`, consecutive samples are approximately 86% independent.
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -22,8 +23,8 @@ from mcising._core import IsingSimulation as _RustSim
 from mcising._core import run_independent_temperatures as _run_independent
 from mcising._core import run_parallel_tempering as _run_pt
 from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit, package_version
-from mcising.config import ExecutionMode, SimulationConfig
-from mcising.constants import INF_TEMP
+from mcising.config import AdaptiveConfig, ExecutionMode, SimulationConfig
+from mcising.constants import INF_TEMP, MIN_DIAGNOSTIC_SWEEPS
 from mcising.exceptions import ConfigurationError, SimulationError
 from mcising.statistics import ObservableStatistics
 
@@ -79,13 +80,20 @@ class AdaptiveDiagnostics:
     Attributes
     ----------
     thermalization_sweeps : int
-        Total thermalization sweeps used (cool-down + extension).
+        Total thermalization sweeps used (annealing ramp + all
+        fixed-temperature diagnostic sweeps).
+    stationary_sweeps : int
+        Fixed-temperature sweeps analyzed for stationarity and tau_int.
+        Never includes the cool-down ramp: the ramp's energy trace is
+        non-stationary by construction and is excluded from all
+        estimation (B9, #20).
     truncation_point : int
-        MSER truncation point in the thermalization energy series.
+        MSER truncation point within the fixed-temperature series.
     is_thermalized : bool
-        Whether the series was detected as stationary.
+        Whether the fixed-temperature series was detected as stationary.
     tau_int : float
-        Estimated integrated autocorrelation time.
+        Integrated autocorrelation time, estimated on the stationary
+        tail of the fixed-temperature series only.
     measurement_interval : int
         Measurement interval used for production (tau_multiplier * tau_int).
     production_sweeps : int
@@ -101,6 +109,21 @@ class AdaptiveDiagnostics:
     measurement_interval: int = 1
     production_sweeps: int = 0
     n_samples: int = 0
+    stationary_sweeps: int = 0
+
+
+def _analyze_thermalization(
+    series: NDArray[np.float64], config: AdaptiveConfig
+) -> dict[str, Any]:
+    """Run MSER + Sokal analysis on a fixed-temperature energy series.
+
+    Module-level seam over the static Rust method: PyO3 classes reject
+    attribute assignment, so tests spy on the analyzed series by
+    monkeypatching this function rather than ``_RustSim``.
+    """
+    return _RustSim.analyze_thermalization_series(
+        series, config.c_window, config.tau_multiplier
+    )
 
 
 @dataclass
@@ -842,44 +865,66 @@ class Simulation:
         to_temp: float,
         results: SimulationResults,
     ) -> None:
-        """Adaptive thermalization: cool-down with energy recording + MSER check."""
+        """Adaptive thermalization: annealing ramp + fixed-T diagnostics.
+
+        The cool-down ramp is pure annealing — its energy trace is
+        non-stationary by construction (the temperature changes every
+        sweep), so it is never analyzed (B9, #20). Stationarity (MSER)
+        and tau_int (Sokal) are estimated exclusively on a
+        fixed-temperature diagnostic series collected at ``to_temp``;
+        the production measurement interval derives from the stationary
+        tail of that series only.
+        """
         ac = self.config.adaptive
-        n_therm = max(self.config.n_thermalization, ac.min_thermalization_sweeps)
+        n_ramp = max(self.config.n_thermalization, ac.min_thermalization_sweeps)
 
-        # Cool-down phase: linspace from from_temp to to_temp, record energy
-        temp_schedule = np.linspace(from_temp, to_temp, num=n_therm).tolist()
-        energy_series = np.asarray(
-            self._core.thermalize_with_diagnostics(temp_schedule)
-        )
-        total_therm = len(energy_series)
+        # Annealing ramp (single FFI call). The per-sweep ramp energies
+        # it returns are deliberately discarded, never analyzed.
+        temp_schedule = np.linspace(from_temp, to_temp, num=n_ramp).tolist()
+        self._core.thermalize_with_diagnostics(temp_schedule)
 
-        # Analyze: MSER + Sokal on the cool-down energy series
-        analysis = _RustSim.analyze_thermalization_series(
-            energy_series, ac.c_window, ac.tau_multiplier
-        )
-
-        # If not thermalized, extend with sweeps at target temperature
+        # Fixed-temperature diagnostic block: the only series the
+        # analyzer ever sees. Always collected, even when the ramp
+        # already used the thermalization budget — without it there is
+        # nothing to base the measurement interval on.
         beta = 1.0 / to_temp
+        block = max(ac.min_thermalization_sweeps, MIN_DIAGNOSTIC_SWEEPS)
+        energy_series = np.asarray(self._core.extend_thermalization(block, beta))
+        stationary = len(energy_series)
+
+        analysis = _analyze_thermalization(energy_series, ac)
+
+        # Extend at fixed temperature while not thermalized; MSER's
+        # truncation discards the stale prefix on each re-analysis. The
+        # cap bounds the total (ramp + fixed-T), as before.
         while (
             not analysis["is_thermalized"]
-            and total_therm < ac.max_thermalization_sweeps
+            and n_ramp + stationary < ac.max_thermalization_sweeps
         ):
             extra_n = min(
-                n_therm,
-                ac.max_thermalization_sweeps - total_therm,
+                block,
+                ac.max_thermalization_sweeps - n_ramp - stationary,
             )
             extra_energies = np.asarray(self._core.extend_thermalization(extra_n, beta))
             energy_series = np.concatenate([energy_series, extra_energies])
-            total_therm += extra_n
+            stationary += extra_n
 
-            analysis = _RustSim.analyze_thermalization_series(
-                energy_series, ac.c_window, ac.tau_multiplier
+            analysis = _analyze_thermalization(energy_series, ac)
+
+        if not analysis["is_thermalized"]:
+            warnings.warn(
+                f"Thermalization not detected at T={to_temp:g} after "
+                f"{stationary} fixed-temperature sweeps; the measurement "
+                "interval derives from a non-stationary tail.",
+                UserWarning,
+                stacklevel=2,
             )
 
         # Store diagnostics (production filled by _collect_adaptive)
         if results.adaptive_diagnostics is not None:
             results.adaptive_diagnostics[to_temp] = AdaptiveDiagnostics(
-                thermalization_sweeps=total_therm,
+                thermalization_sweeps=n_ramp + stationary,
+                stationary_sweeps=stationary,
                 truncation_point=int(analysis["truncation_point"]),
                 is_thermalized=bool(analysis["is_thermalized"]),
                 tau_int=float(analysis["tau_int"]),
@@ -910,6 +955,18 @@ class Simulation:
         remaining_budget = ac.max_total_sweeps - therm_used
         max_measurements = max(1, remaining_budget // interval)
         n_measurements = min(n_measurements, max_measurements)
+
+        # Never silently deliver fewer samples than asked for; the
+        # interval itself is not capped (it is the tau-derived spacing).
+        if n_measurements < ac.min_independent_samples:
+            warnings.warn(
+                f"Sweep budget at T={temperature:g} allows only "
+                f"{n_measurements} of the requested "
+                f"{ac.min_independent_samples} samples at measurement "
+                f"interval {interval}.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Single Rust call for all production measurements
         energies, magnetizations, configs = self._core.production_sweeps(
