@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import Any, Final
 
 import numpy as np
@@ -137,7 +138,8 @@ class SimulationResults:
     adaptive_diagnostics: dict[float, AdaptiveDiagnostics] | None = None
     metadata: dict[str, object] = field(default_factory=dict)
 
-    def _num_sites(self) -> int:
+    @cached_property
+    def num_sites(self) -> int:
         """Infer number of sites from stored configurations or config."""
         config = self.metadata.get("config")
         if config is not None and hasattr(config, "lattice"):
@@ -158,8 +160,8 @@ class SimulationResults:
         for cfg in self.configurations.values():
             if cfg.ndim >= 2:
                 return int(np.prod(cfg.shape[1:]))
-        # Last resort: assume square
-        return 1
+        # Last resort: raise hard error
+        raise ValueError("Cannot infer number of sites: config missing and no configurations stored.")
 
     def specific_heat(self, temperature: float) -> float:
         """Specific heat per site: Cv = N * Var(E) / T^2.
@@ -175,7 +177,7 @@ class SimulationResults:
             Specific heat per site.
         """
         e = self.energy[temperature]
-        n = self._num_sites()
+        n = self.num_sites
         return float(n * np.var(e) / (temperature * temperature))
 
     def susceptibility(self, temperature: float) -> float:
@@ -192,7 +194,7 @@ class SimulationResults:
             Susceptibility per site.
         """
         m = self.magnetization[temperature]
-        n = self._num_sites()
+        n = self.num_sites
         return float(n * np.var(m) / temperature)
 
     def summary(self) -> None:
