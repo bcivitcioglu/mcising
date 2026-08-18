@@ -4,7 +4,12 @@ mcising includes plotting functions for all key observables, lattice visualizati
 
 ## Thermodynamic quantities
 
-Each function plots one quantity vs temperature, with error bars computed from the measurement samples.
+Each function plots one quantity vs temperature with real error bars:
+blocking (Flyvbjerg–Petersen) standard errors for the means, delete-one-block
+jackknife errors for specific heat and susceptibility (see
+[Statistics](../reference/statistics.md)). Points whose series is too short to
+quote an uncertainty render without a bar rather than with a fake zero-height
+one.
 
 ```python
 from mcising import (

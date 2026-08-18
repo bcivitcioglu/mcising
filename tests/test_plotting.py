@@ -9,10 +9,19 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pytest
+from matplotlib.container import ErrorbarContainer
+from matplotlib.figure import Figure
 from mcising.config import LatticeConfig, SimulationConfig
 from mcising.io import load_hdf5, save_hdf5
-from mcising.plotting import _export_prefix, plot_energy
-from mcising.simulation import Simulation
+from mcising.plotting import (
+    _export_prefix,
+    plot_energy,
+    plot_specific_heat,
+    plot_susceptibility,
+)
+from mcising.simulation import Simulation, SimulationResults
 
 
 def _run_and_save(tmp_path: Path, name: str, j1: float) -> Path:
@@ -61,3 +70,101 @@ class TestExportPrefix:
         prefix = _export_prefix(loaded)
         assert prefix != "mcising"
         assert prefix == "square_4x4_J1=1.0_metropolis"
+
+
+def _run_results(n_sweeps: int = 400) -> SimulationResults:
+    config = SimulationConfig(
+        lattice=LatticeConfig(size=8),
+        temperatures=(3.0, 2.0),
+        n_sweeps=n_sweeps,
+        measurement_interval=10,
+    )
+    return Simulation(config).run(show_progress=False)
+
+
+def _errorbar_half_heights(fig: Figure) -> list[float]:
+    """Vertical half-extents of the error bars in the first axes."""
+    containers = [
+        c for c in fig.axes[0].containers if isinstance(c, ErrorbarContainer)
+    ]
+    assert containers, "no ErrorbarContainer on the axes"
+    assert containers[0].has_yerr
+    barlinecols = containers[0][2]
+    segments = barlinecols[0].get_segments()
+    return [
+        abs(seg[1, 1] - seg[0, 1]) / 2.0
+        for seg in segments
+        if seg.shape == (2, 2)
+    ]
+
+
+class TestErrorBars:
+    """Gate: real error bars in observable plots (B10).
+
+    Before P08, Cv and chi plots hardcoded 0.0 errors and silently fell
+    back to a bare line plot; E and M bars showed the sample spread,
+    not a standard error.
+    """
+
+    def test_specific_heat_plot_has_nonzero_error_bars(self) -> None:
+        results = _run_results()
+        fig = plot_specific_heat(results)
+        try:
+            heights = _errorbar_half_heights(fig)
+            assert heights, "no finite error-bar segments drawn"
+            assert max(heights) > 0.0
+        finally:
+            plt.close(fig)
+
+    def test_susceptibility_plot_has_nonzero_error_bars(self) -> None:
+        results = _run_results()
+        fig = plot_susceptibility(results)
+        try:
+            assert max(_errorbar_half_heights(fig)) > 0.0
+        finally:
+            plt.close(fig)
+
+    def test_energy_bars_are_standard_errors_not_spread(self) -> None:
+        results = _run_results()
+        stats = results.statistics(2.0)
+        fig = plot_energy(results)
+        try:
+            heights = _errorbar_half_heights(fig)
+            # Temperatures plot in ascending order: index 0 is T=2.0.
+            assert heights[0] == pytest.approx(stats.energy.error, rel=1e-9)
+            # The old bars used np.std(series): the spread, larger than
+            # the SE of the mean by ~sqrt(n_eff).
+            spread = float(np.std(results.energy[2.0]))
+            assert heights[0] < spread
+        finally:
+            plt.close(fig)
+
+    def test_missing_temperature_does_not_break_plot(self) -> None:
+        # Regression: temps came from results.temperatures while vals
+        # skipped missing entries, so a partial results object produced
+        # length-mismatched arrays.
+        results = _run_results(n_sweeps=100)
+        del results.energy[3.0]
+        fig = plot_energy(results)
+        try:
+            line = fig.axes[0].lines[0]
+            assert len(line.get_xdata()) == 1
+        finally:
+            plt.close(fig)
+
+    def test_short_series_nan_error_still_plots(self, tmp_path: Path) -> None:
+        # n=2 measurements: jackknife error is NaN by policy; the plot
+        # must still render markers (no exception, no zero-height lie).
+        path = _run_and_save(tmp_path, "short.h5", 1.0)
+        fig = plot_specific_heat(load_hdf5(path))
+        try:
+            containers = [
+                c
+                for c in fig.axes[0].containers
+                if isinstance(c, ErrorbarContainer)
+            ]
+            assert containers
+            line = containers[0][0]
+            assert len(line.get_xdata()) == 2
+        finally:
+            plt.close(fig)

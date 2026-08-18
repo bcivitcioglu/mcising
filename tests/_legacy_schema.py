@@ -3,9 +3,10 @@
 Reproduces exactly what ``_write_metadata`` wrote in mcising <= 0.23.0
 (``python/mcising/io.py@cf5d068:496-502``): a ``metadata`` group with only
 ``version``, ``config_json``, and optionally ``elapsed_seconds`` — no
-``schema_version`` attribute. Temperature groups were (and are) written
-by ``_write_temperature_group``, whose layout is unchanged between
-schema 1 and 2, so the current writer is reused for them.
+``schema_version`` attribute. Temperature groups are written inline
+below with the layout shared by schemas 1 and 2 — in particular WITHOUT
+the derived ``statistics`` subgroup that schema 3 adds, which a genuine
+legacy file could not contain.
 """
 
 from __future__ import annotations

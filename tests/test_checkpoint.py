@@ -9,6 +9,7 @@ import h5py
 import mcising
 import numpy as np
 import pytest
+from mcising._provenance import HDF5_SCHEMA_VERSION
 from mcising.config import ExecutionMode, LatticeConfig, SimulationConfig
 from mcising.exceptions import ConfigurationError
 from mcising.io import (
@@ -54,7 +55,7 @@ class TestCheckpointPrimitives:
             assert "metadata" in f
             attrs = f["metadata"].attrs
             assert attrs["version"] == mcising.__version__
-            assert int(attrs["schema_version"]) == 2
+            assert int(attrs["schema_version"]) == HDF5_SCHEMA_VERSION
             assert attrs["config_json"] == "{}"
             assert "seed" not in attrs
             assert "mode" not in attrs
@@ -72,7 +73,7 @@ class TestCheckpointPrimitives:
         with h5py.File(path, "r") as f:
             attrs = f["metadata"].attrs
             assert attrs["version"] == mcising.__version__
-            assert int(attrs["schema_version"]) == 2
+            assert int(attrs["schema_version"]) == HDF5_SCHEMA_VERSION
             assert int(attrs["seed"]) == small_config.seed
             assert attrs["mode"] == small_config.mode.value
             assert attrs["algorithm"] == small_config.algorithm.value

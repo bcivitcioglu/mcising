@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
@@ -14,6 +15,7 @@ from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit, package_version
 from mcising.config import ExecutionMode, SimulationConfig
 from mcising.exceptions import ConfigurationError
 from mcising.simulation import AdaptiveDiagnostics, Simulation, SimulationResults
+from mcising.statistics import ObservableStatistics
 
 __all__: Final[list[str]] = [
     "save_hdf5",
@@ -29,8 +31,9 @@ __all__: Final[list[str]] = [
 def save_hdf5(results: SimulationResults, path: str | Path) -> None:
     """Save simulation results to an HDF5 file.
 
-    File structure (metadata schema v2; files without ``schema_version``
-    were written by mcising <= 0.23.0 and load through a legacy path)::
+    File structure (metadata schema v3; files without ``schema_version``
+    were written by mcising <= 0.23.0 and load through a legacy path;
+    schema 2 files lack the ``statistics`` subgroup)::
 
         results.h5
         ├── metadata/
@@ -48,7 +51,13 @@ def save_hdf5(results: SimulationResults, path: str | Path) -> None:
         │   ├── magnetization   (n_samples, float64)
         │   ├── correlation_function  (n_distances, float64) [optional]
         │   ├── correlation_distances (n_distances, float64) [optional]
-        │   └── correlation_length    (n_samples, float64)  [optional]
+        │   ├── correlation_length    (n_samples, float64)  [optional]
+        │   └── statistics/     (derived observable estimates, attributes:
+        │       n_samples, tau_int, and value + ``*_error`` pairs for
+        │       energy, magnetization, abs_magnetization, specific_heat,
+        │       susceptibility, binder_cumulant; non-finite values are
+        │       omitted. Written for external inspection only — loading
+        │       recomputes statistics from the raw series.)
         └── ...
 
     Parameters
@@ -414,14 +423,33 @@ def save_json_summary(results: SimulationResults, path: str | Path) -> None:
     results_dict: dict[str, object] = {}
     for temp in results.temperatures:
         entry: dict[str, float] = {}
+
+        def put(key: str, value: float, entry: dict[str, float] = entry) -> None:
+            # Non-finite values are omitted, never written as NaN
+            # (invalid strict JSON) or null (P07 policy).
+            if math.isfinite(value):
+                entry[key] = value
+
+        stats = results.statistics(temp)
         if temp in results.energy:
             entry["mean_energy"] = float(np.mean(results.energy[temp]))
             entry["std_energy"] = float(np.std(results.energy[temp]))
+            put("energy_error", stats.energy.error)
         if temp in results.magnetization:
             entry["mean_abs_magnetization"] = float(
                 np.mean(np.abs(results.magnetization[temp]))
             )
             entry["std_magnetization"] = float(np.std(results.magnetization[temp]))
+            put("abs_magnetization_error", stats.abs_magnetization.error)
+        if temp in results.energy or temp in results.magnetization:
+            entry["n_samples"] = stats.n_samples
+            put("tau_int", stats.tau_int)
+            put("specific_heat", stats.specific_heat.value)
+            put("specific_heat_error", stats.specific_heat.error)
+            put("susceptibility", stats.susceptibility.value)
+            put("susceptibility_error", stats.susceptibility.error)
+            put("binder_cumulant", stats.binder_cumulant.value)
+            put("binder_cumulant_error", stats.binder_cumulant.error)
         if (
             results.correlation_length is not None
             and temp in results.correlation_length
@@ -725,6 +753,35 @@ def _write_temperature_group(f: Any, temp: float, results: SimulationResults) ->
         ad_grp.attrs["measurement_interval"] = diag.measurement_interval
         ad_grp.attrs["production_sweeps"] = diag.production_sweeps
         ad_grp.attrs["n_samples"] = diag.n_samples
+
+    if temp in results.energy or temp in results.magnetization:
+        _write_statistics_group(grp, results.statistics(temp))
+
+
+def _write_statistics_group(grp: Any, stats: ObservableStatistics) -> None:
+    """Write the derived per-temperature ``statistics`` subgroup (schema v3).
+
+    Derived data for external inspection (``h5dump``, pandas): loading
+    ignores this subgroup and recomputes statistics from the raw series,
+    so the file never becomes a second source of truth. Non-finite
+    values are omitted, never written as NaN/null (P07 policy).
+    """
+    st_grp = grp.create_group("statistics")
+    st_grp.attrs["n_samples"] = stats.n_samples
+    if math.isfinite(stats.tau_int):
+        st_grp.attrs["tau_int"] = stats.tau_int
+    for name, estimate in (
+        ("energy", stats.energy),
+        ("magnetization", stats.magnetization),
+        ("abs_magnetization", stats.abs_magnetization),
+        ("specific_heat", stats.specific_heat),
+        ("susceptibility", stats.susceptibility),
+        ("binder_cumulant", stats.binder_cumulant),
+    ):
+        if math.isfinite(estimate.value):
+            st_grp.attrs[name] = estimate.value
+        if math.isfinite(estimate.error):
+            st_grp.attrs[f"{name}_error"] = estimate.error
 
 
 def _config_to_json(config: object) -> str:

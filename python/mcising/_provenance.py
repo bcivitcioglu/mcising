@@ -12,8 +12,11 @@ from pathlib import Path
 from typing import Final
 
 # On-disk metadata layout of HDF5 files written by this code. Files without a
-# schema_version attribute are schema 1 (mcising <= 0.23.0).
-HDF5_SCHEMA_VERSION: Final[int] = 2
+# schema_version attribute are schema 1 (mcising <= 0.23.0); schema 2
+# (mcising 0.24.0) added the provenance attributes; schema 3 adds a derived
+# per-temperature ``statistics`` subgroup (written for inspection, never read
+# back — statistics are always recomputed from the raw series on load).
+HDF5_SCHEMA_VERSION: Final[int] = 3
 
 
 def package_version() -> str:

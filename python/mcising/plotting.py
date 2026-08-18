@@ -7,6 +7,7 @@ list to overlay results from different coupling configurations.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final, cast
 
@@ -17,6 +18,7 @@ from matplotlib.figure import Figure
 from numpy.typing import NDArray
 
 from mcising.simulation import SimulationResults
+from mcising.statistics import Estimate, ObservableStatistics
 
 __all__: Final[list[str]] = [
     "plot_energy",
@@ -201,30 +203,35 @@ def _plot_quantity(
     else:
         fig = cast(Figure, ax.get_figure())
 
+    # Which series a quantity needs, and which estimate it plots.
+    quantity_map: dict[
+        str, tuple[str, Callable[[ObservableStatistics], Estimate]]
+    ] = {
+        "energy": ("energy", lambda s: s.energy),
+        "magnetization": ("magnetization", lambda s: s.abs_magnetization),
+        "specific_heat": ("energy", lambda s: s.specific_heat),
+        "susceptibility": ("magnetization", lambda s: s.susceptibility),
+    }
+    required_series, pick = quantity_map[quantity]
+
     for results in results_list:
-        temps = sorted(results.temperatures)
+        series = getattr(results, required_series)
+        temps: list[float] = []
         vals: list[float] = []
         errs: list[float] = []
 
-        for t in temps:
-            if quantity == "energy" and t in results.energy:
-                vals.append(float(np.mean(results.energy[t])))
-                errs.append(float(np.std(results.energy[t])))
-            elif quantity == "magnetization" and t in results.magnetization:
-                vals.append(float(np.mean(np.abs(results.magnetization[t]))))
-                errs.append(float(np.std(np.abs(results.magnetization[t]))))
-            elif quantity == "specific_heat" and t in results.energy:
-                vals.append(results.specific_heat(t))
-                errs.append(0.0)
-            elif quantity == "susceptibility" and t in results.magnetization:
-                vals.append(results.susceptibility(t))
-                errs.append(0.0)
+        for t in sorted(results.temperatures):
+            if t not in series:
+                continue
+            estimate = pick(results.statistics(t))
+            temps.append(t)
+            vals.append(estimate.value)
+            errs.append(estimate.error)
 
         label = _label_for(results) if multi else None
-        if any(e > 0 for e in errs):
-            ax.errorbar(temps, vals, yerr=errs, fmt="o-", capsize=3, label=label)
-        else:
-            ax.plot(temps, vals, "o-", label=label)
+        # NaN errors (series too short to quote one) draw no bar for
+        # that point; the marker and line still render.
+        ax.errorbar(temps, vals, yerr=errs, fmt="o-", capsize=3, label=label)
 
     ax.set_xlabel("Temperature")
     ax.set_ylabel(ylabel)

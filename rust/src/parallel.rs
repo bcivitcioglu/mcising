@@ -37,10 +37,6 @@ struct TempResult {
     magnetizations: Vec<f64>,
     configs: Option<Vec<i8>>,
     correlation: Option<CorrelationRecord>,
-    // Not yet surfaced to Python; kept so parallel modes can report the true
-    // site count when B11 is fixed (P08).
-    #[allow(dead_code)]
-    num_sites: usize,
     shape: Vec<usize>,
 }
 
@@ -63,7 +59,6 @@ impl TempResult {
                 values: Vec::new(),
                 lengths: Vec::with_capacity(n_measurements),
             }),
-            num_sites,
             shape,
         }
     }

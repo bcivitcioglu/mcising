@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `mcising.statistics`: autocorrelation-aware error estimation as a
+  public module — blocking (Flyvbjerg–Petersen) standard errors and
+  blocking curves, plateau and conservative integrated-autocorrelation-
+  time estimators, delete-one-block jackknife for nonlinear estimators,
+  and a total `Estimate`/`ObservableStatistics` layer that reports what
+  it cannot estimate as NaN, never as a silent `0.0`. Validated against
+  a moving-block bootstrap and exact AR(1) autocorrelation times.
+- `SimulationResults.statistics(T)`: every observable (E, M, |M|, Cv,
+  χ, Binder cumulant U4) with a principled standard error (B10, #21).
+  `summary()` and `to_dataframe()` now quote errors; the Rich table
+  uses compact `−1.9563(32)` notation.
+- Binder cumulant U4 = 1 − ⟨m⁴⟩/(3⟨m²⟩²): `binder_cumulant` in
+  `mcising.statistics`, `SimulationResults.binder_cumulant(T)`, and
+  U4 ± error in summaries, JSON, CSV, and the HDF5 statistics group.
+- HDF5 schema 3: each temperature group gains a derived `statistics`
+  subgroup (n_samples, tau_int, value + `*_error` attribute pairs) so
+  external tools read uncertainties straight from the file. Loading
+  ignores it and recomputes from the raw series — no second source of
+  truth; schema 1/2 files load unchanged.
+- `LatticeConfig.num_sites` and cached `SimulationResults.num_sites`
+  (thanks @ChickenisLegit, #24): the site count is now a pure function
+  of the lattice geometry — no throwaway Rust simulation per call.
+
+### Fixed
+
+- Observable plots hardcoded zero errors for specific heat and
+  susceptibility and silently fell back to a bare line plot (B10, #21):
+  all four observable plots now always draw real error bars; points
+  whose series is too short to quote an uncertainty render without a
+  bar instead of with a fake zero-height one.
+- Energy/magnetization plot error bars showed the sample spread
+  (`np.std` of the series) rather than a standard error of the mean —
+  wrong by ~√n and unaware of autocorrelation; they are now blocking
+  standard errors.
+- `SimulationResults` silently assumed 1 lattice site when the site
+  count could not be inferred (B11, #22), mis-scaling Cv and χ by a
+  factor of N: it now raises `ConfigurationError`.
+- Plotting a results object whose temperature list and series dicts
+  disagreed crashed with length-mismatched arrays; missing temperatures
+  are now skipped consistently.
+
+### Changed
+
+- HDF5 metadata schema 2 → 3 (see Added; older files keep loading).
+- `mcising summary --json/--csv` rows carry the new error columns
+  (`E_err`, `M_err`, `Cv_err`, `chi_err`, `U4`, `U4_err`, `tau_int`);
+  unquotable values are omitted from JSON and left empty in CSV, never
+  emitted as NaN. `save_json_summary` per-temperature entries likewise
+  gain error fields.
+
 ## [0.24.0] - 2026-08-17
 
 ### Fixed

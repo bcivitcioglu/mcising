@@ -6,10 +6,10 @@ Every assertion here uses a blocking (Flyvbjerg-Petersen) standard error
 instead, so thresholds keep their meaning when a bug fix changes the RNG
 stream.
 
-Layering (see ROADMAP P08): the estimator layer (``naive_se``,
-``blocking_se``, ``jackknife_se``, ``tau_int_blocking``) is promoted to
-``mcising.statistics``; this module then re-exports it and keeps only
-the ``assert_*`` layer. Keep that split intact.
+Layering (established in P08): the estimator layer (``naive_se``,
+``blocking_se``, ``jackknife_se``, ``tau_int_blocking``) lives in
+``mcising.statistics``; this module re-exports it and keeps only the
+``assert_*`` layer. Keep that split intact.
 
 Seed mechanics: use ``@pytest.mark.parametrize("seed", DEFAULT_SEEDS)``
 for non-trivial runs where the failing seed should be individually
@@ -25,6 +25,15 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import Final
 
 import numpy as np
+from mcising.statistics import (
+    as_float_array as _as_array,
+)
+from mcising.statistics import (
+    blocking_se,
+    jackknife_se,
+    naive_se,
+    tau_int_blocking,
+)
 from numpy.typing import NDArray
 
 __all__ = [
@@ -49,86 +58,9 @@ Samples = Sequence[float] | FloatArray
 #: add, drop, or reorder entries to make a test pass.
 DEFAULT_SEEDS: Final[tuple[int, ...]] = (42, 123, 7, 2024, 31337)
 DEFAULT_N_SIGMA: Final[float] = 4.0
-MIN_BLOCKS: Final[int] = 8
 
 
-def _as_array(samples: Samples) -> FloatArray:
-    x = np.asarray(samples, dtype=np.float64).ravel()
-    if x.size < 2:
-        msg = f"need at least 2 samples, got {x.size}"
-        raise ValueError(msg)
-    if not np.all(np.isfinite(x)):
-        msg = "samples contain non-finite values"
-        raise ValueError(msg)
-    return x
-
-
-# --- estimator layer (promoted to mcising.statistics in P08) ------------
-
-
-def naive_se(samples: Samples) -> float:
-    """Standard error of the mean assuming independent samples."""
-    x = _as_array(samples)
-    return float(np.std(x, ddof=1) / math.sqrt(x.size))
-
-
-def blocking_se(samples: Samples, *, min_blocks: int = MIN_BLOCKS) -> float:
-    """Standard error of the mean corrected for autocorrelation.
-
-    Flyvbjerg-Petersen blocking: average adjacent pairs, recompute the
-    naive standard error, repeat. For correlated data the estimate grows
-    with block length and plateaus once blocks exceed the
-    autocorrelation time. Returns the maximum over all levels that still
-    hold ``min_blocks`` blocks — a conservative (upper-bound) plateau
-    estimate, which is the safe side for a test threshold.
-    """
-    x = _as_array(samples)
-    se = float(np.std(x, ddof=1) / math.sqrt(x.size))
-    while x.size // 2 >= min_blocks:
-        n_pairs = x.size // 2
-        x = 0.5 * (x[: 2 * n_pairs : 2] + x[1 : 2 * n_pairs : 2])
-        se = max(se, float(np.std(x, ddof=1) / math.sqrt(x.size)))
-    return se
-
-
-def tau_int_blocking(samples: Samples) -> float:
-    """Integrated autocorrelation time implied by the blocking SE.
-
-    ``(se_blocked / se_naive)**2 = 2 * tau_int`` in units of the
-    sampling interval. Reported in failure messages so a red test says
-    why it is red (bad physics vs undersampled).
-    """
-    naive = naive_se(samples)
-    if naive == 0.0:
-        return 0.5
-    ratio = blocking_se(samples) / naive
-    return max(0.5, 0.5 * ratio * ratio)
-
-
-def jackknife_se(
-    samples: Samples,
-    estimator: Callable[[FloatArray], float],
-    *,
-    n_blocks: int = 20,
-) -> float:
-    """Delete-one-block jackknife error for a nonlinear estimator.
-
-    Contiguous blocks (not single samples) so autocorrelation inside a
-    block is absorbed. Use for variances (Cv, chi), ratios, cumulants.
-    Unused by P00 tests; it is the promotion target for P08's error
-    analysis.
-    """
-    x = _as_array(samples)
-    n_blocks = max(2, min(n_blocks, x.size))
-    blocks = np.array_split(np.arange(x.size), n_blocks)
-    values = np.array(
-        [estimator(np.delete(x, idx)) for idx in blocks], dtype=np.float64
-    )
-    spread = float(np.sum((values - values.mean()) ** 2))
-    return math.sqrt((n_blocks - 1) / n_blocks * spread)
-
-
-# --- assertion layer (stays in tests/) ----------------------------------
+# --- assertion layer (the estimator layer lives in mcising.statistics) ---
 
 
 def _describe(label: str, samples: Samples) -> str:

@@ -32,6 +32,7 @@ from mcising.plotting import (
     plot_susceptibility,
 )
 from mcising.simulation import Simulation, SimulationResults
+from mcising.statistics import Estimate, ObservableStatistics
 
 __version__: Final[str] = package_version()
 
@@ -48,6 +49,9 @@ __all__: Final[list[str]] = [
     "Algorithm",
     "ExecutionMode",
     "AdaptiveConfig",
+    # Statistics
+    "Estimate",
+    "ObservableStatistics",
     # I/O
     "save_hdf5",
     "load_hdf5",

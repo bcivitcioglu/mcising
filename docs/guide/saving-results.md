@@ -20,7 +20,7 @@ HDF5 files are structured by temperature:
 ```
 results.h5
 ├── metadata/
-│   ├── schema_version   (2)
+│   ├── schema_version   (3)
 │   ├── version          (mcising version that wrote the file)
 │   ├── config_json      (full config as JSON)
 │   ├── seed
@@ -31,10 +31,23 @@ results.h5
 ├── T=2.269/
 │   ├── energy           (n_samples,)
 │   ├── magnetization    (n_samples,)
-│   └── configurations   (n_samples, L, L)
+│   ├── configurations   (n_samples, L, L)
+│   └── statistics/      (derived estimates as attributes: n_samples,
+│                         tau_int, and value + *_error pairs for energy,
+│                         magnetization, abs_magnetization, specific_heat,
+│                         susceptibility, binder_cumulant)
 └── T=1.500/
     └── ...
 ```
+
+The `statistics` subgroup (schema 3) exists for external tools —
+`h5dump`, pandas, a referee's notebook — so a saved file quotes its
+observables with uncertainties without needing mcising at all. Loading
+**ignores** it: `load_hdf5` restores the raw series and
+`results.statistics(T)` recomputes everything, so the derived numbers
+can never drift out of sync with the data. Values that cannot be
+estimated (for example jackknife errors of a 2-sample series) are
+omitted rather than stored as NaN.
 
 ### Provenance
 
@@ -60,9 +73,16 @@ code that created it.
 ```python
 from mcising import save_json_summary
 
-# Save means and standard deviations only (no large arrays)
+# Save per-temperature estimates with standard errors (no large arrays)
 save_json_summary(results, "summary.json")
 ```
+
+Each temperature entry carries the means with their standard errors
+(`energy_error`, `abs_magnetization_error`), the derived quantities
+with jackknife errors (`specific_heat`, `susceptibility`,
+`binder_cumulant` and their `*_error` twins), `tau_int`, and
+`n_samples`. Unquotable values are omitted — never written as null or
+NaN — so the output is always strict JSON.
 
 Good for quick inspection, logging, or feeding into other tools.
 
