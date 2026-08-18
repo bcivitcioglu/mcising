@@ -68,6 +68,11 @@ mcising summary results.h5 --json
 mcising summary results.h5 --csv
 ```
 
+`--json` emits an object with the file's provenance (`version`,
+`schema_version`, `seed`, `mode`, `algorithm`, `git_commit` when
+recorded) at the top level and the per-temperature rows under
+`results`. (Before 0.24.0 it printed a bare array of rows.)
+
 Example output:
 
 ```
@@ -162,7 +167,9 @@ mcising docs cli          # All commands with examples
 
 ## `mcising info`
 
-Display version, build info, and available algorithms.
+Display version, build info, and available algorithms: the installed
+mcising version, the git commit (for development builds), the HDF5
+metadata schema it writes, and the available lattices and algorithms.
 
 ```bash
 mcising info

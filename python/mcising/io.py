@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Final, cast
 
 import numpy as np
 
+from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit, package_version
 from mcising.config import ExecutionMode, SimulationConfig
 from mcising.exceptions import ConfigurationError
 from mcising.simulation import AdaptiveDiagnostics, Simulation, SimulationResults
@@ -26,12 +29,19 @@ __all__: Final[list[str]] = [
 def save_hdf5(results: SimulationResults, path: str | Path) -> None:
     """Save simulation results to an HDF5 file.
 
-    File structure::
+    File structure (metadata schema v2; files without ``schema_version``
+    were written by mcising <= 0.23.0 and load through a legacy path)::
 
         results.h5
         ├── metadata/
-        │   ├── version       (attribute)
-        │   └── config_json   (attribute)
+        │   ├── schema_version  (attribute, int)
+        │   ├── version         (attribute, mcising version that wrote the file)
+        │   ├── config_json     (attribute, full config as JSON)
+        │   ├── seed            (attribute) [when a config is recorded]
+        │   ├── mode            (attribute) [when a config is recorded]
+        │   ├── algorithm       (attribute) [when a config is recorded]
+        │   ├── git_commit      (attribute) [when built from a git checkout]
+        │   └── elapsed_seconds (attribute) [when known]
         ├── T=2.269/
         │   ├── configurations  (n_samples x L x L, int8)
         │   ├── energy          (n_samples, float64)
@@ -157,7 +167,9 @@ def checkpoint_run(
     resume : bool
         If True and the file exists, skip already-completed temperatures.
         The stored config must match ``sim.config`` (temperatures may
-        differ, so a scan can be extended on resume).
+        differ, so a scan can be extended on resume). Resuming a file
+        written by mcising <= 0.23.0 keeps its original metadata schema:
+        a file records the code that created it.
     checkpoint_interval : int
         Save checkpoint every N completed temperatures. Default is 1
         (save after every temperature). Use higher values for speed
@@ -171,11 +183,19 @@ def checkpoint_run(
     Raises
     ------
     ConfigurationError
-        On resume, when the checkpoint was written with a different
-        config than ``sim.config`` (or its config record is unreadable),
-        or when a parallel-tempering ladder is only partially complete.
+        When ``resume=False`` but ``path`` already exists; on resume,
+        when the checkpoint was written with a different config than
+        ``sim.config`` (or its config record is unreadable), or when a
+        parallel-tempering ladder is only partially complete.
     """
     path = Path(path)
+    if not resume and path.exists():
+        raise ConfigurationError(
+            f"Checkpoint file {path} already exists. Pass resume=True "
+            "(CLI: --resume) to continue it, delete the file, or choose "
+            "another path; writing a new run into an existing file would "
+            "mix two runs' data under one provenance record."
+        )
     skip_temps: frozenset[float] = frozenset()
     resumed_results: SimulationResults | None = None
 
@@ -276,6 +296,10 @@ def checkpoint_run(
 def load_hdf5(path: str | Path) -> SimulationResults:
     """Load simulation results from an HDF5 file.
 
+    Restores the full provenance record (version, seed, mode, algorithm,
+    and the ``SimulationConfig`` object) for schema v2 files; legacy files
+    (mcising <= 0.23.0) load with a best-effort config reconstruction.
+
     Parameters
     ----------
     path : str or Path
@@ -285,19 +309,20 @@ def load_hdf5(path: str | Path) -> SimulationResults:
     -------
     SimulationResults
         The loaded simulation results.
+
+    Raises
+    ------
+    ConfigurationError
+        If the file's metadata schema is newer than this mcising supports.
     """
     import h5py
 
     path = Path(path)
 
     with h5py.File(path, "r") as f:
-        # Metadata
         metadata: dict[str, object] = {}
         if "metadata" in f:
-            meta = f["metadata"]
-            metadata["version"] = str(meta.attrs.get("version", "unknown"))
-            if "elapsed_seconds" in meta.attrs:
-                metadata["elapsed_seconds"] = float(meta.attrs["elapsed_seconds"])
+            metadata = _read_metadata(f["metadata"], path)
 
         # Discover temperature groups
         temp_groups = [
@@ -360,6 +385,10 @@ def load_hdf5(path: str | Path) -> SimulationResults:
 def save_json_summary(results: SimulationResults, path: str | Path) -> None:
     """Save a JSON summary of simulation results (no large arrays).
 
+    Carries the same provenance fields as the HDF5 metadata group
+    (version, schema_version, seed, mode, algorithm, git_commit, config);
+    fields whose value is unknown are omitted rather than written as null.
+
     Parameters
     ----------
     results : SimulationResults
@@ -370,11 +399,17 @@ def save_json_summary(results: SimulationResults, path: str | Path) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    summary: dict[str, object] = {
-        "version": results.metadata.get("version", "unknown"),
-        "temperatures": results.temperatures,
-        "results": {},
-    }
+    summary: dict[str, object] = {}
+    for key in ("version", "schema_version", "seed", "mode", "algorithm", "git_commit"):
+        if key in results.metadata:
+            summary[key] = results.metadata[key]
+    config = results.metadata.get("config")
+    if config is not None:
+        summary["config"] = json.loads(_config_to_json(config))
+    if "elapsed_seconds" in results.metadata:
+        summary["elapsed_seconds"] = results.metadata["elapsed_seconds"]
+    summary["temperatures"] = results.temperatures
+    summary["results"] = {}
 
     results_dict: dict[str, object] = {}
     for temp in results.temperatures:
@@ -405,17 +440,21 @@ def save_json_summary(results: SimulationResults, path: str | Path) -> None:
 def _load_stored_config(path: str | Path) -> dict[str, Any] | None:
     """Read the config dict recorded in a checkpoint's metadata group.
 
-    Returns None when no config record exists (legacy files; schema
-    compatibility is P07's territory). Raises when a record exists but
-    cannot be parsed back into a dict — an unreadable record must not
-    silently disable the resume-mismatch check.
+    Returns None when no config record exists (legacy files). Raises when
+    a record exists but cannot be parsed back into a dict — an unreadable
+    record must not silently disable the resume-mismatch check — or when
+    the file's metadata schema is newer than this mcising supports.
     """
     import h5py
 
     with h5py.File(path, "r") as f:
-        if "metadata" not in f or "config_json" not in f["metadata"].attrs:
+        if "metadata" not in f:
             return None
-        raw = f["metadata"].attrs["config_json"]
+        meta = f["metadata"]
+        _schema_version_of(meta, Path(path))
+        if "config_json" not in meta.attrs:
+            return None
+        raw = _as_str(meta.attrs["config_json"])
 
     try:
         stored = json.loads(raw)
@@ -494,12 +533,154 @@ def _restore_simulation_state(path: str | Path, sim: Simulation) -> None:
 
 
 def _write_metadata(f: Any, results: SimulationResults) -> None:
-    """Write the metadata group to an HDF5 file handle."""
+    """Write the metadata group (schema v2) to an HDF5 file handle.
+
+    Writer facts — ``schema_version``, ``version``, ``git_commit`` — are
+    derived here rather than trusted from ``results.metadata``: they
+    describe the code writing the file, so re-saving a loaded legacy file
+    re-stamps the current version. Run facts — ``seed``, ``mode``,
+    ``algorithm`` — come from the run's config and are omitted when
+    unknown; absence is honest, a null would be a guess.
+    """
     meta = f.create_group("metadata")
-    meta.attrs["version"] = str(results.metadata.get("version", "unknown"))
-    meta.attrs["config_json"] = _config_to_json(results.metadata.get("config"))
+    meta.attrs["schema_version"] = HDF5_SCHEMA_VERSION
+    meta.attrs["version"] = package_version()
+    commit = git_commit()
+    if commit is not None:
+        meta.attrs["git_commit"] = commit
+    config = results.metadata.get("config")
+    meta.attrs["config_json"] = _config_to_json(config)
+    if isinstance(config, SimulationConfig):
+        meta.attrs["seed"] = config.seed
+        meta.attrs["mode"] = config.mode.value
+        meta.attrs["algorithm"] = config.algorithm.value
+    else:
+        seed = results.metadata.get("seed")
+        if isinstance(seed, int):
+            meta.attrs["seed"] = seed
+        for key in ("mode", "algorithm"):
+            value = results.metadata.get(key)
+            if isinstance(value, str):
+                meta.attrs[key] = value
     if "elapsed_seconds" in results.metadata:
         meta.attrs["elapsed_seconds"] = results.metadata["elapsed_seconds"]
+
+
+def _read_metadata(meta: Any, path: Path) -> dict[str, object]:
+    """Rebuild ``results.metadata`` from an HDF5 metadata group."""
+    schema = _schema_version_of(meta, path)
+    if schema >= 2:
+        return _metadata_from_v2(meta, schema)
+    return _metadata_from_v1(meta)
+
+
+def _metadata_from_v2(meta: Any, schema: int) -> dict[str, object]:
+    """Read a schema v2 metadata group.
+
+    Numeric attributes are coerced to Python scalars (h5py returns numpy
+    scalars, which ``json.dumps`` rejects downstream).
+    """
+    metadata: dict[str, object] = {"schema_version": schema}
+    if "version" in meta.attrs:
+        metadata["version"] = _as_str(meta.attrs["version"])
+    if "seed" in meta.attrs:
+        metadata["seed"] = int(meta.attrs["seed"])
+    for key in ("mode", "algorithm", "git_commit"):
+        if key in meta.attrs:
+            metadata[key] = _as_str(meta.attrs[key])
+    if "config_json" in meta.attrs:
+        config = _config_from_json(_as_str(meta.attrs["config_json"]))
+        if config is not None:
+            metadata["config"] = config
+    if "elapsed_seconds" in meta.attrs:
+        metadata["elapsed_seconds"] = float(meta.attrs["elapsed_seconds"])
+    return metadata
+
+
+def _metadata_from_v1(meta: Any) -> dict[str, object]:
+    """Read a legacy (mcising <= 0.23.0) metadata group.
+
+    Legacy files carry only ``version``, ``config_json``, and
+    ``elapsed_seconds``; the config is reconstructed best-effort so old
+    files regain plot legends and correct per-site observables, and
+    scalar provenance (seed, mode, algorithm) is derived from it.
+    """
+    metadata: dict[str, object] = {"schema_version": 1}
+    # Documented legacy fallback: files from before the version stamp was
+    # wired through (B12) genuinely recorded "unknown".
+    metadata["version"] = _as_str(meta.attrs.get("version", "unknown"))
+    if "config_json" in meta.attrs:
+        config = _config_from_json(_as_str(meta.attrs["config_json"]))
+        if config is not None:
+            metadata["config"] = config
+            metadata["seed"] = config.seed
+            metadata["mode"] = config.mode.value
+            metadata["algorithm"] = config.algorithm.value
+    if "elapsed_seconds" in meta.attrs:
+        metadata["elapsed_seconds"] = float(meta.attrs["elapsed_seconds"])
+    return metadata
+
+
+def _schema_version_of(meta: Any, path: Path) -> int:
+    """Validate and return the metadata schema version of an open file.
+
+    Files written by mcising <= 0.23.0 carry no ``schema_version``
+    attribute and are schema 1.
+
+    Raises
+    ------
+    ConfigurationError
+        If the attribute is present but not a positive integer, or the
+        schema is newer than this mcising supports — loading it would
+        silently drop data the newer schema records.
+    """
+    if "schema_version" not in meta.attrs:
+        return 1
+    raw = meta.attrs["schema_version"]
+    try:
+        schema = int(raw)
+    except (TypeError, ValueError):
+        schema = 0
+    if schema < 1:
+        raise ConfigurationError(
+            f"{path} has a corrupt schema_version attribute ({raw!r}); "
+            "expected a positive integer."
+        )
+    if schema > HDF5_SCHEMA_VERSION:
+        written_by = _as_str(meta.attrs.get("version", "a newer mcising"))
+        raise ConfigurationError(
+            f"{path} uses metadata schema {schema} (written by mcising "
+            f"{written_by}), but this mcising ({package_version()}) "
+            f"supports up to schema {HDF5_SCHEMA_VERSION}. Upgrade mcising "
+            "to read it."
+        )
+    return schema
+
+
+def _config_from_json(raw: str) -> SimulationConfig | None:
+    """Best-effort reconstruction of a stored config record.
+
+    Returns None when the record is empty or does not describe a valid
+    config; loading data must not fail on a degraded provenance record
+    (the resume path re-reads it loudly via ``_load_stored_config``).
+    """
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict) or not data:
+        return None
+    try:
+        return SimulationConfig.from_dict(data)
+    except ConfigurationError:
+        return None
+
+
+def _as_str(value: object) -> str:
+    """Decode an HDF5 string attribute (bytes in h5py 2.x-era files)."""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
 
 
 def _write_temperature_group(f: Any, temp: float, results: SimulationResults) -> None:
@@ -546,14 +727,37 @@ def _write_temperature_group(f: Any, temp: float, results: SimulationResults) ->
         ad_grp.attrs["n_samples"] = diag.n_samples
 
 
-def _config_to_json(config: Any) -> str:
-    """Convert a config object to a JSON string for HDF5 metadata."""
+def _config_to_json(config: object) -> str:
+    """Serialize a config record to the JSON stored in ``config_json``.
+
+    The resume-mismatch check compares both sides of a resume through
+    this writer, so its output format is a compatibility surface: config
+    dataclasses serialize via ``dataclasses.asdict`` (str-subclass enums
+    emit their bare values, tuples become lists). Anything that cannot be
+    serialized faithfully raises — a lossy provenance record is worse
+    than a loud failure at write time.
+
+    Raises
+    ------
+    ConfigurationError
+        If ``config`` is not a config dataclass, a mapping, or None, or
+        contains values JSON cannot represent.
+    """
     if config is None:
         return "{}"
+    if is_dataclass(config) and not isinstance(config, type):
+        payload: dict[str, Any] = asdict(config)
+    elif isinstance(config, Mapping):
+        payload = dict(config)
+    else:
+        raise ConfigurationError(
+            "A config record must be a config dataclass, a mapping, or "
+            f"None, got {type(config).__name__}; refusing to write an "
+            "unreadable provenance record."
+        )
     try:
-        from dataclasses import asdict
-
-        d = asdict(config)
-        return json.dumps(d, default=str, indent=2)
-    except (TypeError, ValueError):
-        return str(config)
+        return json.dumps(payload, indent=2)
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(
+            f"Config record does not serialize to JSON: {exc}"
+        ) from exc

@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import matplotlib
+
+# Headless backend for plotting tests: CI runs on macOS/Windows cells
+# with no display, and importing mcising already pulls in pyplot.
+matplotlib.use("Agg")
+
 import numpy as np
 import pytest
 from mcising._core import IsingSimulation

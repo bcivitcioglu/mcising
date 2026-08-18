@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 import mcising
+from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit
 from mcising.benchmarks import BenchmarkResult
 from mcising.config import (
     AdaptiveConfig,
@@ -42,6 +43,10 @@ def info() -> None:
     table.add_column("Value")
 
     table.add_row("Version", mcising.__version__)
+    commit = git_commit()
+    if commit is not None:
+        table.add_row("Git commit", commit)
+    table.add_row("HDF5 schema", str(HDF5_SCHEMA_VERSION))
     table.add_row(
         "Lattice types",
         ", ".join(lt.value for lt in LatticeType),
@@ -638,7 +643,19 @@ def summary(
             rows.append(row)
 
         if json_output:
-            print(json_mod.dumps(rows, indent=2))
+            payload: dict[str, object] = {}
+            for key in (
+                "version",
+                "schema_version",
+                "seed",
+                "mode",
+                "algorithm",
+                "git_commit",
+            ):
+                if key in results.metadata:
+                    payload[key] = results.metadata[key]
+            payload["results"] = rows
+            print(json_mod.dumps(payload, indent=2))
         else:
             print("T,E_mean,E_std,M_mean,Cv,chi,samples")
             for r in rows:

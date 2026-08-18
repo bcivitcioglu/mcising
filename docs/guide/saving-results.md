@@ -20,8 +20,14 @@ HDF5 files are structured by temperature:
 ```
 results.h5
 ├── metadata/
-│   ├── version
-│   └── config_json
+│   ├── schema_version   (2)
+│   ├── version          (mcising version that wrote the file)
+│   ├── config_json      (full config as JSON)
+│   ├── seed
+│   ├── mode
+│   ├── algorithm
+│   ├── git_commit       (when built from a git checkout)
+│   └── elapsed_seconds
 ├── T=2.269/
 │   ├── energy           (n_samples,)
 │   ├── magnetization    (n_samples,)
@@ -29,6 +35,25 @@ results.h5
 └── T=1.500/
     └── ...
 ```
+
+### Provenance
+
+Every file records the code and run that produced it: the writing
+mcising version, the metadata schema version, the seed, execution mode,
+algorithm, the full configuration, and (for development builds) the git
+commit. `load_hdf5` restores all of it — including the
+`SimulationConfig` object under `results.metadata["config"]`, so plot
+legends, export prefixes, and per-site observables work on loaded files
+exactly as on in-memory results. `save_json_summary` carries the same
+fields.
+
+Files written by mcising ≤ 0.23.0 (no `schema_version` attribute) still
+load; their config is reconstructed from `config_json` when possible,
+and a file that predates the version stamp reports version `"unknown"`.
+Files written by a *newer* schema than your mcising supports are
+refused with a clear error instead of loading incompletely. Resuming a
+pre-0.24 checkpoint keeps its original metadata: a file records the
+code that created it.
 
 ## JSON — lightweight summary
 
@@ -59,6 +84,10 @@ scan can be extended):
 ```python
 results = checkpoint_run(Simulation(config), "checkpoint.h5", resume=True)
 ```
+
+Without `resume=True`, an existing checkpoint file is an error — a new
+run never silently mixes its data into a file from an earlier one.
+Delete the file or pick a new path to start fresh.
 
 Or from the CLI:
 

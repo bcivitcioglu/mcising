@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, fields
 from enum import Enum
-from typing import Final
+from typing import Any, Final, TypeVar
 
 from mcising.constants import (
     DEFAULT_ADAPTIVE_C_WINDOW,
@@ -130,6 +131,37 @@ class LatticeConfig:
             msg = f"h must be a finite number, got {self.h}"
             raise ValueError(msg)
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> LatticeConfig:
+        """Build a LatticeConfig from a mapping.
+
+        Unknown keys are ignored (forward compatibility with newer file
+        schemas) and missing keys take their defaults (older schemas).
+
+        Parameters
+        ----------
+        data : Mapping[str, Any]
+            Field values, e.g. the dict form produced by
+            ``dataclasses.asdict``. ``lattice_type`` may be a
+            :class:`LatticeType` or its string value.
+
+        Returns
+        -------
+        LatticeConfig
+            A validated configuration.
+
+        Raises
+        ------
+        ConfigurationError
+            If ``data`` is not a mapping or any value is invalid.
+        """
+        kwargs = _known_fields(cls, data, "lattice config")
+        if "lattice_type" in kwargs:
+            kwargs["lattice_type"] = _coerce_enum(
+                LatticeType, kwargs["lattice_type"], "lattice_type"
+            )
+        return _construct(cls, kwargs, "lattice config")
+
 
 @dataclass(frozen=True)
 class AdaptiveConfig:
@@ -194,6 +226,32 @@ class AdaptiveConfig:
         if self.tau_multiplier <= 0:
             msg = f"tau_multiplier must be > 0, got {self.tau_multiplier}"
             raise ValueError(msg)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> AdaptiveConfig:
+        """Build an AdaptiveConfig from a mapping.
+
+        Unknown keys are ignored and missing keys take their defaults;
+        see :meth:`LatticeConfig.from_dict`.
+
+        Parameters
+        ----------
+        data : Mapping[str, Any]
+            Field values, e.g. the dict form produced by
+            ``dataclasses.asdict``.
+
+        Returns
+        -------
+        AdaptiveConfig
+            A validated configuration.
+
+        Raises
+        ------
+        ConfigurationError
+            If ``data`` is not a mapping or any value is invalid.
+        """
+        kwargs = _known_fields(cls, data, "adaptive config")
+        return _construct(cls, kwargs, "adaptive config")
 
 
 @dataclass(frozen=True)
@@ -304,9 +362,91 @@ class SimulationConfig:
                     f"future work. Got j1={self.lattice.j1}."
                 )
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> SimulationConfig:
+        """Build a SimulationConfig from a mapping.
+
+        The inverse of ``dataclasses.asdict``: nested ``lattice`` and
+        ``adaptive`` mappings become their config objects, enum values are
+        coerced from strings, and ``temperatures`` becomes a tuple. Unknown
+        keys are ignored (forward compatibility with newer file schemas)
+        and missing keys take their defaults (older schemas). Validation
+        in ``__post_init__`` runs as usual.
+
+        Parameters
+        ----------
+        data : Mapping[str, Any]
+            Field values, e.g. a decoded ``config_json`` record from a
+            saved results file.
+
+        Returns
+        -------
+        SimulationConfig
+            A validated configuration.
+
+        Raises
+        ------
+        ConfigurationError
+            If ``data`` is not a mapping or any value is invalid.
+        """
+        kwargs = _known_fields(cls, data, "simulation config")
+        if "lattice" in kwargs:
+            kwargs["lattice"] = LatticeConfig.from_dict(kwargs["lattice"])
+        if "adaptive" in kwargs:
+            kwargs["adaptive"] = AdaptiveConfig.from_dict(kwargs["adaptive"])
+        if "algorithm" in kwargs:
+            kwargs["algorithm"] = _coerce_enum(
+                Algorithm, kwargs["algorithm"], "algorithm"
+            )
+        if "mode" in kwargs:
+            kwargs["mode"] = _coerce_enum(ExecutionMode, kwargs["mode"], "mode")
+        if isinstance(kwargs.get("temperatures"), list):
+            kwargs["temperatures"] = tuple(kwargs["temperatures"])
+        return _construct(cls, kwargs, "simulation config")
+
 
 def _is_finite(value: float) -> bool:
     """Check if a float is finite (not inf, -inf, or nan)."""
     import math
 
     return math.isfinite(value)
+
+
+_E = TypeVar("_E", bound=Enum)
+_C = TypeVar("_C")
+
+
+def _known_fields(
+    cls: type[Any], data: Mapping[str, Any], context: str
+) -> dict[str, Any]:
+    """Return the subset of ``data`` matching ``cls``'s dataclass fields."""
+    if not isinstance(data, Mapping):
+        raise ConfigurationError(
+            f"A {context} record must be a mapping of field names to "
+            f"values, got {type(data).__name__}"
+        )
+    names = {f.name for f in fields(cls)}
+    return {key: value for key, value in data.items() if key in names}
+
+
+def _coerce_enum(enum_cls: type[_E], value: object, field_name: str) -> _E:
+    """Coerce ``value`` to a member of ``enum_cls``."""
+    if isinstance(value, enum_cls):
+        return value
+    try:
+        return enum_cls(value)
+    except ValueError as exc:
+        valid = ", ".join(repr(member.value) for member in enum_cls)
+        raise ConfigurationError(
+            f"Invalid {field_name} {value!r}; valid values are: {valid}"
+        ) from exc
+
+
+def _construct(cls: Callable[..., _C], kwargs: dict[str, Any], context: str) -> _C:
+    """Construct a config, mapping constructor errors to ConfigurationError."""
+    try:
+        return cls(**kwargs)
+    except ConfigurationError:
+        raise
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError(f"Invalid {context}: {exc}") from exc

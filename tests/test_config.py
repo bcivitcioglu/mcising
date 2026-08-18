@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import math
+from dataclasses import asdict
 
 import pytest
 from mcising.config import (
+    AdaptiveConfig,
     Algorithm,
     ExecutionMode,
     LatticeConfig,
@@ -136,3 +138,80 @@ class TestSwapCadence:
         # configs it does not apply to.
         cfg = SimulationConfig(measurement_interval=15, swap_interval=10)
         assert cfg.measurement_interval == 15
+
+
+class TestFromDict:
+    """SimulationConfig.from_dict inverts dataclasses.asdict."""
+
+    def test_roundtrip_defaults(self) -> None:
+        config = SimulationConfig()
+        assert SimulationConfig.from_dict(asdict(config)) == config
+
+    @pytest.mark.parametrize("mode", list(ExecutionMode), ids=lambda m: m.value)
+    def test_roundtrip_all_modes(self, mode: ExecutionMode) -> None:
+        config = SimulationConfig(mode=mode, temperatures=(3.0, 2.0))
+        assert SimulationConfig.from_dict(asdict(config)) == config
+
+    @pytest.mark.parametrize("lattice_type", list(LatticeType), ids=lambda t: t.value)
+    def test_roundtrip_all_lattices(self, lattice_type: LatticeType) -> None:
+        config = SimulationConfig(
+            lattice=LatticeConfig(lattice_type=lattice_type, size=4, j1=-1.0, h=0.2)
+        )
+        assert SimulationConfig.from_dict(asdict(config)) == config
+
+    def test_roundtrip_through_json(self) -> None:
+        import json
+
+        config = SimulationConfig(
+            lattice=LatticeConfig(size=6, j2=0.5),
+            algorithm=Algorithm.METROPOLIS,
+            seed=123,
+            temperatures=(4.0, 2.269, 1.0),
+            adaptive=AdaptiveConfig(enabled=True, c_window=8.0),
+        )
+        data = json.loads(json.dumps(asdict(config)))
+        assert SimulationConfig.from_dict(data) == config
+
+    def test_enums_are_members(self) -> None:
+        config = SimulationConfig.from_dict(
+            {"algorithm": "wolff", "mode": "independent"}
+        )
+        assert config.algorithm is Algorithm.WOLFF
+        assert config.mode is ExecutionMode.INDEPENDENT
+
+    def test_temperatures_becomes_tuple(self) -> None:
+        config = SimulationConfig.from_dict({"temperatures": [3.0, 2.0]})
+        assert config.temperatures == (3.0, 2.0)
+        assert isinstance(config.temperatures, tuple)
+
+    def test_unknown_keys_ignored(self) -> None:
+        # Forward compatibility: a newer schema's extra fields must not
+        # prevent loading.
+        config = SimulationConfig.from_dict({"seed": 5, "error_model": "jackknife"})
+        assert config.seed == 5
+
+    def test_missing_keys_default(self) -> None:
+        config = SimulationConfig.from_dict({})
+        assert config == SimulationConfig()
+
+    def test_bad_enum_raises_listing_valid(self) -> None:
+        with pytest.raises(ConfigurationError, match="metropolis"):
+            SimulationConfig.from_dict({"algorithm": "quantum"})
+
+    def test_invalid_value_raises_configuration_error(self) -> None:
+        with pytest.raises(ConfigurationError, match="size"):
+            SimulationConfig.from_dict({"lattice": {"size": 1}})
+
+    def test_validation_runs(self) -> None:
+        with pytest.raises(ConfigurationError, match="swap_interval"):
+            SimulationConfig.from_dict(
+                {
+                    "mode": "parallel_tempering",
+                    "measurement_interval": 15,
+                    "swap_interval": 10,
+                }
+            )
+
+    def test_non_mapping_rejected(self) -> None:
+        with pytest.raises(ConfigurationError, match="mapping"):
+            SimulationConfig.from_dict([("seed", 5)])  # type: ignore[arg-type]
