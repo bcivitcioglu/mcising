@@ -98,6 +98,7 @@ impl McAlgorithm for SwendsenWang {
         }
 
         let mut total_flipped = 0;
+        let mut flipped_clusters = 0;
 
         for (i, spin) in spins.iter_mut().enumerate().take(n) {
             let root = self.find(i);
@@ -105,6 +106,9 @@ impl McAlgorithm for SwendsenWang {
             // Decide for this cluster if not yet decided
             if self.rank[root] == 0 {
                 self.rank[root] = if rng.gen::<bool>() { 1 } else { 2 };
+                if self.rank[root] == 2 {
+                    flipped_clusters += 1;
+                }
             }
 
             // Apply flip decision
@@ -117,6 +121,7 @@ impl McAlgorithm for SwendsenWang {
         SweepResult {
             accepted: total_flipped,
             attempted: n,
+            cluster_flips: flipped_clusters,
         }
     }
 

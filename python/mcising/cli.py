@@ -21,6 +21,11 @@ from mcising.config import (
     LatticeType,
     SimulationConfig,
 )
+from mcising.constants import (
+    DEFAULT_MEASUREMENT_INTERVAL,
+    DEFAULT_N_SWEEPS,
+    DEFAULT_N_THERMALIZATION,
+)
 from mcising.io import checkpoint_run, save_hdf5, save_json_summary
 from mcising.simulation import Simulation
 
@@ -94,13 +99,13 @@ def run(
     ] = None,
     n_sweeps: Annotated[
         int, typer.Option("--sweeps", help="MC sweeps per temperature.")
-    ] = 1000,
+    ] = DEFAULT_N_SWEEPS,
     n_therm: Annotated[
         int, typer.Option("--therm", help="Thermalization sweeps.")
-    ] = 100,
+    ] = DEFAULT_N_THERMALIZATION,
     measurement_interval: Annotated[
         int, typer.Option("--interval", help="Measurement interval.")
-    ] = 10,
+    ] = DEFAULT_MEASUREMENT_INTERVAL,
     seed: Annotated[int, typer.Option(help="Random seed.")] = 42,
     correlation: Annotated[
         bool,
@@ -364,7 +369,7 @@ def benchmark(
         ("J1+J2+J3+H", 1.0, 1.0, 1.0, 1.0),
     ]
     n_sites = lattice_size * lattice_size
-    beta = 1.0 / 2.269
+    temperature = 2.269
 
     with console.status("[bold blue]Coupling benchmarks..."):
         for label, j1, j2, j3, h in coupling_cases:
@@ -378,9 +383,9 @@ def benchmark(
                 "metropolis",
                 "square",
             )
-            sim.sweep(100, beta)
+            sim.sweep(100, temperature=temperature)
             start = _time.perf_counter()
-            sim.sweep(n_sweeps, beta)
+            sim.sweep(n_sweeps, temperature=temperature)
             elapsed = _time.perf_counter() - start
             ups = n_sweeps * n_sites / elapsed
             sps = n_sweeps / elapsed

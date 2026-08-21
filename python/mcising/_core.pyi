@@ -1,24 +1,23 @@
 """Type stubs for the Rust _core extension module."""
 
-from typing import Any
+from typing import Any, final
 
 import numpy as np
 from numpy.typing import NDArray
 
+__all__ = [
+    "IsingSimulation",
+    "run_independent_temperatures",
+    "run_parallel_tempering",
+]
+
+# @final subsumes @disjoint_base (stubtest rejects the combination).
+@final
 class IsingSimulation:
     """Core Ising model simulation engine (Rust/PyO3)."""
 
-    lattice_size: int
-    num_sites: int
-    j1: float
-    j2: float
-    j3: float
-    h: float
-
-    algorithm_name: str
-
-    def __init__(
-        self,
+    def __new__(
+        cls,
         lattice_size: int,
         j1: float,
         j2: float,
@@ -27,8 +26,26 @@ class IsingSimulation:
         seed: int,
         algorithm: str = "metropolis",
         lattice_type: str = "square",
-    ) -> None: ...
-    def sweep(self, n_sweeps: int, beta: float) -> tuple[int, int]: ...
+    ) -> IsingSimulation: ...
+
+    # Read-only PyO3 getters.
+    @property
+    def lattice_size(self) -> int: ...
+    @property
+    def num_sites(self) -> int: ...
+    @property
+    def j1(self) -> float: ...
+    @property
+    def j2(self) -> float: ...
+    @property
+    def j3(self) -> float: ...
+    @property
+    def h(self) -> float: ...
+    @property
+    def algorithm_name(self) -> str: ...
+    def sweep(
+        self, n_sweeps: int = 1, *, temperature: float
+    ) -> tuple[int, int, int]: ...
     def energy(self) -> float: ...
     def magnetization(self) -> float: ...
     def get_spins(self) -> NDArray[np.int8]: ...
@@ -39,11 +56,9 @@ class IsingSimulation:
         self,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]: ...
     def correlation_length(self) -> float: ...
-    def thermalize_with_diagnostics(
-        self, temp_schedule: list[float]
-    ) -> NDArray[np.float64]: ...
+    def anneal(self, temp_schedule: list[float]) -> None: ...
     def extend_thermalization(
-        self, n_sweeps: int, beta: float
+        self, n_sweeps: int, *, temperature: float
     ) -> NDArray[np.float64]: ...
     @staticmethod
     def analyze_thermalization_series(
@@ -55,21 +70,23 @@ class IsingSimulation:
         self,
         n_measurements: int,
         interval: int,
-        beta: float,
+        *,
+        temperature: float,
         store_configs: bool,
     ) -> tuple[
         NDArray[np.float64],
         NDArray[np.float64],
         NDArray[np.int8] | None,  # shape depends on lattice type
+        int,  # total cluster flips (0 for Metropolis)
     ]: ...
     def get_rng_state(self) -> list[int]: ...
     def set_rng_state(self, state: list[int]) -> None: ...
     def __repr__(self) -> str: ...
 
 # Both runners return one dict per temperature with keys "temperature",
-# "energies", "magnetizations", plus "configurations" when store_configs,
-# and "correlation_distances" / "correlation_function" /
-# "correlation_length" when compute_correlation.
+# "energies", "magnetizations", "n_cluster_flips", plus "configurations"
+# when store_configs, and "correlation_distances" /
+# "correlation_function" / "correlation_length" when compute_correlation.
 def run_parallel_tempering(
     lattice_size: int,
     j1: float,

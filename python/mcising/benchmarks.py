@@ -39,9 +39,15 @@ class BenchmarkResult:
     energy: float
     magnetization: float
     num_sites: int | None = None
+    attempted_updates: int | None = None
 
     @property
     def total_updates(self) -> int:
+        # Real attempted-flip count when the backend reports one — for
+        # Wolff, n_sweeps * num_sites would overstate the work by ~N/|C|
+        # (one sweep is one cluster).
+        if self.attempted_updates is not None:
+            return self.attempted_updates
         if self.num_sites is not None:
             return self.n_sweeps * self.num_sites
         return self.n_sweeps * self.lattice_size * self.lattice_size
@@ -254,15 +260,16 @@ def bench_mcising(
     sim = IsingSimulation(
         lattice_size, 1.0, 0.0, 0.0, 0.0, seed, algorithm, lattice_type
     )
-    beta = 1.0 / temperature
     num_sites = sim.num_sites
 
     # Warmup
-    sim.sweep(100, beta)
+    sim.sweep(100, temperature=temperature)
 
     # Timed run — sweeps only, observables computed once at the end
     start = time.perf_counter()
-    sim.sweep(n_sweeps, beta)
+    _accepted, attempted, _cluster_flips = sim.sweep(
+        n_sweeps, temperature=temperature
+    )
     elapsed = time.perf_counter() - start
 
     return BenchmarkResult(
@@ -273,6 +280,7 @@ def bench_mcising(
         energy=sim.energy(),
         magnetization=sim.magnetization(),
         num_sites=num_sites,
+        attempted_updates=attempted,
     )
 
 

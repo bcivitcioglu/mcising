@@ -67,6 +67,15 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: uv run mypy python/mcising/
 
+      # MYPYPATH guards against the vacuous pass: without stub
+      # resolution stubtest prints Success while analyzing nothing.
+      # py.typed closes the same hole for the installed package.
+      - name: Stub check (stubtest)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        env:
+          MYPYPATH: python
+        run: uv run python -m mypy.stubtest mcising._core
+
   docs:
     name: Docs build (strict)
     runs-on: ubuntu-latest

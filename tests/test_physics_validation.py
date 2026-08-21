@@ -122,7 +122,7 @@ class TestEnergyBounds:
 
     def test_energy_within_bounds(self) -> None:
         sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42)
-        sim.sweep(100, 0.5)
+        sim.sweep(100, temperature=2.0)
         e = sim.energy()
         assert -2.0 <= e <= 2.0
 
@@ -140,7 +140,7 @@ class TestHighTemperatureLimit:
     @pytest.mark.statistical
     @pytest.mark.parametrize("seed", DEFAULT_SEEDS)
     def test_beta_zero_energy_matches_expansion(self, seed: int) -> None:
-        """At beta=0.05, <E>/site = -2 tanh(beta) up to O(tanh^3).
+        """At T=20 (beta=0.05), <E>/site = -2 tanh(beta) up to O(tanh^3).
 
         Square lattice, J1=1: <s_i s_j> = tanh(beta J) + O(tanh^3), two
         bonds per site, so <E>/site = -2 tanh(0.05) = -0.0999 with a
@@ -155,10 +155,10 @@ class TestHighTemperatureLimit:
         spacing the samples are effectively independent.
         """
         sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, seed)
-        sim.sweep(100, 0.05)
+        sim.sweep(100, temperature=20.0)
         energies = np.empty(200)
         for i in range(200):
-            sim.sweep(10, 0.05)
+            sim.sweep(10, temperature=20.0)
             energies[i] = sim.energy()
         assert_within_sigma(
             energies,
@@ -180,11 +180,11 @@ class TestStationarity:
     def test_energy_stationarity(self, seed: int) -> None:
         """After thermalization, the two halves of the series agree."""
         sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, seed)
-        sim.sweep(1000, 0.5)
+        sim.sweep(1000, temperature=2.0)
 
         energies = np.empty(100)
         for i in range(100):
-            sim.sweep(5, 0.5)
+            sim.sweep(5, temperature=2.0)
             energies[i] = sim.energy()
 
         assert_samples_agree(
@@ -366,14 +366,13 @@ class TestDetailedBalance:
     def _assert_visit_histogram_is_boltzmann(
         self, algorithm: str, seed: int
     ) -> None:
-        beta = 1.0 / DB_TEMPERATURE
         exact_energies = _state_energies(DB_SIZE)
         p_full = _boltzmann(exact_energies, DB_TEMPERATURE)
 
         sim = IsingSimulation(DB_SIZE, 1.0, 0.0, 0.0, 0.0, seed, algorithm)
-        sim.sweep(DB_THERMALIZATION, beta)
-        energies, mags, configs = sim.production_sweeps(
-            DB_N_SAMPLES, DB_INTERVAL, beta, True
+        sim.sweep(DB_THERMALIZATION, temperature=DB_TEMPERATURE)
+        energies, mags, configs, _ = sim.production_sweeps(
+            DB_N_SAMPLES, DB_INTERVAL, temperature=DB_TEMPERATURE, store_configs=True
         )
         idx = _state_indices(np.asarray(configs))
 
@@ -453,10 +452,10 @@ class TestFieldEffect:
 
         def check(seed: int) -> None:
             sim = IsingSimulation(8, 1.0, 0.0, 0.0, 2.0, seed)
-            sim.sweep(500, 1.0)
+            sim.sweep(500, temperature=1.0)
             mags = np.empty(50)
             for i in range(50):
-                sim.sweep(5, 1.0)
+                sim.sweep(5, temperature=1.0)
                 mags[i] = sim.magnetization()
             assert_mean_above(mags, 0.5, label=f"<m>(h=+2, seed={seed})")
 
@@ -468,10 +467,10 @@ class TestFieldEffect:
 
         def check(seed: int) -> None:
             sim = IsingSimulation(8, 1.0, 0.0, 0.0, -2.0, seed)
-            sim.sweep(500, 1.0)
+            sim.sweep(500, temperature=1.0)
             mags = np.empty(50)
             for i in range(50):
-                sim.sweep(5, 1.0)
+                sim.sweep(5, temperature=1.0)
                 mags[i] = sim.magnetization()
             assert_mean_below(mags, -0.5, label=f"<m>(h=-2, seed={seed})")
 

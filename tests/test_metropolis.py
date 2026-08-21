@@ -12,18 +12,18 @@ from tests._stats import DEFAULT_SEEDS, assert_mean_above, assert_over_seeds
 class TestMetropolisSweep:
     def test_sweep_returns_accepted_attempted(self) -> None:
         sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
-        accepted, attempted = sim.sweep(1, 1.0)
+        accepted, attempted, _ = sim.sweep(1, temperature=1.0)
         assert attempted == 16  # One sweep = N attempted flips
         assert 0 <= accepted <= attempted
 
     def test_multiple_sweeps(self) -> None:
         sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
-        accepted, attempted = sim.sweep(5, 1.0)
+        accepted, attempted, _ = sim.sweep(5, temperature=1.0)
         assert attempted == 80  # 5 sweeps * 16 sites
 
     @pytest.mark.statistical
     def test_high_temp_high_acceptance(self) -> None:
-        """At beta=0.001 the analytic acceptance floor is exp(-8*beta) = 0.992.
+        """At T=1000 (beta=0.001) the analytic acceptance floor is exp(-8*beta) = 0.992.
 
         The worst case on a J1-only square lattice is flipping a fully
         aligned spin, dE = 8*J1, accepted with exp(-beta*dE); every other
@@ -35,7 +35,7 @@ class TestMetropolisSweep:
             sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, seed)
             rates = np.empty(100)
             for i in range(100):
-                accepted, attempted = sim.sweep(1, 0.001)
+                accepted, attempted, _ = sim.sweep(1, temperature=1000.0)
                 rates[i] = accepted / attempted
             assert_mean_above(rates, 0.95, label=f"acceptance (seed={seed})")
 
@@ -55,7 +55,7 @@ class TestMetropolisSweep:
         """
         sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, seed)
         for beta in (0.2, 0.3, 0.4, 0.44, 0.5, 0.6, 0.8, 1.0, 2.0, 10.0):
-            sim.sweep(200, beta)
+            sim.sweep(200, temperature=1.0 / beta)
         energy = sim.energy()
         assert energy < -1.75, f"E/site={energy:.4f} after anneal (seed={seed})"
 
@@ -66,7 +66,7 @@ class TestMetropolisSweep:
         sim.set_spins(spins)
 
         e_before = sim.energy()
-        sim.sweep(100, 100.0)  # Very high beta ≈ T→0
+        sim.sweep(100, temperature=0.01)  # T→0 limit
         e_after = sim.energy()
 
         assert e_after == pytest.approx(e_before)
@@ -76,8 +76,8 @@ class TestMetropolisSweep:
         sim1 = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 123)
         sim2 = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 123)
 
-        sim1.sweep(10, 0.5)
-        sim2.sweep(10, 0.5)
+        sim1.sweep(10, temperature=2.0)
+        sim2.sweep(10, temperature=2.0)
 
         assert np.array_equal(sim1.get_spins(), sim2.get_spins())
         assert sim1.energy() == sim2.energy()
@@ -87,7 +87,7 @@ class TestMetropolisSweep:
         sim1 = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 1)
         sim2 = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 2)
 
-        sim1.sweep(50, 0.5)
-        sim2.sweep(50, 0.5)
+        sim1.sweep(50, temperature=2.0)
+        sim2.sweep(50, temperature=2.0)
 
         assert not np.array_equal(sim1.get_spins(), sim2.get_spins())

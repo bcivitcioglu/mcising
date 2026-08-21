@@ -31,15 +31,15 @@ class TestCubicSimulation:
     def test_energy_decreases_at_low_t(self) -> None:
         sim = IsingSimulation(6, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", "cubic")
         e_before = sim.energy()
-        sim.sweep(100, 10.0)
+        sim.sweep(100, temperature=0.1)
         e_after = sim.energy()
         assert e_after <= e_before + 1e-10
 
     def test_deterministic(self) -> None:
         sim1 = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 123, "metropolis", "cubic")
         sim2 = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 123, "metropolis", "cubic")
-        sim1.sweep(10, 0.5)
-        sim2.sweep(10, 0.5)
+        sim1.sweep(10, temperature=2.0)
+        sim2.sweep(10, temperature=2.0)
         np.testing.assert_array_equal(sim1.get_spins(), sim2.get_spins())
 
     def test_spins_shape_is_3d(self) -> None:
@@ -59,12 +59,12 @@ class TestCubicCluster:
 
     def test_wolff_runs(self) -> None:
         sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42, "wolff", "cubic")
-        accepted, attempted = sim.sweep(10, 0.5)
+        accepted, attempted, _ = sim.sweep(10, temperature=2.0)
         assert attempted > 0
 
     def test_swendsen_wang_runs(self) -> None:
         sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42, "swendsen_wang", "cubic")
-        accepted, attempted = sim.sweep(10, 0.5)
+        accepted, attempted, _ = sim.sweep(10, temperature=2.0)
         assert attempted > 0
 
 

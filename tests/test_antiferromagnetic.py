@@ -74,10 +74,10 @@ class TestAFMAcceptance:
                 size, -1.0, 0.0, 0.0, 0.0, seed, "metropolis", lattice
             )
             for beta in LADDER_TO_BETA2:
-                sim.sweep(200, beta)
+                sim.sweep(200, temperature=1.0 / beta)
             rates = np.empty(200)
             for i in range(200):
-                accepted, attempted = sim.sweep(1, 2.0)
+                accepted, attempted, _ = sim.sweep(1, temperature=0.5)
                 rates[i] = accepted / attempted
             assert_mean_below(
                 rates, 0.35, label=f"{lattice} acceptance (seed={seed})"
@@ -104,10 +104,10 @@ class TestNeelGroundState:
         """
         sim = IsingSimulation(size, -1.0, 0.0, 0.0, 0.0, seed, "metropolis", lattice)
         for beta in LADDER_TO_BETA10:
-            sim.sweep(300, beta)
+            sim.sweep(300, temperature=1.0 / beta)
         energies = np.empty(100)
         for i in range(100):
-            sim.sweep(1, 10.0)
+            sim.sweep(1, temperature=0.1)
             energies[i] = sim.energy()
         assert_within_sigma(
             energies, e_neel, label=f"{lattice} E/site (seed={seed})"
@@ -134,10 +134,10 @@ class TestSinglePathMatchesMultiPath:
     def _energies(j1: float, j2: float, j3: float, seed: int) -> np.ndarray:
         sim = IsingSimulation(8, j1, j2, j3, 0.0, seed)
         for beta in (0.2, 0.3, 0.35):
-            sim.sweep(200, beta)
+            sim.sweep(200, temperature=1.0 / beta)
         energies = np.empty(1500)
         for i in range(1500):
-            sim.sweep(1, 0.35)
+            sim.sweep(1, temperature=1.0 / 0.35)
             energies[i] = sim.energy()
         return energies
 

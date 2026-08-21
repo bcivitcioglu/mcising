@@ -6,26 +6,32 @@ use crate::error::MCIsingError;
 use crate::lattice::Lattice;
 use rand::Rng;
 
-/// Result of a single Monte Carlo sweep.
+/// Result of a single Monte Carlo sweep, with honest work accounting.
 ///
 /// For Metropolis: `accepted` = number of accepted spin flips,
-/// `attempted` = total flip attempts (= num_sites).
+/// `attempted` = total flip attempts (= num_sites), `cluster_flips` = 0.
 ///
-/// For Wolff: `accepted` = cluster size (spins flipped),
-/// `attempted` = total sites.
+/// For Wolff: one sweep = ONE cluster; `accepted` = cluster size,
+/// `attempted` = cluster size (rejection-free — no fictitious
+/// num_sites denominator), `cluster_flips` = 1.
 ///
 /// For Swendsen-Wang: `accepted` = total spins flipped across all clusters,
-/// `attempted` = total sites.
+/// `attempted` = total sites (every site receives a keep/flip decision),
+/// `cluster_flips` = clusters whose independent p=1/2 decision came up
+/// "flip".
 #[derive(Debug, Clone, Copy)]
 pub struct SweepResult {
     pub accepted: usize,
     pub attempted: usize,
+    pub cluster_flips: usize,
 }
 
 impl SweepResult {
-    /// Acceptance rate as a fraction in [0, 1].
+    /// Acceptance rate as `accepted / attempted`, always in [0, 1].
     ///
-    /// For cluster algorithms, this represents the fraction of spins flipped.
+    /// For Metropolis this is the classic acceptance fraction. For
+    /// Swendsen-Wang it is the flipped-spin fraction of the lattice.
+    /// Wolff is rejection-free, so its rate is identically 1.
     pub fn acceptance_rate(&self) -> f64 {
         if self.attempted == 0 {
             return 0.0;
@@ -45,8 +51,13 @@ impl SweepResult {
 pub trait McAlgorithm {
     /// Perform one full sweep of the lattice.
     ///
-    /// A "sweep" means N single-spin-flip attempts for Metropolis,
-    /// or one cluster construction for cluster algorithms.
+    /// A "sweep" is `num_sites` attempted-flip equivalents for
+    /// Metropolis (N single-spin-flip attempts) and Swendsen-Wang (one
+    /// full bond-percolation partition + flip pass), but ONE cluster
+    /// construction for Wolff — a per-sweep flip budget was rejected in
+    /// P10 because measuring at its state-dependent stopping time is
+    /// size-biased (see `wolff.rs`). Callers scale Wolff `n_sweeps`
+    /// accordingly; `SweepResult` reports the honest work done.
     ///
     /// # Arguments
     /// * `spins` - mutable slice of spin values (+1 or -1 as i8)
@@ -72,16 +83,41 @@ pub trait McAlgorithm {
     fn name(&self) -> &'static str;
 }
 
-/// Runtime algorithm selection for dispatch at the PyO3 boundary.
+/// Algorithm selection parsed at the PyO3 boundary.
 ///
-/// Each variant holds the algorithm instance (with its scratch buffers).
-/// Dispatch happens via match in `IsingSimulation` methods, preserving
-/// monomorphization in the hot path.
+/// Pure parse/validation type; the algorithm instance itself lives in
+/// [`AlgorithmState`], so a kind can never disagree with its state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlgorithmKind {
     Metropolis,
     Wolff,
     SwendsenWang,
+}
+
+/// Runtime algorithm state for dispatch in `IsingSimulation`.
+///
+/// Each variant holds the algorithm instance (with its scratch buffers), so
+/// a simulation with a mismatched kind/state pair is unrepresentable — the
+/// illegal state that previously required `Option` + `.expect()`. Dispatch
+/// happens via match, preserving monomorphization in the hot path.
+pub enum AlgorithmState {
+    /// Boxed: the lookup-table struct dwarfs the other variants
+    /// (`clippy::large_enum_variant`); the deref is once per sweep *call*
+    /// (the N-site loop is inside), so it is not on the hot path.
+    Metropolis(Box<metropolis::Metropolis>),
+    Wolff(wolff::Wolff),
+    SwendsenWang(swendsen_wang::SwendsenWang),
+}
+
+impl AlgorithmState {
+    /// Human-readable name of the held algorithm.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Metropolis(m) => m.name(),
+            Self::Wolff(w) => w.name(),
+            Self::SwendsenWang(sw) => sw.name(),
+        }
+    }
 }
 
 impl AlgorithmKind {

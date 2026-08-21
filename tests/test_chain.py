@@ -43,15 +43,15 @@ class TestChainSimulation:
     def test_energy_decreases_at_low_t(self) -> None:
         sim = IsingSimulation(50, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", "chain")
         e_before = sim.energy()
-        sim.sweep(200, 10.0)
+        sim.sweep(200, temperature=0.1)
         e_after = sim.energy()
         assert e_after <= e_before + 1e-10
 
     def test_deterministic(self) -> None:
         sim1 = IsingSimulation(50, 1.0, 0.0, 0.0, 0.0, 123, "metropolis", "chain")
         sim2 = IsingSimulation(50, 1.0, 0.0, 0.0, 0.0, 123, "metropolis", "chain")
-        sim1.sweep(10, 0.5)
-        sim2.sweep(10, 0.5)
+        sim1.sweep(10, temperature=2.0)
+        sim2.sweep(10, temperature=2.0)
         np.testing.assert_array_equal(sim1.get_spins(), sim2.get_spins())
 
     def test_spins_shape_is_1d(self) -> None:
@@ -67,12 +67,12 @@ class TestChainCluster:
 
     def test_wolff_runs(self) -> None:
         sim = IsingSimulation(20, 1.0, 0.0, 0.0, 0.0, 42, "wolff", "chain")
-        accepted, attempted = sim.sweep(10, 0.5)
+        accepted, attempted, _ = sim.sweep(10, temperature=2.0)
         assert attempted > 0
 
     def test_swendsen_wang_runs(self) -> None:
         sim = IsingSimulation(20, 1.0, 0.0, 0.0, 0.0, 42, "swendsen_wang", "chain")
-        accepted, attempted = sim.sweep(10, 0.5)
+        accepted, attempted, _ = sim.sweep(10, temperature=2.0)
         assert attempted > 0
 
 
@@ -102,11 +102,11 @@ class TestChainPhysics:
         """1D Ising has Tc=0: at T=1.0, |m| should be small for large L."""
         sim = IsingSimulation(100, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", "chain")
         # Thermalize
-        sim.sweep(1000, 1.0)  # beta=1.0 → T=1.0
+        sim.sweep(1000, temperature=1.0)
         # Measure
         mags = []
         for _ in range(100):
-            sim.sweep(10, 1.0)
+            sim.sweep(10, temperature=1.0)
             mags.append(abs(sim.magnetization()))
         avg_mag = np.mean(mags)
         assert avg_mag < 0.5, (

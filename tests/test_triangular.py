@@ -37,7 +37,7 @@ class TestTriangularSimulation:
         """Metropolis on triangular should lower energy at low T."""
         sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", "triangular")
         e_before = sim.energy()
-        sim.sweep(200, 10.0)
+        sim.sweep(200, temperature=0.1)
         e_after = sim.energy()
         assert e_after <= e_before + 1e-10
 
@@ -45,21 +45,21 @@ class TestTriangularSimulation:
         """Same seed → identical results on triangular."""
         sim1 = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 123, "metropolis", "triangular")
         sim2 = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 123, "metropolis", "triangular")
-        sim1.sweep(10, 0.5)
-        sim2.sweep(10, 0.5)
+        sim1.sweep(10, temperature=2.0)
+        sim2.sweep(10, temperature=2.0)
         np.testing.assert_array_equal(sim1.get_spins(), sim2.get_spins())
 
     def test_high_temp_high_acceptance(self) -> None:
         """At very high T, acceptance rate should be high."""
         sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", "triangular")
-        accepted, attempted = sim.sweep(1, 0.001)
+        accepted, attempted, _ = sim.sweep(1, temperature=1000.0)
         assert accepted / attempted > 0.5
 
     def test_ground_state_stable(self) -> None:
         """All-up should remain magnetized at low T."""
         sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", "triangular")
         sim.set_spins(np.ones((8, 8), dtype=np.int8))
-        sim.sweep(50, 10.0)
+        sim.sweep(50, temperature=0.1)
         mag = abs(sim.magnetization())
         assert mag > 0.9, f"Expected magnetized ground state, got |m|={mag}"
 
@@ -70,13 +70,13 @@ class TestTriangularCluster:
     def test_wolff_runs(self) -> None:
         """Wolff should work on triangular (J2=0, h=0)."""
         sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42, "wolff", "triangular")
-        accepted, attempted = sim.sweep(10, 0.5)
+        accepted, attempted, _ = sim.sweep(10, temperature=2.0)
         assert attempted > 0
 
     def test_swendsen_wang_runs(self) -> None:
         """SW should work on triangular (J2=0, h=0)."""
         sim = IsingSimulation(8, 1.0, 0.0, 0.0, 0.0, 42, "swendsen_wang", "triangular")
-        accepted, attempted = sim.sweep(10, 0.5)
+        accepted, attempted, _ = sim.sweep(10, temperature=2.0)
         assert attempted > 0
 
 

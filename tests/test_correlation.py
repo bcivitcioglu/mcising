@@ -80,11 +80,10 @@ class TestCorrelationLengthPhysics:
         mean_xi = {}
         for temp in (5.0, 2.4):
             sim = IsingSimulation(16, 1.0, 0.0, 0.0, 0.0, seed)
-            beta = 1.0 / temp
-            sim.sweep(2000, beta)
+            sim.sweep(2000, temperature=temp)
             xis = []
             for _ in range(50):
-                sim.sweep(10, beta)
+                sim.sweep(10, temperature=temp)
                 xis.append(sim.correlation_length())
             xis_arr = np.asarray(xis)
             assert np.all(xis_arr >= 0.0)

@@ -655,6 +655,8 @@ mod tests {
         let lattice = SquareLattice::new(4).unwrap();
         // interval is in cluster moves (one Wolff "sweep" = one cluster);
         // the values approximate one lattice-sweep-equivalent per sample.
+        // Fixed spacing is load-bearing: measuring at a flip-budget
+        // stopping time is size-biased (P10 oracle rejection, 200+ sigma).
         let cells = [
             Cell {
                 temperature: 1.0,

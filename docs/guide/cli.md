@@ -85,15 +85,19 @@ compact notation (`-1.9563(32)` means -1.9563 ± 0.0032):
 ┃      T ┃       <E>/N ┃     <|M|>/N ┃      Cv/N ┃      chi/N ┃           U4 ┃ samples ┃
 ┡━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━┩
 │ 1.5000 │ -1.9563(32) │ 0.98805(92) │ 0.168(23) │ 0.0227(40) │ 0.666488(31) │     200 │
-│ 2.2690 │  -1.467(14) │   0.741(13) │  1.42(14) │    39 ± 18 │   0.6280(55) │     200 │
-│ 3.5000 │ -0.6591(88) │  0.1199(65) │ 0.211(24) │   1.65(16) │    0.064(58) │     200 │
+│ 2.2690 │  -1.467(14) │   0.741(13) │  1.42(14) │   2.60(43) │   0.6280(55) │     200 │
+│ 3.5000 │ -0.6591(88) │  0.1199(65) │ 0.211(24) │  0.609(68) │    0.064(58) │     200 │
 └────────┴─────────────┴─────────────┴───────────┴────────────┴──────────────┴─────────┘
 ```
 
-(16×16 square lattice, 200 correlated samples per temperature — note
-the honest ±46% error on chi/N at criticality: near Tc the signed-
-magnetization susceptibility fluctuates enormously, and the error bar
-now says so.)
+(16×16 square lattice, 200 correlated samples per temperature. Since
+1.0, chi/N uses the connected convention `N·(⟨m²⟩−⟨|m|⟩²)/T` — the
+standard finite-size-scaling form; the file and JSON record
+`susceptibility_kind` explicitly. The pre-1.0 signed convention
+`N·Var(m)/T` — inflated ~15× at Tc by global sign flips — remains
+available as `susceptibility(kind="signed")` in the Python API. The
+peak of the connected chi near Tc still carries the largest relative
+error, honestly quoted.)
 
 ## `mcising plot`
 

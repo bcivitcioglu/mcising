@@ -113,7 +113,7 @@ class TestAllUpEnergy:
 
 
 class TestEnergyDecrease:
-    """Verify Metropolis lowers energy at beta=100 for each lattice×coupling."""
+    """Verify Metropolis lowers energy at T=0.01 for each lattice×coupling."""
 
     @pytest.mark.parametrize(
         "test_id,lattice_type,size,j1,j2,j3,h",
@@ -132,7 +132,7 @@ class TestEnergyDecrease:
     ) -> None:
         sim = IsingSimulation(size, j1, j2, j3, h, 42, "metropolis", lattice_type)
         e_before = sim.energy()
-        sim.sweep(200, 100.0)
+        sim.sweep(200, temperature=0.01)
         e_after = sim.energy()
         assert e_after <= e_before + 1e-10, (
             f"{test_id}: energy increased at low T: {e_before:.6f} → {e_after:.6f}"
@@ -159,8 +159,8 @@ class TestCrossLatticeDeterminism:
         sim2 = IsingSimulation(
             size, 1.0, 0.5, 0.3, 0.5, 123, "metropolis", lattice_type
         )
-        sim1.sweep(10, 0.5)
-        sim2.sweep(10, 0.5)
+        sim1.sweep(10, temperature=2.0)
+        sim2.sweep(10, temperature=2.0)
         np.testing.assert_array_equal(
             sim1.get_spins(),
             sim2.get_spins(),
