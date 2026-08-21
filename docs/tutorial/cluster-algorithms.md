@@ -34,7 +34,18 @@ Metropolis flips one spin at a time. Near the critical temperature, this gets sl
     results = Simulation(config).run()
     ```
 
-    Builds a single cluster from a random seed via DFS, then flips it. Dramatically reduces autocorrelation at Tc. One "sweep" = one cluster flip.
+    Builds a single cluster from a random seed via DFS, then flips it. Dramatically reduces autocorrelation at Tc.
+
+    !!! warning "Wolff sweeps are cluster updates, not lattice sweeps"
+        One Wolff "sweep" = **one cluster flip**, not `num_sites` flip
+        attempts like Metropolis or Swendsen-Wang. Away from Tc clusters
+        are small, so scale `n_sweeps` up by roughly `N / ⟨cluster size⟩`
+        for comparable statistics. `results.n_cluster_flips` records the
+        clusters actually flipped per temperature, and each sweep's real
+        flip count is in the counters `Simulation.sweep()` returns. (An
+        automatic equal-work sweep is deliberately absent: stopping a
+        sweep when a flip budget is met biases the sampling — see issue
+        #42.)
 
 === "Swendsen-Wang"
 
@@ -49,7 +60,7 @@ Metropolis flips one spin at a time. Near the critical temperature, this gets sl
     results = Simulation(config).run()
     ```
 
-    Partitions the entire lattice into clusters via bond percolation (Union-Find), then independently flips each cluster with 50% probability. One "sweep" = one full partition + flip.
+    Partitions the entire lattice into clusters via bond percolation (Union-Find), then independently flips each cluster with 50% probability. One "sweep" = one full partition + flip: every site receives a decision, so a Swendsen-Wang sweep is comparable work to a Metropolis sweep.
 
 ## When to use which
 
@@ -75,8 +86,14 @@ On a 32x32 square lattice at Tc=2.269, 10,000 sweeps:
 | Algorithm | Updates/sec |
 |---|---|
 | Metropolis | 268M |
-| Wolff | 100M |
+| Wolff | 100M[^wolff-updates] |
 | Swendsen-Wang | 48M |
+
+[^wolff-updates]: Measured before 1.0, when the benchmark counted one
+    Wolff sweep as `num_sites` updates — an overstatement of roughly
+    `N / ⟨cluster size⟩` (a Wolff sweep is one cluster). The benchmark
+    now counts real attempted flips; re-measured numbers land with the
+    benchmark-integrity pass (P17).
 
 Metropolis has the highest raw throughput, but Wolff and Swendsen-Wang produce statistically independent samples much faster near Tc because each sweep decorrelates more effectively.
 

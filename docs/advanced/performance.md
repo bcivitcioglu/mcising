@@ -23,8 +23,14 @@ Measured on MacBook Pro 14-inch (2023, Apple M2 Pro, 32 GB), 10,000 sweeps:
 | Metropolis: Square | 269M | 78M | 3.4x |
 | Metropolis: Triangular | 223M | 65M | 3.4x |
 | Metropolis: Cubic | 147M | 50M | 2.9x |
-| Wolff: Square | 100M | 30M | 3.3x |
+| Wolff: Square | 100M[^wolff-work] | 30M | 3.3x |
 | Swendsen-Wang: Square | 48M | 18M | 2.7x |
+
+[^wolff-work]: Measured before 1.0, when one Wolff sweep (one cluster)
+    was counted as `num_sites` updates on both sides of the comparison
+    — the *ratio* is meaningful, the absolute Wolff numbers overstate
+    real flips by ~`N / ⟨cluster size⟩`. The mcising benchmark now
+    counts real attempted flips; re-measurement lands with P17.
 
 Reproduce with [`benchmarks/compare_peapods.py`](https://github.com/bcivitcioglu/mcising/blob/master/benchmarks/compare_peapods.py).
 

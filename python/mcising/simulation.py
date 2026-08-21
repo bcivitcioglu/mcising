@@ -24,7 +24,12 @@ from mcising._core import run_independent_temperatures as _run_independent
 from mcising._core import run_parallel_tempering as _run_pt
 from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit, package_version
 from mcising.config import AdaptiveConfig, ExecutionMode, SimulationConfig
-from mcising.constants import INF_TEMP, MIN_DIAGNOSTIC_SWEEPS
+from mcising.constants import (
+    DEFAULT_MEASUREMENT_INTERVAL,
+    DEFAULT_N_SWEEPS,
+    INF_TEMP,
+    MIN_DIAGNOSTIC_SWEEPS,
+)
 from mcising.exceptions import ConfigurationError, SimulationError
 from mcising.statistics import ObservableStatistics
 
@@ -43,6 +48,8 @@ def _fill_results_from_raw(
         temp = float(entry["temperature"])
         results.energy[temp] = np.asarray(entry["energies"])
         results.magnetization[temp] = np.asarray(entry["magnetizations"])
+        if "n_cluster_flips" in entry:
+            results.n_cluster_flips[temp] = int(entry["n_cluster_flips"])
         if "configurations" in entry:
             results.configurations[temp] = np.asarray(entry["configurations"])
         if (
@@ -144,6 +151,11 @@ class SimulationResults:
         (distances, correlations) at each temperature, or None if not computed.
     correlation_length : dict[float, NDArray[np.float64]] | None
         Correlation length measurements at each temperature, or None.
+    n_cluster_flips : dict[float, int]
+        Cluster flips during the measurement sweeps at each temperature
+        (thermalization excluded). 0 for Metropolis; for Wolff this is
+        the number of cluster updates (one per sweep), the honest work
+        record behind the ``n_sweeps`` accounting.
     metadata : dict[str, object]
         Provenance and timing: the ``SimulationConfig`` object under
         ``"config"``, plus ``version``, ``schema_version``, ``seed``,
@@ -160,6 +172,7 @@ class SimulationResults:
         dict[float, tuple[NDArray[np.float64], NDArray[np.float64]]] | None
     ) = None
     correlation_length: dict[float, NDArray[np.float64]] | None = None
+    n_cluster_flips: dict[float, int] = field(default_factory=dict)
     adaptive_diagnostics: dict[float, AdaptiveDiagnostics] | None = None
     metadata: dict[str, object] = field(default_factory=dict)
     _statistics_cache: dict[float, ObservableStatistics] = field(
@@ -256,28 +269,38 @@ class SimulationResults:
             num_sites=self.num_sites,
         )
 
-    def susceptibility(self, temperature: float) -> float:
-        """Magnetic susceptibility per site: chi = N * Var(M) / T.
+    def susceptibility(
+        self,
+        temperature: float,
+        *,
+        kind: _mcstats.SusceptibilityKind = "connected",
+    ) -> float:
+        """Magnetic susceptibility per site.
 
-        Uses the signed magnetization series (see
-        :func:`mcising.statistics.susceptibility` for the convention
-        and its ordered-phase caveat).
+        The default connected convention is
+        ``chi = N * (<m**2> - <|m|>**2) / T`` (standard for finite-size
+        scaling; breaking default since P10, #39). ``kind="signed"``
+        selects the pre-1.0 ``N * Var(m) / T`` form — see
+        :func:`mcising.statistics.susceptibility`.
 
         Parameters
         ----------
         temperature : float
             Temperature to compute chi at.
+        kind : {"connected", "signed"}
+            Susceptibility convention.
 
         Returns
         -------
         float
-            Susceptibility per site. For the standard error use
-            ``statistics(temperature).susceptibility.error``.
+            Susceptibility per site. For the standard error (connected
+            convention) use ``statistics(temperature).susceptibility.error``.
         """
         return _mcstats.susceptibility(
             self.magnetization[temperature],
             temperature=temperature,
             num_sites=self.num_sites,
+            kind=kind,
         )
 
     def binder_cumulant(self, temperature: float) -> float:
@@ -405,7 +428,17 @@ class Simulation:
 
     def __init__(self, config: SimulationConfig) -> None:
         self.config: Final[SimulationConfig] = config
-        self._core = _RustSim(
+        self._core = self._build_core()
+
+    def _build_core(self) -> _RustSim:
+        """Construct a fresh Rust core from the configuration.
+
+        The single construction site: ``__init__`` and ``reset()`` both
+        go through here, so a reset core is bit-identical to a freshly
+        constructed one (same seed, same initial spins).
+        """
+        config = self.config
+        return _RustSim(
             lattice_size=config.lattice.size,
             j1=config.lattice.j1,
             j2=config.lattice.j2,
@@ -416,9 +449,19 @@ class Simulation:
             lattice_type=config.lattice.lattice_type.value,
         )
 
+    def reset(self) -> None:
+        """Discard all evolved state and return to the initial condition.
+
+        The spin configuration and RNG stream are restored to exactly
+        what a fresh ``Simulation(config)`` starts with; manual
+        ``sweep()`` calls and ``spins`` assignments are forgotten.
+        """
+        self._core = self._build_core()
+
     def run(
         self,
         *,
+        reset: bool = True,
         show_progress: bool = True,
         on_temperature_complete: (
             Callable[[float, SimulationResults], None] | None
@@ -426,6 +469,13 @@ class Simulation:
         skip_temperatures: frozenset[float] | None = None,
     ) -> SimulationResults:
         """Execute the full simulation across all temperatures.
+
+        ``run()`` first resets the simulation to its deterministic
+        initial condition (see ``reset()``), so repeated calls on the
+        same object return identical results, and any prior manual
+        ``sweep()`` or ``spins`` assignment has no effect on the run.
+        Pass ``reset=False`` to continue from the current core state
+        instead (checkpoint resume uses this).
 
         Behavior depends on ``config.mode``:
 
@@ -438,6 +488,11 @@ class Simulation:
 
         Parameters
         ----------
+        reset : bool
+            When True (default), rebuild the core from the configuration
+            before running. When False, keep the current spins and RNG
+            state (only meaningful in cooldown mode — the parallel modes
+            build fresh Rust replicas per call regardless).
         show_progress : bool
             Whether to display a Rich progress bar.
         on_temperature_complete : callable, optional
@@ -464,6 +519,12 @@ class Simulation:
             In parallel tempering, when ``skip_temperatures`` covers a
             non-empty proper subset of the configured temperatures.
         """
+        if reset:
+            self.reset()
+
+        if self.config.adaptive.enabled:
+            self._warn_adaptive_overrides()
+
         if self.config.mode == ExecutionMode.INDEPENDENT:
             return self._run_independent(
                 show_progress=show_progress,
@@ -483,6 +544,39 @@ class Simulation:
             on_temperature_complete=on_temperature_complete,
             skip_temperatures=skip_temperatures,
         )
+
+    def _warn_adaptive_overrides(self) -> None:
+        """Warn once per ``run()`` about silently ignored settings (P10).
+
+        A frozen dataclass cannot record whether a field was passed
+        explicitly, so "explicit" is approximated as "differs from the
+        default" — an explicit value equal to the default is ignored
+        without a warning, which loses nothing.
+        """
+        if self.config.mode != ExecutionMode.COOLDOWN:
+            warnings.warn(
+                "adaptive mode is only honored in cooldown; this "
+                f"{self.config.mode.value} run uses the configured fixed "
+                "sweep schedule.",
+                UserWarning,
+                stacklevel=3,
+            )
+            return
+        ignored = []
+        if self.config.n_sweeps != DEFAULT_N_SWEEPS:
+            ignored.append(f"n_sweeps={self.config.n_sweeps}")
+        if self.config.measurement_interval != DEFAULT_MEASUREMENT_INTERVAL:
+            ignored.append(
+                f"measurement_interval={self.config.measurement_interval}"
+            )
+        if ignored:
+            warnings.warn(
+                "adaptive mode ignores " + ", ".join(ignored) + "; the "
+                "production sample count and spacing derive from "
+                "min_independent_samples and the measured tau_int instead.",
+                UserWarning,
+                stacklevel=3,
+            )
 
     def _run_independent(
         self,
@@ -743,33 +837,54 @@ class Simulation:
 
         return results
 
-    def sweep(self, temperature: float, n_sweeps: int = 1) -> dict[str, float]:
+    def sweep(self, n_sweeps: int = 1, *, temperature: float) -> dict[str, float]:
         """Perform sweeps at a given temperature and return observables.
+
+        One sweep is ``num_sites`` attempted-flip equivalents for
+        Metropolis and Swendsen-Wang, but ONE cluster update for Wolff
+        — measuring at a per-sweep flip-budget boundary is size-biased
+        (P10 exact-enumeration rejection), so Wolff callers scale
+        ``n_sweeps`` by roughly ``num_sites`` over the expected cluster
+        size instead. The returned counters report the work honestly.
 
         Parameters
         ----------
-        temperature : float
-            Simulation temperature (must be > 0).
         n_sweeps : int
             Number of MC sweeps to perform.
+        temperature : float
+            Simulation temperature (must be > 0). Keyword-only, so a
+            pre-1.0 positional ``beta`` can never be silently
+            reinterpreted as a temperature.
 
         Returns
         -------
         dict[str, float]
-            Dictionary with keys 'energy', 'magnetization', 'acceptance_rate'.
+            Dictionary with keys 'energy', 'magnetization',
+            'acceptance_rate', and 'n_cluster_flips' (0.0 for
+            Metropolis). 'acceptance_rate' is the classic acceptance
+            fraction for Metropolis, the flipped-spin fraction for
+            Swendsen-Wang, and identically 1.0 for Wolff
+            (rejection-free).
         """
         if temperature <= 0:
             msg = f"Temperature must be positive, got {temperature}"
             raise SimulationError(msg)
 
-        beta = 1.0 / temperature
-        accepted, attempted = self._core.sweep(n_sweeps, beta)
+        accepted, attempted, cluster_flips = self._core.sweep(
+            n_sweeps, temperature=temperature
+        )
 
         return {
             "energy": self._core.energy(),
             "magnetization": self._core.magnetization(),
             "acceptance_rate": accepted / attempted if attempted > 0 else 0.0,
+            "n_cluster_flips": float(cluster_flips),
         }
+
+    @property
+    def num_sites(self) -> int:
+        """Total number of spins N in the simulated lattice."""
+        return int(self._core.num_sites)
 
     @property
     def spins(self) -> NDArray[np.int8]:
@@ -797,16 +912,15 @@ class Simulation:
 
         temp_schedule = np.linspace(from_temp, to_temp, num=n_steps)
         for temp in temp_schedule:
+            # The core rejects T <= 0; skip silently as before.
             if temp <= 0:
                 continue
-            beta = 1.0 / float(temp)
-            self._core.sweep(1, beta)
+            self._core.sweep(1, temperature=float(temp))
 
     def _collect_at_temperature(
         self, temperature: float, results: SimulationResults
     ) -> None:
         """Run sweeps and collect measurements at a single temperature."""
-        beta = 1.0 / temperature
         n_measurements = self.config.n_sweeps // self.config.measurement_interval
 
         energies = np.empty(n_measurements, dtype=np.float64)
@@ -825,8 +939,12 @@ class Simulation:
         last_distances: NDArray[np.float64] | None = None
         last_correlations: NDArray[np.float64] | None = None
 
+        total_cluster_flips = 0
         for m in range(n_measurements):
-            self._core.sweep(self.config.measurement_interval, beta)
+            _, _, flips = self._core.sweep(
+                self.config.measurement_interval, temperature=temperature
+            )
+            total_cluster_flips += flips
 
             energies[m] = self._core.energy()
             magnetizations[m] = self._core.magnetization()
@@ -841,6 +959,7 @@ class Simulation:
 
         results.energy[temperature] = energies
         results.magnetization[temperature] = magnetizations
+        results.n_cluster_flips[temperature] = total_cluster_flips
         if configs is not None:
             results.configurations[temperature] = configs
 
@@ -878,18 +997,19 @@ class Simulation:
         ac = self.config.adaptive
         n_ramp = max(self.config.n_thermalization, ac.min_thermalization_sweeps)
 
-        # Annealing ramp (single FFI call). The per-sweep ramp energies
-        # it returns are deliberately discarded, never analyzed.
+        # Annealing ramp (single FFI call). Ramp energies are never
+        # recorded or analyzed (B9).
         temp_schedule = np.linspace(from_temp, to_temp, num=n_ramp).tolist()
-        self._core.thermalize_with_diagnostics(temp_schedule)
+        self._core.anneal(temp_schedule)
 
         # Fixed-temperature diagnostic block: the only series the
         # analyzer ever sees. Always collected, even when the ramp
         # already used the thermalization budget — without it there is
         # nothing to base the measurement interval on.
-        beta = 1.0 / to_temp
         block = max(ac.min_thermalization_sweeps, MIN_DIAGNOSTIC_SWEEPS)
-        energy_series = np.asarray(self._core.extend_thermalization(block, beta))
+        energy_series = np.asarray(
+            self._core.extend_thermalization(block, temperature=to_temp)
+        )
         stationary = len(energy_series)
 
         analysis = _analyze_thermalization(energy_series, ac)
@@ -905,7 +1025,9 @@ class Simulation:
                 block,
                 ac.max_thermalization_sweeps - n_ramp - stationary,
             )
-            extra_energies = np.asarray(self._core.extend_thermalization(extra_n, beta))
+            extra_energies = np.asarray(
+                self._core.extend_thermalization(extra_n, temperature=to_temp)
+            )
             energy_series = np.concatenate([energy_series, extra_energies])
             stationary += extra_n
 
@@ -936,7 +1058,6 @@ class Simulation:
     ) -> None:
         """Adaptive production: use tau_int to set measurement spacing."""
         ac = self.config.adaptive
-        beta = 1.0 / temperature
 
         # Get the interval from diagnostics
         diag = (
@@ -969,12 +1090,18 @@ class Simulation:
             )
 
         # Single Rust call for all production measurements
-        energies, magnetizations, configs = self._core.production_sweeps(
-            n_measurements, interval, beta, self.config.store_configs
+        energies, magnetizations, configs, cluster_flips = (
+            self._core.production_sweeps(
+                n_measurements,
+                interval,
+                temperature=temperature,
+                store_configs=self.config.store_configs,
+            )
         )
 
         results.energy[temperature] = np.asarray(energies)
         results.magnetization[temperature] = np.asarray(magnetizations)
+        results.n_cluster_flips[temperature] = int(cluster_flips)
         if configs is not None:
             results.configurations[temperature] = np.asarray(configs)
 

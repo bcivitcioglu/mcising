@@ -10,7 +10,7 @@ use rand_xoshiro::Xoshiro256StarStar;
 use crate::algorithm::metropolis::Metropolis;
 use crate::algorithm::swendsen_wang::SwendsenWang;
 use crate::algorithm::wolff::Wolff;
-use crate::algorithm::{AlgorithmKind, McAlgorithm, SweepResult};
+use crate::algorithm::{AlgorithmKind, AlgorithmState, McAlgorithm, SweepResult};
 use crate::autocorrelation;
 use crate::error::MCIsingError;
 use crate::lattice::{with_lattice, Lattice, LatticeKind};
@@ -33,18 +33,25 @@ pub struct IsingSimulation {
     lattice_size: usize,
     /// Shape for reshaping spin arrays (e.g. [L, L] for 2D lattices).
     shape: Vec<usize>,
-    algorithm: AlgorithmKind,
-    metropolis: Metropolis,
-    wolff: Option<Wolff>,
-    swendsen_wang: Option<SwendsenWang>,
+    algorithm: AlgorithmState,
 }
 
-/// Per-run measurement arrays: (energies, magnetizations, optional configs).
+/// Per-run measurement arrays:
+/// (energies, magnetizations, optional configs, cluster_flips).
 type SweepMeasurements<'py> = (
     Bound<'py, PyArray1<f64>>,
     Bound<'py, PyArray1<f64>>,
     Option<PyObject>,
+    usize,
 );
+
+/// Validate a user-supplied temperature and return beta = 1/T.
+fn beta_from_temperature(temperature: f64) -> Result<f64, MCIsingError> {
+    if !temperature.is_finite() || temperature <= 0.0 {
+        return Err(MCIsingError::InvalidTemperature(temperature));
+    }
+    Ok(1.0 / temperature)
+}
 
 impl IsingSimulation {
     /// Create a new simulation (pure Rust, no PyO3 dependency).
@@ -117,15 +124,14 @@ impl IsingSimulation {
             .map(|_| if rng.gen::<bool>() { 1 } else { -1 })
             .collect();
 
-        let wolff = if algo_kind == AlgorithmKind::Wolff {
-            Some(Wolff::new(num_sites))
-        } else {
-            None
-        };
-        let swendsen_wang = if algo_kind == AlgorithmKind::SwendsenWang {
-            Some(SwendsenWang::new(num_sites))
-        } else {
-            None
+        let algorithm = match algo_kind {
+            AlgorithmKind::Metropolis => AlgorithmState::Metropolis(Box::new(Metropolis::new(
+                j1, j2, j3, h, z_nn, z_nnn, z_tnn,
+            ))),
+            AlgorithmKind::Wolff => AlgorithmState::Wolff(Wolff::new(num_sites)),
+            AlgorithmKind::SwendsenWang => {
+                AlgorithmState::SwendsenWang(SwendsenWang::new(num_sites))
+            }
         };
 
         Ok(Self {
@@ -138,10 +144,7 @@ impl IsingSimulation {
             rng,
             lattice_size,
             shape,
-            algorithm: algo_kind,
-            metropolis: Metropolis::new(j1, j2, j3, h, z_nn, z_nnn, z_tnn),
-            wolff,
-            swendsen_wang,
+            algorithm,
         })
     }
 
@@ -150,11 +153,13 @@ impl IsingSimulation {
         let mut total = SweepResult {
             accepted: 0,
             attempted: 0,
+            cluster_flips: 0,
         };
         for _ in 0..n_sweeps {
             let r = self.dispatch_sweep(beta);
             total.accepted += r.accepted;
             total.attempted += r.attempted;
+            total.cluster_flips += r.cluster_flips;
         }
         total
     }
@@ -179,57 +184,15 @@ impl IsingSimulation {
             .map_err(std::convert::Into::into)
     }
 
-    /// Perform MC sweeps at the given inverse temperature.
+    /// Perform MC sweeps at the given temperature.
     ///
-    /// Returns (accepted, attempted) as a tuple.
-    fn sweep(&mut self, n_sweeps: usize, beta: f64) -> PyResult<(usize, usize)> {
-        if !beta.is_finite() || beta < 0.0 {
-            return Err(MCIsingError::InvalidTemperature(if beta == 0.0 {
-                0.0
-            } else {
-                1.0 / beta
-            })
-            .into());
-        }
-
-        let mut total_accepted = 0;
-        let mut total_attempted = 0;
-
-        for _ in 0..n_sweeps {
-            let result = self.dispatch_sweep(beta);
-            total_accepted += result.accepted;
-            total_attempted += result.attempted;
-        }
-
-        Ok((total_accepted, total_attempted))
-    }
-
-    /// Perform MC sweeps while accumulating observable averages.
-    fn sweep_measured(&mut self, n_sweeps: usize, beta: f64) -> PyResult<(f64, f64, usize, usize)> {
-        if !beta.is_finite() || beta < 0.0 {
-            return Err(MCIsingError::InvalidTemperature(if beta == 0.0 {
-                0.0
-            } else {
-                1.0 / beta
-            })
-            .into());
-        }
-
-        let mut total_accepted = 0;
-        let mut total_attempted = 0;
-        let mut energy_sum = 0.0;
-        let mut mag_sum = 0.0;
-
-        for _ in 0..n_sweeps {
-            let result = self.dispatch_sweep(beta);
-            total_accepted += result.accepted;
-            total_attempted += result.attempted;
-            energy_sum += self.compute_energy();
-            mag_sum += observables::magnetization_per_site(&self.spins);
-        }
-
-        let n = n_sweeps as f64;
-        Ok((energy_sum / n, mag_sum / n, total_accepted, total_attempted))
+    /// Returns (accepted, attempted, cluster_flips) as a tuple; see
+    /// `SweepResult` for the per-algorithm meaning of each counter.
+    #[pyo3(signature = (n_sweeps = 1, *, temperature))]
+    fn sweep(&mut self, n_sweeps: usize, temperature: f64) -> PyResult<(usize, usize, usize)> {
+        let beta = beta_from_temperature(temperature)?;
+        let total = self.sweep_internal(n_sweeps, beta);
+        Ok((total.accepted, total.attempted, total.cluster_flips))
     }
 
     #[getter]
@@ -390,37 +353,30 @@ impl IsingSimulation {
         Ok(())
     }
 
-    fn thermalize_with_diagnostics<'py>(
-        &mut self,
-        py: Python<'py>,
-        temp_schedule: Vec<f64>,
-    ) -> Bound<'py, PyArray1<f64>> {
-        let mut energies = Vec::with_capacity(temp_schedule.len());
+    /// Anneal along a temperature schedule: one sweep per positive entry.
+    ///
+    /// The ramp is pure thermalization — nothing is recorded, and
+    /// non-positive schedule entries are skipped silently (a linspace
+    /// ramp may in principle cross zero).
+    fn anneal(&mut self, temp_schedule: Vec<f64>) {
         for temp in &temp_schedule {
             if *temp <= 0.0 {
                 continue;
             }
             let beta = 1.0 / temp;
             self.dispatch_sweep(beta);
-            energies.push(self.compute_energy());
         }
-        energies.into_pyarray(py)
     }
 
+    /// Sweep at fixed temperature, recording the energy after every sweep.
+    #[pyo3(signature = (n_sweeps, *, temperature))]
     fn extend_thermalization<'py>(
         &mut self,
         py: Python<'py>,
         n_sweeps: usize,
-        beta: f64,
+        temperature: f64,
     ) -> PyResult<Bound<'py, PyArray1<f64>>> {
-        if !beta.is_finite() || beta <= 0.0 {
-            return Err(MCIsingError::InvalidTemperature(if beta == 0.0 {
-                0.0
-            } else {
-                1.0 / beta
-            })
-            .into());
-        }
+        let beta = beta_from_temperature(temperature)?;
         let mut energies = Vec::with_capacity(n_sweeps);
         for _ in 0..n_sweeps {
             self.dispatch_sweep(beta);
@@ -450,25 +406,23 @@ impl IsingSimulation {
     }
 
     /// Run production measurement sweeps, collecting observables at each interval.
+    ///
+    /// The 4th tuple element is the total number of cluster flips across
+    /// all production sweeps (0 for Metropolis).
+    #[pyo3(signature = (n_measurements, interval, *, temperature, store_configs))]
     fn production_sweeps<'py>(
         &mut self,
         py: Python<'py>,
         n_measurements: usize,
         interval: usize,
-        beta: f64,
+        temperature: f64,
         store_configs: bool,
     ) -> PyResult<SweepMeasurements<'py>> {
-        if !beta.is_finite() || beta <= 0.0 {
-            return Err(MCIsingError::InvalidTemperature(if beta == 0.0 {
-                0.0
-            } else {
-                1.0 / beta
-            })
-            .into());
-        }
+        let beta = beta_from_temperature(temperature)?;
 
         let mut energies = Vec::with_capacity(n_measurements);
         let mut magnetizations = Vec::with_capacity(n_measurements);
+        let mut cluster_flips = 0;
         let mut configs: Option<Vec<i8>> = if store_configs {
             Some(Vec::with_capacity(n_measurements * self.spins.len()))
         } else {
@@ -476,9 +430,7 @@ impl IsingSimulation {
         };
 
         for _ in 0..n_measurements {
-            for _ in 0..interval {
-                self.dispatch_sweep(beta);
-            }
+            cluster_flips += self.sweep_internal(interval, beta).cluster_flips;
             energies.push(self.compute_energy());
             magnetizations.push(observables::magnetization_per_site(&self.spins));
             if let Some(ref mut c) = configs {
@@ -498,7 +450,7 @@ impl IsingSimulation {
             None => None,
         };
 
-        Ok((py_energies, py_mags, py_configs))
+        Ok((py_energies, py_mags, py_configs, cluster_flips))
     }
 
     fn __repr__(&self) -> String {
@@ -526,40 +478,32 @@ impl IsingSimulation {
 
     /// Dispatch a single sweep via with_lattice! × algorithm match.
     /// Each combination is monomorphized — no virtual dispatch.
-    ///
-    /// The `.expect()`s on the cluster-algorithm `Option`s are unreachable:
-    /// the constructor pairs each `AlgorithmKind` with its initialized
-    /// algorithm state, and nothing mutates `self.algorithm` afterwards.
     fn dispatch_sweep(&mut self, beta: f64) -> SweepResult {
         // We need to split borrows: lattice is immutable, everything else mutable.
         // Use with_lattice! on a reference to avoid moving self.lattice.
-        match self.algorithm {
-            AlgorithmKind::Metropolis => {
+        match &mut self.algorithm {
+            AlgorithmState::Metropolis(m) => {
                 with_lattice!(&self.lattice, lat => {
-                    self.metropolis.sweep(
+                    m.sweep(
                         &mut self.spins, lat,
                         self.j1, self.j2, self.j3, self.h, beta, &mut self.rng,
                     )
                 })
             }
-            AlgorithmKind::Wolff => {
+            AlgorithmState::Wolff(w) => {
                 with_lattice!(&self.lattice, lat => {
-                    self.wolff.as_mut()
-                        .expect("Wolff algorithm not initialized")
-                        .sweep(
-                            &mut self.spins, lat,
-                            self.j1, self.j2, self.j3, self.h, beta, &mut self.rng,
-                        )
+                    w.sweep(
+                        &mut self.spins, lat,
+                        self.j1, self.j2, self.j3, self.h, beta, &mut self.rng,
+                    )
                 })
             }
-            AlgorithmKind::SwendsenWang => {
+            AlgorithmState::SwendsenWang(sw) => {
                 with_lattice!(&self.lattice, lat => {
-                    self.swendsen_wang.as_mut()
-                        .expect("Swendsen-Wang algorithm not initialized")
-                        .sweep(
-                            &mut self.spins, lat,
-                            self.j1, self.j2, self.j3, self.h, beta, &mut self.rng,
-                        )
+                    sw.sweep(
+                        &mut self.spins, lat,
+                        self.j1, self.j2, self.j3, self.h, beta, &mut self.rng,
+                    )
                 })
             }
         }

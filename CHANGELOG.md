@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes in 1.0
+
+- **One sweep signature, one temperature unit**: both
+  `Simulation.sweep` and `mcising._core.IsingSimulation.sweep` are now
+  `sweep(n_sweeps=1, *, temperature)`. The core previously took
+  `(n_sweeps, beta)` while the high-level API took
+  `(temperature, n_sweeps)` — swapped argument order AND different
+  units, so mixing layers silently ran wrong physics. `temperature` is
+  keyword-only: every pre-1.0 positional call fails loudly with
+  `TypeError` instead of reinterpreting a `beta` as a temperature.
+  `IsingSimulation.extend_thermalization` and `production_sweeps` take
+  keyword-only `temperature` for the same reason; beta is internal.
+- **Core `sweep` returns a 3-tuple** `(accepted, attempted,
+  n_cluster_flips)`; `production_sweeps` gains the total cluster-flip
+  count as a 4th element. `Simulation.sweep`'s dict gains an
+  `"n_cluster_flips"` key.
+- **Honest Wolff work accounting**: one Wolff sweep remains one cluster
+  update, but `attempted` now reports the cluster size (Wolff is
+  rejection-free; the old `attempted = num_sites` was fictitious — a
+  Wolff "acceptance rate" is identically 1.0 now). Benchmark
+  updates/sec counts real attempted flips, which lowers quoted Wolff
+  throughput by roughly `N / ⟨cluster size⟩`. A flip-budget sweep that
+  would make `n_sweeps` mean equal work across algorithms was
+  implemented and rejected: measuring at its state-dependent stopping
+  time is size-biased (exact-enumeration rejection at 200+ sigma); the
+  unbiased calibrated design is tracked in #42.
+- **`run()` resets to a fresh core** (`run(reset=True)` default):
+  repeated `run()` calls on one `Simulation` are now identical, and
+  manual `sweep()` calls or `spins` assignments before `run()` no
+  longer leak into the run. Pass `reset=False` to continue from the
+  current state (checkpoint resume does this automatically). New public
+  `Simulation.reset()`.
+- **Susceptibility default is the connected convention** (#39):
+  `chi = N*(<m^2> - <|m|>^2)/T` everywhere chi is quoted (summary,
+  DataFrame, CSV/JSON, HDF5 statistics attrs, plots) — the standard
+  finite-size-scaling form. The pre-1.0 signed form `N*Var(m)/T`
+  (inflated ~14.5x at Tc by global sign flips on finite lattices)
+  remains available via `susceptibility(kind="signed")`. Persisted
+  summaries/statistics now record `susceptibility_kind`.
+- **Removed `IsingSimulation.sweep_measured`** (dead: no callers, no
+  stub entry, and its windowed means could never carry error bars).
+- **`thermalize_with_diagnostics` renamed to `anneal`** and returns
+  `None`: the per-sweep ramp energies it returned were computed and
+  discarded (P09 stopped analyzing ramps); the name promised
+  diagnostics it no longer produces. RNG streams are unchanged.
+
+### Added
+
+- `SimulationResults.n_cluster_flips`: per-temperature cluster-flip
+  count during measurement sweeps (0 for Metropolis), saved to HDF5 as
+  an additive per-temperature attribute (tolerant read; no schema
+  bump) — the honest work record for cluster algorithms.
+- `Simulation.num_sites` public property (reads the Rust core).
+- Adaptive mode now warns (`UserWarning`) when it ignores an explicitly
+  set `n_sweeps` or `measurement_interval`, and when
+  `adaptive.enabled` is set in independent/parallel-tempering modes
+  (where adaptive is not honored). Previously both were silent.
+- `py.typed` marker (PEP 561): downstream type checkers now see
+  mcising's annotations and the `_core` stubs. CI verifies the stubs
+  against the compiled module with `mypy.stubtest`.
+
+### Fixed
+
+- `mcising._core.pyi` now matches the runtime module exactly
+  (verified by stubtest): read-only getters are properties, `__new__`
+  replaces the fictitious `__init__`, and every method signature is
+  current.
+
 ## [0.25.0] - 2026-08-18
 
 ### Added

@@ -38,6 +38,9 @@ struct TempResult {
     configs: Option<Vec<i8>>,
     correlation: Option<CorrelationRecord>,
     shape: Vec<usize>,
+    /// Cluster flips during measurement sweeps only (0 for Metropolis);
+    /// thermalization work is never counted.
+    cluster_flips: usize,
 }
 
 impl TempResult {
@@ -60,6 +63,7 @@ impl TempResult {
                 lengths: Vec::with_capacity(n_measurements),
             }),
             shape,
+            cluster_flips: 0,
         }
     }
 
@@ -234,7 +238,8 @@ fn run_independent_internal(
             );
 
             for _ in 0..n_measurements {
-                sim.sweep_internal(measurement_interval, beta);
+                result.cluster_flips +=
+                    sim.sweep_internal(measurement_interval, beta).cluster_flips;
                 with_lattice!(&sim.lattice, lat => {
                     let energy =
                         observables::energy_per_site(&sim.spins, lat, j1, j2, j3, h);
@@ -333,6 +338,7 @@ fn convert_results_to_py(
         dict.set_item("temperature", r.temperature)?;
         dict.set_item("energies", r.energies.into_pyarray(py))?;
         dict.set_item("magnetizations", r.magnetizations.into_pyarray(py))?;
+        dict.set_item("n_cluster_flips", r.cluster_flips)?;
 
         if let Some(configs) = r.configs {
             let flat = numpy::PyArray1::from_vec(py, configs);
@@ -508,11 +514,21 @@ fn run_parallel_tempering_internal(
     let mut round: usize = 0;
 
     while sweep_count < n_sweeps {
-        // a. Parallel sweeps.
+        // a. Parallel sweeps. Replica i is pinned to betas[i] (swaps
+        // exchange spins, not temperatures), so per-index cluster-flip
+        // attribution is correct.
         let sweeps_this_round = swap_interval.min(n_sweeps - sweep_count);
-        replicas.par_iter_mut().enumerate().for_each(|(i, sim)| {
-            sim.sweep_internal(sweeps_this_round, betas[i]);
-        });
+        let round_flips: Vec<usize> = replicas
+            .par_iter_mut()
+            .enumerate()
+            .map(|(i, sim)| {
+                sim.sweep_internal(sweeps_this_round, betas[i])
+                    .cluster_flips
+            })
+            .collect();
+        for (result, flips) in temp_results.iter_mut().zip(&round_flips) {
+            result.cluster_flips += flips;
+        }
         sweep_count += sweeps_this_round;
 
         // Update cached energies.

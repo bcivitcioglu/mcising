@@ -207,6 +207,7 @@ def checkpoint_run(
         )
     skip_temps: frozenset[float] = frozenset()
     resumed_results: SimulationResults | None = None
+    restored = False
 
     if resume and path.exists():
         _check_resume_config(path, sim.config)
@@ -219,6 +220,7 @@ def checkpoint_run(
                 # restoring spins/RNG here would imply a state continuity
                 # those modes do not have.
                 _restore_simulation_state(path, sim)
+                restored = True
 
     temp_counter = 0
     unsaved_temps: list[float] = []
@@ -237,7 +239,9 @@ def checkpoint_run(
                 _save_simulation_state(path, sim)
             unsaved_temps.clear()
 
+    # A restored core must survive run()'s default reset (P10 semantics).
     results = sim.run(
+        reset=not restored,
         show_progress=show_progress,
         on_temperature_complete=_on_complete,
         skip_temperatures=skip_temps if skip_temps else None,
@@ -347,12 +351,16 @@ def load_hdf5(path: str | Path) -> SimulationResults:
             float, tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]
         ] = {}
         correlation_length: dict[float, np.ndarray[Any, Any]] = {}
+        n_cluster_flips: dict[float, int] = {}
         adaptive_diagnostics: dict[float, AdaptiveDiagnostics] = {}
 
         for group_name in sorted(temp_groups):
             grp = f[group_name]
             temp = float(grp.attrs["temperature"])
             temperatures.append(temp)
+            # Tolerant read: pre-P10 files carry no cluster-work attr.
+            if "n_cluster_flips" in grp.attrs:
+                n_cluster_flips[temp] = int(grp.attrs["n_cluster_flips"])
 
             if "energy" in grp:
                 energy[temp] = np.array(grp["energy"])
@@ -389,6 +397,7 @@ def load_hdf5(path: str | Path) -> SimulationResults:
             configurations=configurations,
             correlation_function=correlation_function if correlation_function else None,
             correlation_length=correlation_length if correlation_length else None,
+            n_cluster_flips=n_cluster_flips,
             adaptive_diagnostics=adaptive_diagnostics if adaptive_diagnostics else None,
             metadata=metadata,
         )
@@ -425,9 +434,11 @@ def save_json_summary(results: SimulationResults, path: str | Path) -> None:
 
     results_dict: dict[str, object] = {}
     for temp in results.temperatures:
-        entry: dict[str, float] = {}
+        entry: dict[str, float | str] = {}
 
-        def put(key: str, value: float, entry: dict[str, float] = entry) -> None:
+        def put(
+            key: str, value: float, entry: dict[str, float | str] = entry
+        ) -> None:
             # Non-finite values are omitted, never written as NaN
             # (invalid strict JSON) or null (P07 policy).
             if math.isfinite(value):
@@ -451,6 +462,9 @@ def save_json_summary(results: SimulationResults, path: str | Path) -> None:
             put("specific_heat_error", stats.specific_heat.error)
             put("susceptibility", stats.susceptibility.value)
             put("susceptibility_error", stats.susceptibility.error)
+            # Explicit convention label so the file is never ambiguous
+            # about which chi it records (#39, P10).
+            entry["susceptibility_kind"] = "connected"
             put("binder_cumulant", stats.binder_cumulant.value)
             put("binder_cumulant_error", stats.binder_cumulant.error)
         if (
@@ -719,6 +733,10 @@ def _write_temperature_group(f: Any, temp: float, results: SimulationResults) ->
     group_name = f"T={temp:.6f}"
     grp = f.create_group(group_name)
     grp.attrs["temperature"] = temp
+    # Added in P10 (additive attr, no schema bump): honest cluster-work
+    # record for cluster algorithms; absent from older files.
+    if temp in results.n_cluster_flips:
+        grp.attrs["n_cluster_flips"] = results.n_cluster_flips[temp]
 
     if temp in results.energy:
         grp.create_dataset("energy", data=results.energy[temp])
@@ -772,6 +790,9 @@ def _write_statistics_group(grp: Any, stats: ObservableStatistics) -> None:
     """
     st_grp = grp.create_group("statistics")
     st_grp.attrs["n_samples"] = stats.n_samples
+    # Explicit convention label so the file is never ambiguous about
+    # which chi it records (#39, P10).
+    st_grp.attrs["susceptibility_kind"] = "connected"
     if math.isfinite(stats.tau_int):
         st_grp.attrs["tau_int"] = stats.tau_int
     for name, estimate in (

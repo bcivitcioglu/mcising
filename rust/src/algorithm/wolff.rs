@@ -8,10 +8,23 @@ use rand::Rng;
 /// nearest neighbors with probability p_add = 1 - exp(-2 * beta * J1).
 /// The entire cluster is then flipped.
 ///
+/// One Wolff "sweep" is ONE cluster update — NOT `num_sites` flip
+/// attempts like Metropolis/Swendsen-Wang. A flip-budget sweep (build
+/// clusters until >= N spins flipped, then return) was implemented and
+/// rejected in P10: returning at that state-dependent stopping time
+/// size-biases the final cluster, over-selecting ordered states — the
+/// exact-enumeration oracle rejected it at 200-600 sigma (12.5%
+/// relative error in <e> at Tc on the 4x4 square). An unbiased
+/// equal-work scheme needs a cluster count frozen independently of the
+/// measured trajectory (tracked as future work); until then the work
+/// accounting below is honest and callers scale `n_sweeps` themselves.
+///
 /// Only valid for J1>0 with J2=J3=h=0 (ferromagnetic nearest-neighbor-only
 /// Hamiltonian); enforced at the boundary in `IsingSimulation::new_internal`.
 ///
-/// `accepted` in `SweepResult` is the cluster size (number of spins flipped).
+/// `accepted` in `SweepResult` is the cluster size; `attempted` equals
+/// it (rejection-free — every site added to the cluster is flipped);
+/// `cluster_flips` is 1.
 pub struct Wolff {
     /// Reusable visited flags (one per site).
     visited: Vec<bool>,
@@ -81,7 +94,8 @@ impl McAlgorithm for Wolff {
 
         SweepResult {
             accepted: cluster_size,
-            attempted: n,
+            attempted: cluster_size,
+            cluster_flips: 1,
         }
     }
 
@@ -121,7 +135,10 @@ mod tests {
     }
 
     #[test]
-    fn test_cluster_size_bounds() {
+    fn test_accounting_invariants() {
+        // Exact, threshold-free invariants of the honest accounting:
+        // one cluster per sweep, rejection-free (attempted == accepted),
+        // cluster within lattice bounds.
         let lattice = SquareLattice::new(8).unwrap();
         let n = lattice.num_sites();
         let mut rng = create_rng(42);
@@ -134,7 +151,8 @@ mod tests {
             let result = wolff.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng);
             assert!(result.accepted >= 1, "Cluster must have at least 1 site");
             assert!(result.accepted <= n, "Cluster cannot exceed lattice size");
-            assert_eq!(result.attempted, n);
+            assert_eq!(result.attempted, result.accepted, "Wolff is rejection-free");
+            assert_eq!(result.cluster_flips, 1, "One cluster per sweep");
         }
     }
 
@@ -188,16 +206,19 @@ mod tests {
         let mut wolff = Wolff::new(n);
         let beta_small = 0.01; // T = 100
 
-        // At high T, p_add ~ 2*beta*j1 ~ 0.02, clusters should be small
-        let mut total_cluster_size = 0;
-        let n_sweeps = 100;
-        for _ in 0..n_sweeps {
+        // At high T, p_add ~ 2*beta*j1 ~ 0.02, clusters should be small.
+        // accepted / cluster_flips is the true mean cluster size under
+        // the flip-budget sweep.
+        let mut total_flipped = 0;
+        let mut total_clusters = 0;
+        for _ in 0..100 {
             let result = wolff.sweep(
                 &mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, beta_small, &mut rng,
             );
-            total_cluster_size += result.accepted;
+            total_flipped += result.accepted;
+            total_clusters += result.cluster_flips;
         }
-        let avg_cluster_size = total_cluster_size as f64 / f64::from(n_sweeps);
+        let avg_cluster_size = total_flipped as f64 / total_clusters as f64;
         assert!(
             avg_cluster_size < n as f64 / 2.0,
             "At high T, average cluster size should be small, got {avg_cluster_size}"

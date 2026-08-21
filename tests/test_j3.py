@@ -45,7 +45,7 @@ class TestJ3Simulation:
         """Metropolis with J3 should lower energy at low T."""
         sim = IsingSimulation(8, 0.0, 0.0, 1.0, 0.0, 42)
         e_before = sim.energy()
-        sim.sweep(100, 10.0)  # beta=10 → low T
+        sim.sweep(100, temperature=0.1)  # deep in the ordered phase
         e_after = sim.energy()
         assert e_after <= e_before + 1e-10
 
@@ -53,7 +53,7 @@ class TestJ3Simulation:
         """Full J1-J2-J3 Hamiltonian: energy decreases at low T."""
         sim = IsingSimulation(8, 1.0, 0.3, 0.2, 0.0, 42)
         e_before = sim.energy()
-        sim.sweep(100, 10.0)
+        sim.sweep(100, temperature=0.1)
         e_after = sim.energy()
         assert e_after <= e_before + 1e-10
 
@@ -61,8 +61,8 @@ class TestJ3Simulation:
         """Same seed + J3 → identical results."""
         sim1 = IsingSimulation(8, 1.0, 0.0, 0.5, 0.0, 123)
         sim2 = IsingSimulation(8, 1.0, 0.0, 0.5, 0.0, 123)
-        sim1.sweep(10, 0.5)
-        sim2.sweep(10, 0.5)
+        sim1.sweep(10, temperature=2.0)
+        sim2.sweep(10, temperature=2.0)
         np.testing.assert_array_equal(sim1.get_spins(), sim2.get_spins())
 
     def test_j3_getter(self) -> None:

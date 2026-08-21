@@ -18,6 +18,7 @@ diagnostic block for every seed at T in (2.6, 2.269, 1.8).
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import mcising.simulation
@@ -25,7 +26,7 @@ import numpy as np
 import pytest
 from mcising import Simulation, SimulationConfig
 from mcising._core import IsingSimulation
-from mcising.config import AdaptiveConfig, LatticeConfig
+from mcising.config import AdaptiveConfig, ExecutionMode, LatticeConfig
 from mcising.constants import INF_TEMP
 from mcising.simulation import AdaptiveDiagnostics
 from mcising.statistics import tau_int as py_tau_int
@@ -78,8 +79,8 @@ class TestAnalyzedSeriesIsFixedTemperatureOnly:
         # block, with zero ramp samples in it. Threshold-free.
         twin = Simulation(config)
         schedule = np.linspace(INF_TEMP, 4.0, num=100).tolist()
-        twin._core.thermalize_with_diagnostics(schedule)
-        block = np.asarray(twin._core.extend_thermalization(100, 1.0 / 4.0))
+        twin._core.anneal(schedule)
+        block = np.asarray(twin._core.extend_thermalization(100, temperature=4.0))
         assert np.array_equal(recorded[0], block)
 
         # Every later analyzed series only extends the fixed-T block.
@@ -202,9 +203,8 @@ class TestStationaryTau:
         # [1.16, 1.38]; the 5.0 bound is > 3x the observed max while
         # still excluding the critical regime (tau >= 4.5 at Tc).
         sim = IsingSimulation(16, 1.0, 0.0, 0.0, 0.0, seed)
-        beta = 1.0 / 4.0
-        sim.sweep(500, beta)
-        series = np.asarray(sim.extend_thermalization(4000, beta))
+        sim.sweep(500, temperature=4.0)
+        series = np.asarray(sim.extend_thermalization(4000, temperature=4.0))
         analysis = IsingSimulation.analyze_thermalization_series(
             series, C_WINDOW, TAU_MULTIPLIER
         )
@@ -219,9 +219,8 @@ class TestStationaryTau:
         taus = {}
         for temp in (4.0, 2.269):
             sim = IsingSimulation(16, 1.0, 0.0, 0.0, 0.0, seed)
-            beta = 1.0 / temp
-            sim.sweep(500, beta)
-            series = np.asarray(sim.extend_thermalization(4000, beta))
+            sim.sweep(500, temperature=temp)
+            series = np.asarray(sim.extend_thermalization(4000, temperature=temp))
             analysis = IsingSimulation.analyze_thermalization_series(
                 series, C_WINDOW, TAU_MULTIPLIER
             )
@@ -259,6 +258,52 @@ class TestStationaryTau:
         assert abs(rust - theory) / theory < 0.25
         assert abs(python - theory) / theory < 0.25
         assert abs(rust - python) / max(rust, python) < 0.25
+
+
+class TestAdaptiveOverrideWarnings:
+    """P10: settings that adaptive mode silently ignores now warn.
+
+    "Explicit" is approximated as "differs from the default" — a frozen
+    dataclass cannot record whether a field was passed.
+    """
+
+    @staticmethod
+    def _config(**config_kwargs: Any) -> SimulationConfig:
+        return SimulationConfig(
+            lattice=LatticeConfig(size=8),
+            temperatures=(4.0,),
+            n_thermalization=100,
+            adaptive=AdaptiveConfig(
+                enabled=True,
+                min_thermalization_sweeps=100,
+                min_independent_samples=20,
+            ),
+            seed=42,
+            **config_kwargs,
+        )
+
+    def test_explicit_n_sweeps_warns(self) -> None:
+        config = self._config(n_sweeps=500)
+        with pytest.warns(UserWarning, match="adaptive mode ignores n_sweeps=500"):
+            Simulation(config).run(show_progress=False)
+
+    def test_explicit_measurement_interval_warns(self) -> None:
+        config = self._config(measurement_interval=25)
+        with pytest.warns(UserWarning, match="measurement_interval=25"):
+            Simulation(config).run(show_progress=False)
+
+    def test_default_adaptive_config_does_not_warn(self) -> None:
+        config = self._config()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            Simulation(config).run(show_progress=False)
+
+    def test_adaptive_in_independent_mode_warns(self) -> None:
+        # Companion trap of the same shape: adaptive is silently ignored
+        # outside cooldown mode.
+        config = self._config(mode=ExecutionMode.INDEPENDENT)
+        with pytest.warns(UserWarning, match="only honored in cooldown"):
+            Simulation(config).run(show_progress=False)
 
 
 class TestAdaptiveEndToEnd:

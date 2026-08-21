@@ -33,7 +33,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -63,6 +63,9 @@ __all__ = [
 
 FloatArray = NDArray[np.float64]
 Samples = Sequence[float] | FloatArray
+#: Susceptibility convention: "connected" (default since P10, #39) or
+#: the pre-1.0 "signed" form.
+SusceptibilityKind = Literal["connected", "signed"]
 
 #: Minimum number of blocks a blocking level must hold to be used.
 MIN_BLOCKS: Final[int] = 8
@@ -269,20 +272,31 @@ def specific_heat(
 
 
 def susceptibility(
-    magnetization: Samples, *, temperature: float, num_sites: float
+    magnetization: Samples,
+    *,
+    temperature: float,
+    num_sites: float,
+    kind: SusceptibilityKind = "connected",
 ) -> float:
     """Susceptibility per site from a per-site magnetization series.
 
-    ``chi = N * Var(m) / T`` over the *signed* magnetization. In the
-    ordered phase of a finite system the signed variance is inflated by
-    global sign flips; the connected form ``Var(|m|)`` is a different
-    convention with much smaller values near and below Tc. Changing the
-    convention is an estimator-correctness decision deferred past P08 —
-    both ``magnetization`` and ``abs_magnetization`` estimates are
-    exposed in :class:`ObservableStatistics` so either can be formed.
+    The default ``kind="connected"`` is
+    ``chi = N * Var(|m|) / T = N * (<m**2> - <|m|>**2) / T``, the
+    standard finite-size-scaling form (#39, breaking default since
+    P10): at h=0 on a finite lattice the signed magnetization flips
+    sign globally, so near and below Tc ``Var(m)`` is dominated by the
+    flip dynamics rather than the physical fluctuations (~14.5x
+    inflation at Tc on 16x16). ``kind="signed"`` selects the pre-1.0
+    convention ``N * Var(m) / T`` — the form that matches a full-trace
+    exact enumeration, where ``<m> = 0`` by symmetry.
     """
+    if kind not in ("connected", "signed"):
+        msg = f"kind must be 'connected' or 'signed', got {kind!r}"
+        raise ValueError(msg)
     m = np.asarray(magnetization, dtype=np.float64).ravel()
-    return float(num_sites * np.var(m) / temperature)
+    if kind == "signed":
+        return float(num_sites * np.var(m) / temperature)
+    return float(num_sites * np.var(np.abs(m)) / temperature)
 
 
 def binder_cumulant(magnetization: Samples) -> float:

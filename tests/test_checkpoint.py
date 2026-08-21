@@ -147,18 +147,18 @@ class TestRngState:
         from mcising._core import IsingSimulation
 
         sim = IsingSimulation(4, 1.0, 0.0, 0.0, 0.0, 42)
-        sim.sweep(10, 0.5)
+        sim.sweep(10, temperature=2.0)
 
         rng_state = sim.get_rng_state()
         spins = np.array(sim.get_spins())
 
-        sim.sweep(5, 0.5)
+        sim.sweep(5, temperature=2.0)
         energy_original = sim.energy()
 
         # Restore and redo
         sim.set_spins(spins)
         sim.set_rng_state(rng_state)
-        sim.sweep(5, 0.5)
+        sim.sweep(5, temperature=2.0)
         energy_restored = sim.energy()
 
         assert energy_original == energy_restored

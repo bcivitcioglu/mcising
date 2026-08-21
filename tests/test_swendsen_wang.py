@@ -76,7 +76,7 @@ class TestSwendsenWangSimulation:
             seed=42,
         )
         sim = Simulation(config)
-        result = sim.sweep(2.269, n_sweeps=10)
+        result = sim.sweep(10, temperature=2.269)
         assert "energy" in result
         assert "magnetization" in result
         assert "acceptance_rate" in result

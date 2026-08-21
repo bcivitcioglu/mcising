@@ -10,7 +10,7 @@ import mcising
 import numpy as np
 import pytest
 from mcising._provenance import HDF5_SCHEMA_VERSION
-from mcising.config import ExecutionMode, LatticeConfig, SimulationConfig
+from mcising.config import Algorithm, ExecutionMode, LatticeConfig, SimulationConfig
 from mcising.exceptions import ConfigurationError
 from mcising.io import _config_to_json, load_hdf5, save_hdf5, save_json_summary
 from mcising.simulation import Simulation
@@ -74,6 +74,35 @@ class TestHDF5:
         path = tmp_path / "subdir" / "deep" / "test.h5"
         save_hdf5(sim_results, path)
         assert path.exists()
+
+
+class TestNClusterFlips:
+    """P10: honest cluster-work record, round-tripped as an additive attr."""
+
+    def test_metropolis_reports_zero(self, sim_results) -> None:
+        for temp in sim_results.temperatures:
+            assert sim_results.n_cluster_flips[temp] == 0
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_wolff_counts_one_cluster_per_measured_sweep(
+        self, mode: ExecutionMode
+    ) -> None:
+        # Wolff: exactly one cluster per sweep, thermalization excluded,
+        # so the count equals the measured production sweeps.
+        config = _small_config(algorithm=Algorithm.WOLFF, mode=mode)
+        results = Simulation(config).run(show_progress=False)
+        for temp in results.temperatures:
+            n_measured = len(results.energy[temp]) * config.measurement_interval
+            assert results.n_cluster_flips[temp] == n_measured
+
+    def test_roundtrip_preserves_cluster_flips(self, tmp_path: Path) -> None:
+        config = _small_config(algorithm=Algorithm.WOLFF)
+        results = Simulation(config).run(show_progress=False)
+        path = tmp_path / "wolff.h5"
+        save_hdf5(results, path)
+        loaded = load_hdf5(path)
+        assert loaded.n_cluster_flips == results.n_cluster_flips
+        assert loaded.n_cluster_flips  # non-empty
 
 
 class TestJSON:

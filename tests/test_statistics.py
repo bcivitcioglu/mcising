@@ -189,6 +189,48 @@ class TestDeterministicAnchors:
             assert abs(est.value) <= 4.0 * est.error, f"seed={seed}"
 
 
+class TestSusceptibilityKind:
+    """P10 (#39): connected chi is the default; signed stays selectable."""
+
+    def test_connected_default_equals_var_of_abs(self) -> None:
+        # Sign-flipping ordered series: m = +/- 0.9 with tiny noise.
+        rng = np.random.default_rng(42)
+        m = 0.9 * np.tile([1.0, -1.0], 512) + 0.01 * rng.standard_normal(1024)
+        chi_default = susceptibility(m, temperature=2.0, num_sites=256)
+        chi_connected = susceptibility(
+            m, temperature=2.0, num_sites=256, kind="connected"
+        )
+        assert chi_default == chi_connected
+        assert chi_default == pytest.approx(256 * np.var(np.abs(m)) / 2.0)
+
+    def test_signed_kind_is_pre_p10_form(self) -> None:
+        rng = np.random.default_rng(42)
+        m = 0.9 * np.tile([1.0, -1.0], 512) + 0.01 * rng.standard_normal(1024)
+        chi_signed = susceptibility(m, temperature=2.0, num_sites=256, kind="signed")
+        assert chi_signed == pytest.approx(256 * np.var(m) / 2.0)
+        # The whole point of #39: on a sign-flipping ordered series the
+        # signed form is inflated by orders of magnitude.
+        chi_connected = susceptibility(m, temperature=2.0, num_sites=256)
+        assert chi_signed > 100 * chi_connected
+
+    def test_conventions_agree_on_positive_series(self) -> None:
+        # Without sign flips, Var(|m|) == Var(m) exactly.
+        rng = np.random.default_rng(7)
+        m = 0.5 + 0.01 * rng.standard_normal(512)
+        chi_c = susceptibility(m, temperature=2.0, num_sites=64)
+        chi_s = susceptibility(m, temperature=2.0, num_sites=64, kind="signed")
+        assert chi_c == pytest.approx(chi_s, rel=1e-12)
+
+    def test_invalid_kind_raises(self) -> None:
+        with pytest.raises(ValueError, match="kind must be"):
+            susceptibility(
+                [0.1, 0.2],
+                temperature=2.0,
+                num_sites=4,
+                kind="bogus",  # type: ignore[arg-type]
+            )
+
+
 class TestBlockingCurve:
     def test_structure_and_naive_anchor(self) -> None:
         x = _ar1_series(0.8, 4096, 42)

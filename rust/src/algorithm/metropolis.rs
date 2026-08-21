@@ -343,6 +343,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -385,6 +386,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -427,6 +429,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -454,6 +457,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -491,6 +495,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -528,6 +533,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -565,6 +571,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -610,6 +617,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -655,6 +663,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -700,6 +709,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -745,6 +755,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -790,6 +801,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -835,6 +847,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -886,6 +899,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 
@@ -937,6 +951,7 @@ impl Metropolis {
         SweepResult {
             accepted,
             attempted: n,
+            cluster_flips: 0,
         }
     }
 }
