@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from enum import Enum
@@ -104,7 +105,7 @@ class LatticeConfig:
     def __post_init__(self) -> None:
         if self.size < 2:
             msg = f"Lattice size must be >= 2, got {self.size}"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if (
             self.lattice_type in (LatticeType.TRIANGULAR, LatticeType.HONEYCOMB)
             and self.size % 2 != 0
@@ -120,16 +121,16 @@ class LatticeConfig:
             )
         if not isinstance(self.j1, (int, float)) or not _is_finite(self.j1):
             msg = f"j1 must be a finite number, got {self.j1}"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if not isinstance(self.j2, (int, float)) or not _is_finite(self.j2):
             msg = f"j2 must be a finite number, got {self.j2}"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if not isinstance(self.j3, (int, float)) or not _is_finite(self.j3):
             msg = f"j3 must be a finite number, got {self.j3}"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if not isinstance(self.h, (int, float)) or not _is_finite(self.h):
             msg = f"h must be a finite number, got {self.h}"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
 
     @property
     def num_sites(self) -> int:
@@ -231,26 +232,26 @@ class AdaptiveConfig:
                 "min_thermalization_sweeps must be >= 1, "
                 f"got {self.min_thermalization_sweeps}"
             )
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if self.max_thermalization_sweeps < self.min_thermalization_sweeps:
             msg = (
                 f"max_thermalization_sweeps "
                 f"({self.max_thermalization_sweeps}) must be >= "
                 f"min ({self.min_thermalization_sweeps})"
             )
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if self.c_window <= 0:
             msg = f"c_window must be > 0, got {self.c_window}"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if self.min_independent_samples < 1:
             msg = (
                 "min_independent_samples must be >= 1, "
                 f"got {self.min_independent_samples}"
             )
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if self.tau_multiplier <= 0:
             msg = f"tau_multiplier must be > 0, got {self.tau_multiplier}"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> AdaptiveConfig:
@@ -332,16 +333,16 @@ class SimulationConfig:
     def __post_init__(self) -> None:
         if self.n_sweeps < 1:
             msg = f"n_sweeps must be >= 1, got {self.n_sweeps}"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if self.n_thermalization < 0:
             msg = f"n_thermalization must be >= 0, got {self.n_thermalization}"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if self.measurement_interval < 1:
             msg = f"measurement_interval must be >= 1, got {self.measurement_interval}"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if self.swap_interval < 1:
             msg = f"swap_interval must be >= 1, got {self.swap_interval}"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if (
             self.mode == ExecutionMode.PARALLEL_TEMPERING
             and self.measurement_interval % self.swap_interval != 0
@@ -361,10 +362,10 @@ class SimulationConfig:
         for temp in self.temperatures:
             if temp <= 0 or not _is_finite(temp):
                 msg = f"All temperatures must be positive and finite, got {temp}"
-                raise ValueError(msg)
+                raise ConfigurationError(msg)
         if len(self.temperatures) == 0:
             msg = "At least one temperature must be specified"
-            raise ValueError(msg)
+            raise ConfigurationError(msg)
         if self.algorithm in (Algorithm.WOLFF, Algorithm.SWENDSEN_WANG):
             has_frustration = (
                 self.lattice.j2 != 0.0
@@ -432,8 +433,6 @@ class SimulationConfig:
 
 def _is_finite(value: float) -> bool:
     """Check if a float is finite (not inf, -inf, or nan)."""
-    import math
-
     return math.isfinite(value)
 
 

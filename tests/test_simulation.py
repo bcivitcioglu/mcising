@@ -315,6 +315,25 @@ class TestRunSemantics:
         np.testing.assert_array_equal(sim.spins, initial)
 
 
+class TestToDataframe:
+    """P11: first coverage for to_dataframe (pandas = `dataframe` extra)."""
+
+    def test_dataframe_has_row_per_temperature(self) -> None:
+        pd = pytest.importorskip("pandas")
+        config = SimulationConfig(
+            lattice=LatticeConfig(size=4),
+            temperatures=(3.0, 2.0),
+            n_sweeps=20,
+            measurement_interval=10,
+        )
+        results = Simulation(config).run(show_progress=False)
+        df = results.to_dataframe()
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) == 2
+        assert {"T", "E_mean", "chi", "chi_err", "U4", "samples"} <= set(df.columns)
+        assert sorted(df["T"]) == [2.0, 3.0]
+
+
 class TestResultsStatistics:
     """B10 (#21): every quoted observable carries an uncertainty."""
 

@@ -12,8 +12,6 @@ TC_CUBIC_3D: Final[float] = 4.5115  # High-precision MC estimate
 # High temperature used for cool-down initialization
 INF_TEMP: Final[float] = 100.0
 
-# Correlation function threshold for truncation
-CORRELATION_THRESHOLD: Final[float] = 1e-8
 
 # Default simulation parameters
 DEFAULT_LATTICE_SIZE: Final[int] = 10

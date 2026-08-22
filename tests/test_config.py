@@ -39,19 +39,19 @@ class TestLatticeConfig:
             cfg.size = 20  # type: ignore[misc]
 
     def test_invalid_size_raises(self) -> None:
-        with pytest.raises(ValueError, match="Lattice size must be >= 2"):
+        with pytest.raises(ConfigurationError, match="Lattice size must be >= 2"):
             LatticeConfig(size=1)
 
     def test_invalid_j1_raises(self) -> None:
-        with pytest.raises(ValueError, match="j1"):
+        with pytest.raises(ConfigurationError, match="j1"):
             LatticeConfig(j1=math.inf)
 
     def test_invalid_j2_raises(self) -> None:
-        with pytest.raises(ValueError, match="j2"):
+        with pytest.raises(ConfigurationError, match="j2"):
             LatticeConfig(j2=float("nan"))
 
     def test_invalid_h_raises(self) -> None:
-        with pytest.raises(ValueError, match="h"):
+        with pytest.raises(ConfigurationError, match="h"):
             LatticeConfig(h=float("-inf"))
 
 
@@ -70,28 +70,68 @@ class TestSimulationConfig:
             cfg.seed = 99  # type: ignore[misc]
 
     def test_invalid_n_sweeps(self) -> None:
-        with pytest.raises(ValueError, match="n_sweeps"):
+        with pytest.raises(ConfigurationError, match="n_sweeps"):
             SimulationConfig(n_sweeps=0)
 
     def test_invalid_n_thermalization(self) -> None:
-        with pytest.raises(ValueError, match="n_thermalization"):
+        with pytest.raises(ConfigurationError, match="n_thermalization"):
             SimulationConfig(n_thermalization=-1)
 
     def test_invalid_measurement_interval(self) -> None:
-        with pytest.raises(ValueError, match="measurement_interval"):
+        with pytest.raises(ConfigurationError, match="measurement_interval"):
             SimulationConfig(measurement_interval=0)
 
     def test_invalid_temperature_zero(self) -> None:
-        with pytest.raises(ValueError, match="temperature"):
+        with pytest.raises(ConfigurationError, match="temperature"):
             SimulationConfig(temperatures=(0.0,))
 
     def test_invalid_temperature_negative(self) -> None:
-        with pytest.raises(ValueError, match="temperature"):
+        with pytest.raises(ConfigurationError, match="temperature"):
             SimulationConfig(temperatures=(-1.0,))
 
     def test_multiple_temperatures(self) -> None:
         cfg = SimulationConfig(temperatures=(3.0, 2.269, 1.5))
         assert len(cfg.temperatures) == 3
+
+
+class TestAdaptiveConfigValidation:
+    """P11: first coverage for the AdaptiveConfig validation sites."""
+
+    def test_min_thermalization_below_one_raises(self) -> None:
+        with pytest.raises(ConfigurationError, match="min_thermalization_sweeps"):
+            AdaptiveConfig(min_thermalization_sweeps=0)
+
+    def test_max_below_min_thermalization_raises(self) -> None:
+        with pytest.raises(ConfigurationError, match="max_thermalization_sweeps"):
+            AdaptiveConfig(min_thermalization_sweeps=500, max_thermalization_sweeps=100)
+
+    def test_nonpositive_c_window_raises(self) -> None:
+        with pytest.raises(ConfigurationError, match="c_window"):
+            AdaptiveConfig(c_window=0.0)
+
+    def test_min_independent_samples_below_one_raises(self) -> None:
+        with pytest.raises(ConfigurationError, match="min_independent_samples"):
+            AdaptiveConfig(min_independent_samples=0)
+
+    def test_nonpositive_tau_multiplier_raises(self) -> None:
+        with pytest.raises(ConfigurationError, match="tau_multiplier"):
+            AdaptiveConfig(tau_multiplier=-1.0)
+
+
+class TestExceptionContract:
+    """P11: ConfigurationError is a ValueError.
+
+    Pre-1.0 validation raised plain ValueError and the Rust core still
+    surfaces ValueError, so `except ValueError` must keep catching
+    every invalid-configuration error from both layers.
+    """
+
+    def test_configuration_error_is_value_error(self) -> None:
+        assert issubclass(ConfigurationError, ValueError)
+
+    def test_except_value_error_still_catches_validation(self) -> None:
+        with pytest.raises(ValueError, match="Lattice size"):
+            LatticeConfig(size=1)
 
 
 class TestEnums:

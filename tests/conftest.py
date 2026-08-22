@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import matplotlib
 
-# Headless backend for plotting tests: CI runs on macOS/Windows cells
-# with no display, and importing mcising already pulls in pyplot.
+# Headless backend for the plotting tests: CI runs on macOS/Windows
+# cells with no display. Since P11 `import mcising` no longer pulls in
+# matplotlib (optional `plot` extra, lazy exports) — the dev env
+# installs it so the plotting suite always runs.
 matplotlib.use("Agg")
 
 import numpy as np

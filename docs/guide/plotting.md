@@ -2,6 +2,13 @@
 
 mcising includes plotting functions for all key observables, lattice visualization, and a bulk export tool. Every plot function accepts either a `SimulationResults` object or an HDF5 file path.
 
+!!! note "Optional dependency"
+    Since 0.26.0 matplotlib is the optional `plot` extra — install with
+    `pip install 'mcising[plot]'`. The core simulation API works without
+    it; accessing any plotting function without matplotlib raises an
+    `ImportError` naming the extra. (`pandas`, used only by
+    `SimulationResults.to_dataframe`, is the `dataframe` extra.)
+
 ## Thermodynamic quantities
 
 Each function plots one quantity vs temperature with real error bars:

@@ -7,8 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-22
+
 ### Breaking changes in 1.0
 
+- **matplotlib is now the optional `plot` extra** (`pip install
+  'mcising[plot]'`): `import mcising` no longer imports matplotlib, and
+  the plotting exports resolve lazily (PEP 562), raising a friendly
+  `ImportError` naming the extra when matplotlib is absent. pandas —
+  used only by `SimulationResults.to_dataframe` — is now declared as
+  the `dataframe` extra (it was previously undeclared entirely).
+- **`plot_observables` removed** (legacy alias): use `plot_energy` /
+  `plot_magnetization` (or the other per-quantity functions) directly.
+- **`ConfigurationError` replaces plain `ValueError`** in every config
+  validation site, and `ConfigurationError` is now ALSO a `ValueError`
+  subclass — existing `except ValueError` code keeps working, and it
+  coherently covers the Rust-boundary errors (which remain
+  `ValueError`).
+- **CLI enum options are typed**: `--lattice`, `--algorithm`, and
+  `--mode` are real choice options; an invalid value is an exit-2 usage
+  error listing the valid choices instead of a `ValueError` traceback.
+- **`bench_peapods_{triangular,cubic,wolff,sw}` removed**: one
+  parametrized `bench_peapods(geometry=..., dim=..., temperature=...,
+  cluster_mode=...)` replaces the four near-copies.
+- Removed the unused `CORRELATION_THRESHOLD` constant and the
+  permanently-disabled comparison branch of the CLI scaling benchmark
+  (~60 dead lines).
 - **One sweep signature, one temperature unit**: both
   `Simulation.sweep` and `mcising._core.IsingSimulation.sweep` are now
   `sweep(n_sweeps=1, *, temperature)`. The core previously took
@@ -55,6 +79,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CLI parity flags for documented workflows: `--swap-interval`
+  (parallel tempering — previously documented as tunable but stuck at
+  1 via the CLI), `--no-store-configs`, and the adaptive knobs
+  `--min-therm`, `--max-therm`, `--c-window`, `--tau-multiplier`. CLI
+  defaults now come from `mcising.constants` instead of re-hardcoded
+  literals.
+- "Stability & versioning" documentation page: the public-API
+  contract, the post-1.0 deprecation policy, file-format compatibility
+  rules, and the exception contract.
+- First test coverage for `AdaptiveConfig` validation and
+  `SimulationResults.to_dataframe`.
 - `SimulationResults.n_cluster_flips`: per-temperature cluster-flip
   count during measurement sweeps (0 for Metropolis), saved to HDF5 as
   an additive per-temperature attribute (tolerant read; no schema
@@ -70,6 +105,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The cubic critical temperature was displayed inconsistently
+  (`Tc=4.512` vs `4.5115`) — benchmark cases now use the
+  `mcising.constants` Tc values (`TC_TRIANGULAR_2D`, `TC_HONEYCOMB_2D`,
+  `TC_CUBIC_3D` are wired in rather than duplicated as literals).
+- `bench_peapods` docstring referenced a nonexistent
+  `uv sync --group benchmark`.
 - `mcising._core.pyi` now matches the runtime module exactly
   (verified by stubtest): read-only getters are properties, `__new__`
   replaces the fictitious `__init__`, and every method signature is

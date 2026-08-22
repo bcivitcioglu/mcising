@@ -83,14 +83,16 @@ save_json_summary(results, "summary.json")
 
 ## Plot the phase transition
 
-```python
-from mcising import plot_observables
+Plotting needs the `plot` extra (`pip install 'mcising[plot]'`):
 
-fig = plot_observables(results)
-fig.savefig("phase_transition.png")
+```python
+from mcising import plot_energy, plot_magnetization
+
+plot_energy(results).savefig("energy.png")
+plot_magnetization(results).savefig("magnetization.png")
 ```
 
-This produces a plot of energy and magnetization vs temperature with error bars.
+This produces plots of energy and magnetization vs temperature with error bars.
 
 ## Use the CLI instead
 

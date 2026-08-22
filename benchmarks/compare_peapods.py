@@ -12,16 +12,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from functools import partial
 
 from mcising.benchmarks import (
     BenchmarkResult,
     bench_mcising,
     bench_peapods,
-    bench_peapods_cubic,
-    bench_peapods_sw,
-    bench_peapods_triangular,
-    bench_peapods_wolff,
 )
+from mcising.constants import TC_CUBIC_3D, TC_SQUARE_2D, TC_TRIANGULAR_2D
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -41,39 +39,48 @@ def main() -> None:
     seed = args.seed
     cubic_size = min(lattice_size, 16)
 
+    # One parametrized peapods runner (P11) replaces the old per-case
+    # near-copies; each case binds its geometry/temperature/cluster mode.
     cases: list[tuple[str, str, str, int, float, object]] = [
         (
             "Metropolis: Square",
             "square",
             "metropolis",
             lattice_size,
-            2.269,
-            bench_peapods,
+            TC_SQUARE_2D,
+            partial(bench_peapods, temperature=TC_SQUARE_2D),
         ),
         (
             "Metropolis: Triangular",
             "triangular",
             "metropolis",
             lattice_size,
-            3.641,
-            bench_peapods_triangular,
+            TC_TRIANGULAR_2D,
+            partial(bench_peapods, geometry="triangular", temperature=TC_TRIANGULAR_2D),
         ),
         (
             "Metropolis: Cubic",
             "cubic",
             "metropolis",
             cubic_size,
-            4.5115,
-            bench_peapods_cubic,
+            TC_CUBIC_3D,
+            partial(bench_peapods, dim=3, temperature=TC_CUBIC_3D),
         ),
-        ("Wolff: Square", "square", "wolff", lattice_size, 2.269, bench_peapods_wolff),
+        (
+            "Wolff: Square",
+            "square",
+            "wolff",
+            lattice_size,
+            TC_SQUARE_2D,
+            partial(bench_peapods, temperature=TC_SQUARE_2D, cluster_mode="wolff"),
+        ),
         (
             "Swendsen-Wang: Square",
             "square",
             "swendsen_wang",
             lattice_size,
-            2.269,
-            bench_peapods_sw,
+            TC_SQUARE_2D,
+            partial(bench_peapods, temperature=TC_SQUARE_2D, cluster_mode="sw"),
         ),
     ]
 
@@ -88,7 +95,7 @@ def main() -> None:
 
     for title, lat_type, algorithm, size, temp, peapods_fn in cases:
         dim = f"{size}x{size}" if lat_type != "cubic" else f"{size}^3"
-        console.print(f"\n[bold blue]{title}[/bold blue] ({dim}, T={temp})")
+        console.print(f"\n[bold blue]{title}[/bold blue] ({dim}, T={temp:.4g})")
 
         table = Table(border_style="green", show_header=True)
         table.add_column("Implementation", style="bold")

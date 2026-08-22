@@ -17,6 +17,63 @@ from mcising.cli import app  # isort: skip
 runner = CliRunner()
 
 
+class TestRunOptionValidation:
+    """P11: enum-typed options give exit-2 usage errors, not tracebacks."""
+
+    def test_bogus_lattice_exits_2_with_usage_error(self) -> None:
+        result = runner.invoke(app, ["run", "--lattice", "bogus"])
+        assert result.exit_code == 2
+        assert "bogus" in result.output
+
+    def test_bogus_algorithm_exits_2(self) -> None:
+        result = runner.invoke(app, ["run", "--algorithm", "bogus"])
+        assert result.exit_code == 2
+
+    def test_bogus_mode_exits_2(self) -> None:
+        result = runner.invoke(app, ["run", "--mode", "bogus"])
+        assert result.exit_code == 2
+
+    def test_run_help_shows_new_flags(self) -> None:
+        result = runner.invoke(app, ["run", "--help"], env={"COLUMNS": "200"})
+        assert result.exit_code == 0
+        for flag in (
+            "--swap-interval",
+            "--c-window",
+            "--tau-multiplier",
+            "--min-therm",
+            "--max-therm",
+            "--no-store-configs",
+        ):
+            assert flag in result.output, f"missing {flag} in run --help"
+
+    def test_swap_interval_plumbs_to_config(self, tmp_path: Path) -> None:
+        out = tmp_path / "pt.h5"
+        result = runner.invoke(
+            app,
+            [
+                "run", "-L", "4", "-T", "3.0", "-T", "2.5",
+                "--mode", "parallel_tempering",
+                "--swap-interval", "2", "--interval", "4",
+                "--sweeps", "8", "--therm", "4", "-o", str(out),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert out.exists()
+
+    def test_incompatible_swap_interval_surfaces_config_error(self) -> None:
+        # swap_interval must divide measurement_interval (B5); the flag
+        # plumbing is proven by the validation firing.
+        result = runner.invoke(
+            app,
+            [
+                "run", "--mode", "parallel_tempering",
+                "--swap-interval", "3", "--interval", "10",
+            ],
+        )
+        assert result.exit_code != 0
+        assert isinstance(result.exception, mcising.ConfigurationError)
+
+
 class TestInfo:
     def test_info_prints_installed_version(self) -> None:
         # Gate: `mcising info` reports the pyproject version — i.e. the
