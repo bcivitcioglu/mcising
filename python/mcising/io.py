@@ -9,6 +9,7 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Final, cast
 
+import h5py
 import numpy as np
 
 from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit, package_version
@@ -67,7 +68,6 @@ def save_hdf5(results: SimulationResults, path: str | Path) -> None:
     path : str or Path
         Output file path (should end in .h5 or .hdf5).
     """
-    import h5py
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,7 +88,6 @@ def init_checkpoint_file(path: str | Path, results: SimulationResults) -> None:
     results : SimulationResults
         Results object (used for metadata extraction).
     """
-    import h5py
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -115,7 +114,6 @@ def save_temperature_group(
     results : SimulationResults
         Results object containing data for this temperature.
     """
-    import h5py
 
     with h5py.File(path, "a") as f:
         _write_temperature_group(f, temperature, results)
@@ -134,7 +132,6 @@ def load_completed_temperatures(path: str | Path) -> set[float]:
     set[float]
         Temperatures that have already been saved.
     """
-    import h5py
 
     path = Path(path)
     with h5py.File(path, "r") as f:
@@ -290,7 +287,6 @@ def checkpoint_run(
         results.temperatures.sort(reverse=True)
 
     # Update elapsed_seconds in the checkpoint file
-    import h5py
 
     if path.exists() and "elapsed_seconds" in results.metadata:
         elapsed = float(cast(float, results.metadata["elapsed_seconds"]))
@@ -328,7 +324,6 @@ def load_hdf5(path: str | Path) -> SimulationResults:
     ConfigurationError
         If the file's metadata schema is newer than this mcising supports.
     """
-    import h5py
 
     path = Path(path)
 
@@ -436,9 +431,7 @@ def save_json_summary(results: SimulationResults, path: str | Path) -> None:
     for temp in results.temperatures:
         entry: dict[str, float | str] = {}
 
-        def put(
-            key: str, value: float, entry: dict[str, float | str] = entry
-        ) -> None:
+        def put(key: str, value: float, entry: dict[str, float | str] = entry) -> None:
             # Non-finite values are omitted, never written as NaN
             # (invalid strict JSON) or null (P07 policy).
             if math.isfinite(value):
@@ -490,7 +483,6 @@ def _load_stored_config(path: str | Path) -> dict[str, Any] | None:
     record must not silently disable the resume-mismatch check — or when
     the file's metadata schema is newer than this mcising supports.
     """
-    import h5py
 
     with h5py.File(path, "r") as f:
         if "metadata" not in f:
@@ -551,7 +543,6 @@ def _check_resume_config(path: str | Path, config: SimulationConfig) -> None:
 
 def _save_simulation_state(path: str | Path, sim: Simulation) -> None:
     """Save the simulation's spin and RNG state to the checkpoint file."""
-    import h5py
 
     with h5py.File(path, "a") as f:
         if "sim_state" in f:
@@ -564,7 +555,6 @@ def _save_simulation_state(path: str | Path, sim: Simulation) -> None:
 
 def _restore_simulation_state(path: str | Path, sim: Simulation) -> None:
     """Restore the simulation's spin and RNG state from a checkpoint file."""
-    import h5py
 
     with h5py.File(path, "r") as f:
         if "sim_state" not in f:

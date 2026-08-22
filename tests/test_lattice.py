@@ -99,8 +99,9 @@ class TestOddSizeBoundary:
     @pytest.mark.parametrize("lattice_name", ["triangular", "honeycomb"])
     def test_core_constructor_rejects_odd_size(self, lattice_name: str) -> None:
         # Defense in depth for direct _core use, which bypasses
-        # LatticeConfig. Rust errors currently map to ValueError, not
-        # ConfigurationError (unified in the P10/P11 API phases).
+        # LatticeConfig. Rust boundary errors are ValueError; the P11
+        # unification made ConfigurationError a ValueError subclass, so
+        # `except ValueError` covers both layers.
         with pytest.raises(ValueError, match="requires even size L"):
             IsingSimulation(5, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", lattice_name)
 

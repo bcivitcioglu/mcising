@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Final
 
+import numpy as np
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -22,9 +23,20 @@ from mcising.config import (
     SimulationConfig,
 )
 from mcising.constants import (
+    DEFAULT_ADAPTIVE_C_WINDOW,
+    DEFAULT_ADAPTIVE_MAX_THERMALIZATION,
+    DEFAULT_ADAPTIVE_MAX_TOTAL_SWEEPS,
+    DEFAULT_ADAPTIVE_MIN_INDEPENDENT_SAMPLES,
+    DEFAULT_ADAPTIVE_MIN_THERMALIZATION,
+    DEFAULT_ADAPTIVE_TAU_MULTIPLIER,
     DEFAULT_MEASUREMENT_INTERVAL,
     DEFAULT_N_SWEEPS,
     DEFAULT_N_THERMALIZATION,
+    DEFAULT_SEED,
+    TC_CUBIC_3D,
+    TC_HONEYCOMB_2D,
+    TC_SQUARE_2D,
+    TC_TRIANGULAR_2D,
 )
 from mcising.io import checkpoint_run, save_hdf5, save_json_summary
 from mcising.simulation import Simulation
@@ -76,12 +88,12 @@ def run(
         ),
     ] = 16,
     lattice: Annotated[
-        str,
+        LatticeType,
         typer.Option(
             "--lattice",
-            help="Lattice: square, triangular, chain, honeycomb, cubic.",
+            help="Lattice geometry.",
         ),
-    ] = "square",
+    ] = LatticeType.SQUARE,
     j1: Annotated[float, typer.Option(help="Nearest-neighbor coupling.")] = 1.0,
     j2: Annotated[float, typer.Option(help="Next-nearest-neighbor coupling.")] = 0.0,
     j3: Annotated[float, typer.Option(help="Third-nearest-neighbor coupling.")] = 0.0,
@@ -106,7 +118,21 @@ def run(
     measurement_interval: Annotated[
         int, typer.Option("--interval", help="Measurement interval.")
     ] = DEFAULT_MEASUREMENT_INTERVAL,
-    seed: Annotated[int, typer.Option(help="Random seed.")] = 42,
+    seed: Annotated[int, typer.Option(help="Random seed.")] = DEFAULT_SEED,
+    swap_interval: Annotated[
+        int,
+        typer.Option(
+            "--swap-interval",
+            help="Sweeps between replica-swap attempts (parallel tempering).",
+        ),
+    ] = 1,
+    store_configs: Annotated[
+        bool,
+        typer.Option(
+            "--store-configs/--no-store-configs",
+            help="Store spin configurations at each measurement.",
+        ),
+    ] = True,
     correlation: Annotated[
         bool,
         typer.Option("--correlation", help="Compute correlation function."),
@@ -150,28 +176,58 @@ def run(
             "--min-samples",
             help="Target independent samples per temperature (adaptive mode).",
         ),
-    ] = 100,
+    ] = DEFAULT_ADAPTIVE_MIN_INDEPENDENT_SAMPLES,
     max_sweeps: Annotated[
         int,
         typer.Option(
             "--max-sweeps",
             help="Max total sweeps per temperature (adaptive mode).",
         ),
-    ] = 100_000,
+    ] = DEFAULT_ADAPTIVE_MAX_TOTAL_SWEEPS,
+    min_therm: Annotated[
+        int,
+        typer.Option(
+            "--min-therm",
+            help="Adaptive lower bound on thermalization sweeps "
+            "(min_thermalization_sweeps).",
+        ),
+    ] = DEFAULT_ADAPTIVE_MIN_THERMALIZATION,
+    max_therm: Annotated[
+        int,
+        typer.Option(
+            "--max-therm",
+            help="Adaptive cap on total thermalization sweeps "
+            "(max_thermalization_sweeps).",
+        ),
+    ] = DEFAULT_ADAPTIVE_MAX_THERMALIZATION,
+    c_window: Annotated[
+        float,
+        typer.Option(
+            "--c-window",
+            help="Sokal windowing constant for tau_int (adaptive mode).",
+        ),
+    ] = DEFAULT_ADAPTIVE_C_WINDOW,
+    tau_multiplier: Annotated[
+        float,
+        typer.Option(
+            "--tau-multiplier",
+            help="Measurement interval = tau_multiplier * tau_int (adaptive mode).",
+        ),
+    ] = DEFAULT_ADAPTIVE_TAU_MULTIPLIER,
     algorithm: Annotated[
-        str,
+        Algorithm,
         typer.Option(
             "--algorithm",
-            help="MC algorithm: metropolis, wolff, swendsen_wang.",
+            help="Monte Carlo update algorithm.",
         ),
-    ] = "metropolis",
+    ] = Algorithm.METROPOLIS,
     mode: Annotated[
-        str,
+        ExecutionMode,
         typer.Option(
             "--mode",
-            help="cooldown, independent, or parallel_tempering.",
+            help="Execution mode.",
         ),
-    ] = "cooldown",
+    ] = ExecutionMode.COOLDOWN,
 ) -> None:
     """Run a Monte Carlo simulation of the 2D Ising model."""
     if temperatures and t_range:
@@ -186,28 +242,34 @@ def run(
 
     adaptive_config = AdaptiveConfig(
         enabled=adaptive,
+        min_thermalization_sweeps=min_therm,
+        max_thermalization_sweeps=max_therm,
+        c_window=c_window,
         min_independent_samples=min_samples,
         max_total_sweeps=max_sweeps,
+        tau_multiplier=tau_multiplier,
     )
 
     config = SimulationConfig(
         lattice=LatticeConfig(
-            lattice_type=LatticeType(lattice),
+            lattice_type=lattice,
             size=lattice_size,
             j1=j1,
             j2=j2,
             j3=j3,
             h=h,
         ),
-        algorithm=Algorithm(algorithm),
+        algorithm=algorithm,
         temperatures=temps,
         n_sweeps=n_sweeps,
         n_thermalization=n_therm,
         measurement_interval=measurement_interval,
+        swap_interval=swap_interval,
         seed=seed,
+        store_configs=store_configs,
         compute_correlation=correlation,
         adaptive=adaptive_config,
-        mode=ExecutionMode(mode),
+        mode=mode,
     )
 
     _print_config(config)
@@ -270,7 +332,7 @@ def benchmark(
     from mcising.benchmarks import bench_mcising
 
     if scaling:
-        _run_scaling_benchmark(seed, False)
+        _run_scaling_benchmark(seed)
         return
 
     cubic_size = min(lattice_size, 16)
@@ -304,16 +366,21 @@ def benchmark(
     metro_table.add_column("E/site", justify="right")
 
     metro_cases = [
-        (f"Square {lattice_size}x{lattice_size}", "square", lattice_size, 2.269),
+        (f"Square {lattice_size}x{lattice_size}", "square", lattice_size, TC_SQUARE_2D),
         (
             f"Triangular {lattice_size}x{lattice_size}",
             "triangular",
             lattice_size,
-            3.641,
+            TC_TRIANGULAR_2D,
         ),
-        (f"Honeycomb {lattice_size}x{lattice_size}", "honeycomb", lattice_size, 1.519),
+        (
+            f"Honeycomb {lattice_size}x{lattice_size}",
+            "honeycomb",
+            lattice_size,
+            TC_HONEYCOMB_2D,
+        ),
         (f"Chain ({chain_size})", "chain", chain_size, 1.0),
-        (f"Cubic {cubic_size}^3", "cubic", cubic_size, 4.5115),
+        (f"Cubic {cubic_size}^3", "cubic", cubic_size, TC_CUBIC_3D),
     ]
 
     with console.status("[bold blue]Metropolis benchmarks..."):
@@ -340,7 +407,7 @@ def benchmark(
 
     with console.status("[bold blue]Cluster benchmarks..."):
         for alg_label, alg in [("Wolff", "wolff"), ("Swendsen-Wang", "swendsen_wang")]:
-            r = _run(alg_label, "square", alg, lattice_size, 2.269)
+            r = _run(alg_label, "square", alg, lattice_size, TC_SQUARE_2D)
             cluster_table.add_row(
                 alg_label,
                 f"{r.updates_per_sec:,.0f}",
@@ -369,7 +436,7 @@ def benchmark(
         ("J1+J2+J3+H", 1.0, 1.0, 1.0, 1.0),
     ]
     n_sites = lattice_size * lattice_size
-    temperature = 2.269
+    temperature = TC_SQUARE_2D
 
     with console.status("[bold blue]Coupling benchmarks..."):
         for label, j1, j2, j3, h in coupling_cases:
@@ -397,28 +464,12 @@ def benchmark(
     console.print(coupling_table)
 
 
-def _run_scaling_benchmark(seed: int, compare: bool) -> None:
-    """Run benchmarks across multiple lattice sizes."""
-    from mcising.benchmarks import (
-        bench_mcising,
-        bench_numpy,
-        bench_pure_python,
-    )
-
-    has_peapods = False
-    bench_peapods_fn = None
-    if compare:
-        try:
-            from mcising.benchmarks import bench_peapods
-
-            bench_peapods_fn = bench_peapods
-            has_peapods = True
-        except ImportError:
-            pass
+def _run_scaling_benchmark(seed: int) -> None:
+    """Run mcising benchmarks across multiple lattice sizes."""
+    from mcising.benchmarks import bench_mcising
 
     sizes = [8, 16, 32, 64, 128, 256]
-    # Same sweeps for all implementations per lattice size.
-    # Scale down for larger lattices to keep pure Python bearable.
+    # Scale sweeps down for larger lattices to keep runtime bearable.
     sweep_schedule = {
         8: 5000,
         16: 2000,
@@ -432,84 +483,30 @@ def _run_scaling_benchmark(seed: int, compare: bool) -> None:
         Panel(
             "[bold]Scaling Benchmark[/bold]: L = "
             + ", ".join(str(s) for s in sizes)
-            + "\nT=T_c=2.269, Metropolis algorithm"
-            + "\n[dim]Same sweep count per L for fair comparison[/dim]",
+            + f"\nT=T_c={TC_SQUARE_2D:.4g}, Metropolis algorithm",
             border_style="blue",
         )
     )
 
-    # Build the table
     table = Table(
         title="Spin Updates / Second (higher is better)",
         border_style="green",
     )
     table.add_column("L", justify="right", style="bold")
     table.add_column("Sweeps", justify="right")
-
-    runners: list[tuple[str, object]] = []
-    if compare:
-        runners.append(("Pure Python", bench_pure_python))
-        runners.append(("NumPy", bench_numpy))
-    runners.append(("mcising (Rust)", bench_mcising))
-    if has_peapods and bench_peapods_fn is not None:
-        runners.append(("peapods", bench_peapods_fn))
-
-    for name, _ in runners:
-        table.add_column(name, justify="right")
-
-    if compare:
-        table.add_column(
-            "mcising / Python",
-            justify="right",
-            style="bold green",
-        )
-        if has_peapods:
-            table.add_column(
-                "mcising / peapods",
-                justify="right",
-                style="bold cyan",
-            )
+    table.add_column("mcising (Rust)", justify="right")
 
     with console.status("[bold blue]Running scaling benchmark..."):
         for l_size in sizes:
             sweeps = sweep_schedule[l_size]
-            row: list[str] = [str(l_size), f"{sweeps:,}"]
-
-            row_results: dict[str, BenchmarkResult] = {}
-
-            for name, bench_fn in runners:
-                result = bench_fn(l_size, sweeps, seed)  # type: ignore[operator]
-                row_results[name] = result
-                row.append(f"{result.updates_per_sec:,.0f}")
-
-            if compare:
-                rust_ups = row_results["mcising (Rust)"].updates_per_sec
-                python_ups = row_results.get("Pure Python")
-                if python_ups and python_ups.updates_per_sec > 0:
-                    row.append(f"{rust_ups / python_ups.updates_per_sec:,.0f}x")
-                else:
-                    row.append("-")
-                if has_peapods:
-                    peapods_r = row_results.get("peapods")
-                    if peapods_r and peapods_r.updates_per_sec > 0:
-                        ratio = rust_ups / peapods_r.updates_per_sec
-                        row.append(f"{ratio:,.1f}x")
-                    else:
-                        row.append("-")
-
-            table.add_row(*row)
+            result = bench_mcising(l_size, sweeps, seed)
+            table.add_row(str(l_size), f"{sweeps:,}", f"{result.updates_per_sec:,.0f}")
 
     console.print(table)
-    if has_peapods:
-        console.print(
-            "\n[dim]Note: mcising/peapods ratio >1 means mcising"
-            " is faster per update.[/dim]"
-        )
 
 
 def _parse_t_range(value: str) -> tuple[float, ...]:
     """Parse a 'start:stop:step' string into a temperature tuple."""
-    import numpy as np
 
     parts = value.split(":")
     if len(parts) != 3:
@@ -562,7 +559,6 @@ def _print_config(config: SimulationConfig) -> None:
 
 def _print_results_summary(results: mcising.SimulationResults) -> None:
     """Print a summary table of results."""
-    import numpy as np
 
     table = Table(title="Results Summary", border_style="green")
     table.add_column("T", justify="right", style="bold")
@@ -623,8 +619,6 @@ def summary(
     """Inspect simulation results from an HDF5 file."""
     import json as json_mod
     import math
-
-    import numpy as np
 
     from mcising.io import load_hdf5
 
@@ -697,8 +691,7 @@ def summary(
             for row in rows:
                 print(
                     ",".join(
-                        "" if _is_nan(row[col]) else str(row[col])
-                        for col in columns
+                        "" if _is_nan(row[col]) else str(row[col]) for col in columns
                     )
                 )
     else:
@@ -883,7 +876,7 @@ def docs_default(
     if ctx.invoked_subcommand is not None:
         return
     # Default: show everything
-    _docs_cli()
+    docs_cli()
 
 
 @docs_app.command("lattices")
@@ -895,7 +888,7 @@ def docs_lattices() -> None:
 square       2D  coord=4   Tc=2.269   shape=(L,L)      J1,J2,J3,H supported
 triangular   2D  coord=6   Tc=3.641   shape=(L,L)      J1,J2,J3,H; even L only
 honeycomb    2D  coord=3   Tc=1.519   shape=(L,L,2)    J1,J2,J3,H; even L only
-cubic        3D  coord=6   Tc=4.512   shape=(L,L,L)    J1,J2,J3,H supported
+cubic        3D  coord=6   Tc=4.5115  shape=(L,L,L)    J1,J2,J3,H supported
 chain        1D  coord=2   Tc=0       shape=(N,)        J1,J2,J3,H supported"""
     )
 
@@ -943,7 +936,7 @@ parallel_tempering  Parallel + replica swap. Best for frustration."""
 
 
 @docs_app.command("cli")
-def _docs_cli() -> None:
+def docs_cli() -> None:
     """Show all CLI commands with examples."""
     print(
         """mcising CLI REFERENCE
@@ -958,7 +951,11 @@ mcising run [OPTIONS]
     mcising run -L 32 --T-range 3.5:1.5:0.1 -o results.h5
     mcising run -L 32 --lattice triangular --j2 0.5 -o results.h5
     mcising run -L 32 --algorithm wolff --mode independent -o results.h5
-    mcising run -L 64 --adaptive --min-samples 200 -o results.h5
+    mcising run -L 32 --mode parallel_tempering --swap-interval 5 \\
+        --interval 10 -o results.h5
+    mcising run -L 64 --adaptive --min-samples 200 --tau-multiplier 3 \\
+        --min-therm 500 --max-therm 20000 --c-window 8 -o results.h5
+    mcising run -L 64 --no-store-configs -o results.h5
     mcising run -L 32 --checkpoint sim.h5 --resume
 
 mcising summary <file.h5>

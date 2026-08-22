@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import re
 from pathlib import Path
 
 import mcising
@@ -15,6 +16,105 @@ from typer.testing import CliRunner
 from mcising.cli import app  # isort: skip
 
 runner = CliRunner()
+
+
+class TestRunOptionValidation:
+    """P11: enum-typed options give exit-2 usage errors, not tracebacks."""
+
+    def test_bogus_lattice_exits_2_with_usage_error(self) -> None:
+        result = runner.invoke(app, ["run", "--lattice", "bogus"])
+        assert result.exit_code == 2
+        assert "bogus" in result.output
+
+    def test_bogus_algorithm_exits_2(self) -> None:
+        result = runner.invoke(app, ["run", "--algorithm", "bogus"])
+        assert result.exit_code == 2
+
+    def test_bogus_mode_exits_2(self) -> None:
+        result = runner.invoke(app, ["run", "--mode", "bogus"])
+        assert result.exit_code == 2
+
+    def test_run_help_shows_swap_interval(self) -> None:
+        # The literal gate: --swap-interval appears in the rendered
+        # help. rich emits ANSI-styled help when it detects CI (option
+        # names split across style spans), so strip escapes first.
+        result = runner.invoke(
+            app,
+            ["run", "--help"],
+            env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"},
+        )
+        assert result.exit_code == 0
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+        assert "--swap-interval" in plain
+
+    def test_run_declares_all_new_flags(self) -> None:
+        # Environment-independent form of the same contract: rich wraps
+        # long compound names (--store-configs/--no-store-configs)
+        # unpredictably in rendered help, so the full flag set is
+        # asserted on the click parameter declarations that generate it.
+        from typer.main import get_command
+
+        run_params = get_command(app).commands["run"].params
+        opts: set[str] = set()
+        for param in run_params:
+            opts.update(getattr(param, "opts", []))
+            opts.update(getattr(param, "secondary_opts", []))
+        assert {
+            "--swap-interval",
+            "--c-window",
+            "--tau-multiplier",
+            "--min-therm",
+            "--max-therm",
+            "--store-configs",
+            "--no-store-configs",
+        } <= opts
+
+    def test_swap_interval_plumbs_to_config(self, tmp_path: Path) -> None:
+        out = tmp_path / "pt.h5"
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "-L",
+                "4",
+                "-T",
+                "3.0",
+                "-T",
+                "2.5",
+                "--mode",
+                "parallel_tempering",
+                "--swap-interval",
+                "2",
+                "--interval",
+                "4",
+                "--sweeps",
+                "8",
+                "--therm",
+                "4",
+                "-o",
+                str(out),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert out.exists()
+
+    def test_incompatible_swap_interval_surfaces_config_error(self) -> None:
+        # swap_interval must divide measurement_interval (B5); the flag
+        # plumbing is proven by the validation firing.
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--mode",
+                "parallel_tempering",
+                "--swap-interval",
+                "3",
+                "--interval",
+                "10",
+            ],
+        )
+        assert result.exit_code != 0
+        assert isinstance(result.exception, mcising.ConfigurationError)
 
 
 class TestInfo:

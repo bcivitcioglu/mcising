@@ -11,9 +11,11 @@ import math
 import random
 import time
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 import numpy as np
+
+from mcising.constants import TC_SQUARE_2D
 
 __all__: Final[list[str]] = [
     "BenchmarkResult",
@@ -21,10 +23,6 @@ __all__: Final[list[str]] = [
     "bench_numpy",
     "bench_mcising",
     "bench_peapods",
-    "bench_peapods_triangular",
-    "bench_peapods_cubic",
-    "bench_peapods_wolff",
-    "bench_peapods_sw",
 ]
 
 
@@ -136,7 +134,7 @@ def bench_pure_python(
     lattice_size: int, n_sweeps: int, seed: int = 42
 ) -> BenchmarkResult:
     """Benchmark pure Python Metropolis."""
-    beta = 1.0 / 2.269
+    beta = 1.0 / TC_SQUARE_2D
     elapsed, energy, mag = _pure_python_metropolis(lattice_size, n_sweeps, beta, seed)
     return BenchmarkResult(
         name="Pure Python",
@@ -229,7 +227,7 @@ def _numpy_metropolis(
 
 def bench_numpy(lattice_size: int, n_sweeps: int, seed: int = 42) -> BenchmarkResult:
     """Benchmark NumPy-array Metropolis (same algorithm, NumPy storage)."""
-    beta = 1.0 / 2.269
+    beta = 1.0 / TC_SQUARE_2D
     elapsed, energy, mag = _numpy_metropolis(lattice_size, n_sweeps, beta, seed)
     return BenchmarkResult(
         name="NumPy",
@@ -252,7 +250,7 @@ def bench_mcising(
     seed: int = 42,
     algorithm: str = "metropolis",
     lattice_type: str = "square",
-    temperature: float = 2.269,
+    temperature: float = TC_SQUARE_2D,
 ) -> BenchmarkResult:
     """Benchmark mcising Rust core."""
     from mcising._core import IsingSimulation
@@ -267,9 +265,7 @@ def bench_mcising(
 
     # Timed run — sweeps only, observables computed once at the end
     start = time.perf_counter()
-    _accepted, attempted, _cluster_flips = sim.sweep(
-        n_sweeps, temperature=temperature
-    )
+    _accepted, attempted, _cluster_flips = sim.sweep(n_sweeps, temperature=temperature)
     elapsed = time.perf_counter() - start
 
     return BenchmarkResult(
@@ -289,61 +285,46 @@ def bench_mcising(
 # ---------------------------------------------------------------------------
 
 
-def bench_peapods(lattice_size: int, n_sweeps: int, seed: int = 42) -> BenchmarkResult:
-    """Benchmark peapods Metropolis on square lattice.
+def bench_peapods(
+    lattice_size: int,
+    n_sweeps: int,
+    seed: int = 42,
+    *,
+    geometry: str = "square",
+    dim: int = 2,
+    temperature: float = TC_SQUARE_2D,
+    cluster_mode: str | None = None,
+) -> BenchmarkResult:
+    """Benchmark the external peapods package (one parametrized runner).
 
-    Requires: ``uv sync --group benchmark``
+    Replaces the pre-1.0 ``bench_peapods_{triangular,cubic,wolff,sw}``
+    near-copies. peapods is a deliberately undeclared competitor
+    package: install it manually to run comparisons (see
+    ``benchmarks/compare_peapods.py``).
     """
-    import numpy as np
     from peapods import Ising
 
-    model = Ising(
-        (lattice_size, lattice_size),
-        temperatures=np.array([2.269]),
-        couplings="ferro",
-    )
+    shape = (lattice_size,) * dim
+    ctor_kwargs: dict[str, Any] = {"couplings": "ferro"}
+    if geometry != "square":
+        ctor_kwargs["geometry"] = geometry
+    model = Ising(shape, temperatures=np.array([temperature]), **ctor_kwargs)
     model._sim.reset(seed=seed)
 
+    sample_kwargs: dict[str, Any] = {
+        "sweep_mode": "metropolis",
+        "warmup_ratio": 0.0,
+    }
+    if cluster_mode is not None:
+        sample_kwargs["cluster_update_interval"] = 1
+        sample_kwargs["cluster_mode"] = cluster_mode
+
     # Warmup
-    model.sample(n_sweeps=100, sweep_mode="metropolis", warmup_ratio=0.0)
+    model.sample(n_sweeps=100, **sample_kwargs)
 
     # Timed run
     start = time.perf_counter()
-    model.sample(n_sweeps=n_sweeps, sweep_mode="metropolis", warmup_ratio=0.0)
-    elapsed = time.perf_counter() - start
-
-    energy = float(-model.energies_avg[0])
-    magnetization = float(model.mags[0])
-
-    return BenchmarkResult(
-        name="peapods",
-        lattice_size=lattice_size,
-        n_sweeps=n_sweeps,
-        elapsed=elapsed,
-        energy=energy,
-        magnetization=magnetization,
-    )
-
-
-def bench_peapods_triangular(
-    lattice_size: int, n_sweeps: int, seed: int = 42
-) -> BenchmarkResult:
-    """Benchmark peapods Metropolis on triangular lattice."""
-    import numpy as np
-    from peapods import Ising
-
-    model = Ising(
-        (lattice_size, lattice_size),
-        temperatures=np.array([3.641]),
-        couplings="ferro",
-        geometry="triangular",
-    )
-    model._sim.reset(seed=seed)
-
-    model.sample(n_sweeps=100, sweep_mode="metropolis", warmup_ratio=0.0)
-
-    start = time.perf_counter()
-    model.sample(n_sweeps=n_sweeps, sweep_mode="metropolis", warmup_ratio=0.0)
+    model.sample(n_sweeps=n_sweeps, **sample_kwargs)
     elapsed = time.perf_counter() - start
 
     return BenchmarkResult(
@@ -353,120 +334,5 @@ def bench_peapods_triangular(
         elapsed=elapsed,
         energy=float(-model.energies_avg[0]),
         magnetization=float(model.mags[0]),
-    )
-
-
-def bench_peapods_cubic(
-    lattice_size: int, n_sweeps: int, seed: int = 42
-) -> BenchmarkResult:
-    """Benchmark peapods Metropolis on cubic lattice."""
-    import numpy as np
-    from peapods import Ising
-
-    n_sites = lattice_size**3
-    model = Ising(
-        (lattice_size, lattice_size, lattice_size),
-        temperatures=np.array([4.5115]),
-        couplings="ferro",
-    )
-    model._sim.reset(seed=seed)
-
-    model.sample(n_sweeps=100, sweep_mode="metropolis", warmup_ratio=0.0)
-
-    start = time.perf_counter()
-    model.sample(n_sweeps=n_sweeps, sweep_mode="metropolis", warmup_ratio=0.0)
-    elapsed = time.perf_counter() - start
-
-    return BenchmarkResult(
-        name="peapods",
-        lattice_size=lattice_size,
-        n_sweeps=n_sweeps,
-        elapsed=elapsed,
-        energy=float(-model.energies_avg[0]),
-        magnetization=float(model.mags[0]),
-        num_sites=n_sites,
-    )
-
-
-def bench_peapods_wolff(
-    lattice_size: int, n_sweeps: int, seed: int = 42
-) -> BenchmarkResult:
-    """Benchmark peapods Wolff cluster on square lattice."""
-    import numpy as np
-    from peapods import Ising
-
-    model = Ising(
-        (lattice_size, lattice_size),
-        temperatures=np.array([2.269]),
-        couplings="ferro",
-    )
-    model._sim.reset(seed=seed)
-
-    model.sample(
-        n_sweeps=100,
-        sweep_mode="metropolis",
-        cluster_update_interval=1,
-        cluster_mode="wolff",
-        warmup_ratio=0.0,
-    )
-
-    start = time.perf_counter()
-    model.sample(
-        n_sweeps=n_sweeps,
-        sweep_mode="metropolis",
-        cluster_update_interval=1,
-        cluster_mode="wolff",
-        warmup_ratio=0.0,
-    )
-    elapsed = time.perf_counter() - start
-
-    return BenchmarkResult(
-        name="peapods",
-        lattice_size=lattice_size,
-        n_sweeps=n_sweeps,
-        elapsed=elapsed,
-        energy=float(-model.energies_avg[0]),
-        magnetization=float(model.mags[0]),
-    )
-
-
-def bench_peapods_sw(
-    lattice_size: int, n_sweeps: int, seed: int = 42
-) -> BenchmarkResult:
-    """Benchmark peapods Swendsen-Wang on square lattice."""
-    import numpy as np
-    from peapods import Ising
-
-    model = Ising(
-        (lattice_size, lattice_size),
-        temperatures=np.array([2.269]),
-        couplings="ferro",
-    )
-    model._sim.reset(seed=seed)
-
-    model.sample(
-        n_sweeps=100,
-        sweep_mode="metropolis",
-        cluster_update_interval=1,
-        cluster_mode="sw",
-        warmup_ratio=0.0,
-    )
-
-    start = time.perf_counter()
-    model.sample(
-        n_sweeps=n_sweeps,
-        sweep_mode="metropolis",
-        cluster_update_interval=1,
-        cluster_mode="sw",
-        warmup_ratio=0.0,
-    )
-    elapsed = time.perf_counter() - start
-
-    return BenchmarkResult(
-        name="peapods",
-        lattice_size=lattice_size,
-        n_sweeps=n_sweeps,
-        elapsed=elapsed,
-        energy=float(-model.energies_avg[0]),
-        magnetization=float(model.mags[0]),
+        num_sites=lattice_size**dim,
     )

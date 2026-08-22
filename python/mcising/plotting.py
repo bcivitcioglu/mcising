@@ -11,10 +11,19 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final, cast
 
-import matplotlib.pyplot as plt
+try:
+    import matplotlib.pyplot as plt
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
+except ImportError as _exc:  # pragma: no cover - exercised via subprocess
+    _msg = (
+        "mcising.plotting requires matplotlib, which is an optional "
+        "dependency since 0.26.0. Install it with: "
+        "pip install 'mcising[plot]'"
+    )
+    raise ImportError(_msg) from _exc
+
 import numpy as np
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
 from numpy.typing import NDArray
 
 from mcising.simulation import SimulationResults
@@ -30,8 +39,6 @@ __all__: Final[list[str]] = [
     "plot_energy_timeseries",
     "plot_magnetization_histogram",
     "export_lattices",
-    # Legacy alias
-    "plot_observables",
 ]
 
 # Type alias: accepts Results object, file path, or list of either
@@ -655,47 +662,3 @@ def plot_correlation(
     return fig
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Legacy alias
-# ═══════════════════════════════════════════════════════════════════
-
-
-def plot_observables(
-    results: SimulationResults,
-    *,
-    quantities: tuple[str, ...] = ("energy", "magnetization"),
-) -> Figure:
-    """Plot observables vs temperature (legacy interface).
-
-    Parameters
-    ----------
-    results : SimulationResults
-        Simulation results.
-    quantities : tuple[str, ...]
-        Quantities to plot: 'energy', 'magnetization',
-        'specific_heat', 'susceptibility'.
-
-    Returns
-    -------
-    Figure
-        The matplotlib figure.
-    """
-    n_plots = len(quantities)
-    fig, axes = plt.subplots(1, n_plots, figsize=(6 * n_plots, 5))
-    if n_plots == 1:
-        axes = [axes]
-
-    quantity_map = {
-        "energy": plot_energy,
-        "magnetization": plot_magnetization,
-        "specific_heat": plot_specific_heat,
-        "susceptibility": plot_susceptibility,
-    }
-
-    for ax, quantity in zip(axes, quantities):
-        fn = quantity_map.get(quantity)
-        if fn is not None:
-            fn(results, ax=ax)
-
-    fig.tight_layout()
-    return fig

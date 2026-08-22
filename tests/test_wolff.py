@@ -95,8 +95,9 @@ class TestClusterCouplingSignBoundary:
 
     def test_core_constructor_rejects_negative_j1(self) -> None:
         # Defense in depth for direct _core use, which bypasses
-        # SimulationConfig. Rust errors currently map to ValueError, not
-        # ConfigurationError (unified in the P10/P11 API phases).
+        # SimulationConfig. Rust boundary errors are ValueError; the P11
+        # unification made ConfigurationError a ValueError subclass, so
+        # `except ValueError` covers both layers.
         with pytest.raises(ValueError, match="requires J1>0"):
             IsingSimulation(4, -1.0, 0.0, 0.0, 0.0, 42, "wolff", "square")
 

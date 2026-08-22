@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "mcising"
-version = "0.25.0"
+version = "0.26.0"
 description = "High-performance Ising model Monte Carlo simulation with Rust core"
 readme = "README.md"
 license = "MIT"
@@ -33,16 +33,27 @@ classifiers = [
 ]
 dependencies = [
     "h5py>=3.16.0",
-    "matplotlib>=3.10.8",
     "numpy>=2.2.6",
     "rich>=14.3.3",
     "typer>=0.24.1",
 ]
 
+[project.optional-dependencies]
+plot = [
+    "matplotlib>=3.10.8",
+]
+dataframe = [
+    "pandas>=2.2",
+]
+
 [dependency-groups]
+# The dev environment installs the optional extras so the full test
+# suite (plotting, dataframe) always runs locally and in CI.
 dev = [
+    "matplotlib>=3.10.8",
     "maturin>=1.12.6",
     "mypy>=1.19.1",
+    "pandas>=2.2",
     "pre-commit>=4.0.1",
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",

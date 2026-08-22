@@ -35,7 +35,3 @@
 ---
 
 ::: mcising.plot_correlation
-
-## Legacy
-
-::: mcising.plot_observables

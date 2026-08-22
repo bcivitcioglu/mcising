@@ -84,7 +84,7 @@ class TestJ3Config:
         assert lc.j3 == 0.5
 
     def test_lattice_config_j3_invalid(self) -> None:
-        with pytest.raises(ValueError, match="j3"):
+        with pytest.raises(ConfigurationError, match="j3"):
             LatticeConfig(j3=float("inf"))
 
     def test_cluster_algorithm_j3_nonzero_raises(self) -> None:

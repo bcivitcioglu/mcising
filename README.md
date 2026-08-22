@@ -84,6 +84,10 @@ mcising also supports features not available in peapods: J2/J3 coupling, externa
 
 ```bash
 pip install mcising
+
+# with plotting (matplotlib) and/or DataFrame export (pandas):
+pip install 'mcising[plot]'
+pip install 'mcising[plot,dataframe]'
 ```
 
 For development (requires Rust toolchain):

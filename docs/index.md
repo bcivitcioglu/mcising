@@ -130,3 +130,5 @@ New to mcising? Start with the **[Tutorial](tutorial/first-simulation.md)** — 
 Looking for a specific function or class? Check the **[API Reference](reference/simulation.md)**.
 
 Need CLI commands? See the **[CLI Reference](guide/cli.md)**.
+
+Building on top of mcising? Read **[Stability & Versioning](advanced/stability.md)** for what the API promises.
