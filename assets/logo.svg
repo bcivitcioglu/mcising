@@ -1,0 +1,214 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="500" height="500">
+  <defs>
+    <radialGradient id="u9" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FF7F45" />
+      <stop offset="100%" style="stop-color:#D4500A" />
+    </radialGradient>
+    <radialGradient id="d9" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#5CB8E6" />
+      <stop offset="100%" style="stop-color:#1A6B9C" />
+    </radialGradient>
+    <radialGradient id="f9" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FFE066" />
+      <stop offset="70%" style="stop-color:#FFCC00" />
+      <stop offset="100%" style="stop-color:#E6A800" />
+    </radialGradient>
+    <filter id="gl9">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="fg9">
+      <feGaussianBlur stdDeviation="5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="500" height="500" fill="#0A0E17"/>
+
+  <!-- ============================================================ -->
+  <!-- SPEED LINES — bold horizontal streaks, symmetric top/bottom  -->
+  <!-- Thickest and most numerous at center, thinning at edges      -->
+  <!-- Colors: gold center, orange/blue bands above/below           -->
+  <!-- Lines span full width, varying lengths for dynamism          -->
+  <!-- ============================================================ -->
+
+  <!-- BAND 1: far top (sparse, thin) -->
+  <line x1="0" y1="18" x2="320" y2="18" stroke="#5CB8E6" stroke-width="1.5" opacity="0.25"/>
+  <line x1="120" y1="28" x2="500" y2="28" stroke="#FF7F45" stroke-width="2" opacity="0.3"/>
+  <line x1="0" y1="38" x2="280" y2="38" stroke="#5CB8E6" stroke-width="1.2" opacity="0.2"/>
+  <line x1="200" y1="46" x2="500" y2="46" stroke="#FF7F45" stroke-width="1.5" opacity="0.25"/>
+
+  <!-- BAND 2: upper (building) -->
+  <line x1="0" y1="58" x2="380" y2="58" stroke="#FF7F45" stroke-width="2.5" opacity="0.35"/>
+  <line x1="80" y1="66" x2="500" y2="66" stroke="#5CB8E6" stroke-width="2" opacity="0.3"/>
+  <line x1="0" y1="74" x2="420" y2="74" stroke="#FF7F45" stroke-width="3" opacity="0.4"/>
+  <line x1="150" y1="82" x2="500" y2="82" stroke="#5CB8E6" stroke-width="2.5" opacity="0.35"/>
+  <line x1="0" y1="90" x2="360" y2="90" stroke="#FF7F45" stroke-width="2" opacity="0.3"/>
+
+  <!-- BAND 3: upper-mid (strong) -->
+  <line x1="50" y1="100" x2="500" y2="100" stroke="#FF7F45" stroke-width="3.5" opacity="0.45"/>
+  <line x1="0" y1="108" x2="450" y2="108" stroke="#5CB8E6" stroke-width="3" opacity="0.4"/>
+  <line x1="100" y1="116" x2="500" y2="116" stroke="#FF7F45" stroke-width="3.5" opacity="0.45"/>
+  <line x1="0" y1="124" x2="400" y2="124" stroke="#5CB8E6" stroke-width="2.5" opacity="0.35"/>
+  <line x1="60" y1="132" x2="500" y2="132" stroke="#FF7F45" stroke-width="3" opacity="0.4"/>
+  <line x1="0" y1="140" x2="440" y2="140" stroke="#5CB8E6" stroke-width="3.5" opacity="0.45"/>
+
+  <!-- BAND 4: approaching center (intense) -->
+  <line x1="30" y1="150" x2="500" y2="150" stroke="#FF7F45" stroke-width="4" opacity="0.5"/>
+  <line x1="0" y1="157" x2="470" y2="157" stroke="#FFD700" stroke-width="3.5" opacity="0.45"/>
+  <line x1="80" y1="164" x2="500" y2="164" stroke="#FF7F45" stroke-width="4.5" opacity="0.55"/>
+  <line x1="0" y1="171" x2="490" y2="171" stroke="#FFD700" stroke-width="4" opacity="0.5"/>
+  <line x1="40" y1="178" x2="500" y2="178" stroke="#FF7F45" stroke-width="4" opacity="0.5"/>
+  <line x1="0" y1="185" x2="460" y2="185" stroke="#FFD700" stroke-width="4.5" opacity="0.55"/>
+
+  <!-- BAND 5: CENTER (maximum intensity, gold) -->
+  <line x1="0" y1="193" x2="500" y2="193" stroke="#FFD700" stroke-width="5" opacity="0.6"/>
+  <line x1="0" y1="200" x2="500" y2="200" stroke="#FFD700" stroke-width="5.5" opacity="0.65"/>
+  <line x1="0" y1="207" x2="500" y2="207" stroke="#FFD700" stroke-width="5" opacity="0.6"/>
+  <line x1="0" y1="214" x2="500" y2="214" stroke="#FFD700" stroke-width="6" opacity="0.7"/>
+  <line x1="0" y1="221" x2="500" y2="221" stroke="#FFD700" stroke-width="5.5" opacity="0.65"/>
+  <line x1="0" y1="228" x2="500" y2="228" stroke="#FFD700" stroke-width="6.5" opacity="0.7"/>
+  <line x1="0" y1="235" x2="500" y2="235" stroke="#FFD700" stroke-width="6" opacity="0.7"/>
+  <line x1="0" y1="242" x2="500" y2="242" stroke="#FFD700" stroke-width="6.5" opacity="0.7"/>
+  <line x1="0" y1="249" x2="500" y2="249" stroke="#FFD700" stroke-width="6" opacity="0.7"/>
+  <line x1="0" y1="256" x2="500" y2="256" stroke="#FFD700" stroke-width="5.5" opacity="0.65"/>
+  <line x1="0" y1="263" x2="500" y2="263" stroke="#FFD700" stroke-width="5" opacity="0.6"/>
+  <line x1="0" y1="270" x2="500" y2="270" stroke="#FFD700" stroke-width="5.5" opacity="0.65"/>
+  <line x1="0" y1="277" x2="500" y2="277" stroke="#FFD700" stroke-width="5" opacity="0.6"/>
+
+  <!-- BAND 6: below center (intense, mirroring band 4) -->
+  <line x1="0" y1="285" x2="460" y2="285" stroke="#FFD700" stroke-width="4.5" opacity="0.55"/>
+  <line x1="40" y1="292" x2="500" y2="292" stroke="#FF7F45" stroke-width="4" opacity="0.5"/>
+  <line x1="0" y1="299" x2="490" y2="299" stroke="#FFD700" stroke-width="4" opacity="0.5"/>
+  <line x1="80" y1="306" x2="500" y2="306" stroke="#FF7F45" stroke-width="4.5" opacity="0.55"/>
+  <line x1="0" y1="313" x2="470" y2="313" stroke="#FFD700" stroke-width="3.5" opacity="0.45"/>
+  <line x1="30" y1="320" x2="500" y2="320" stroke="#FF7F45" stroke-width="4" opacity="0.5"/>
+
+  <!-- BAND 7: lower-mid (mirroring band 3) -->
+  <line x1="0" y1="330" x2="440" y2="330" stroke="#5CB8E6" stroke-width="3.5" opacity="0.45"/>
+  <line x1="60" y1="338" x2="500" y2="338" stroke="#FF7F45" stroke-width="3" opacity="0.4"/>
+  <line x1="0" y1="346" x2="400" y2="346" stroke="#5CB8E6" stroke-width="2.5" opacity="0.35"/>
+  <line x1="100" y1="354" x2="500" y2="354" stroke="#FF7F45" stroke-width="3.5" opacity="0.45"/>
+  <line x1="0" y1="362" x2="450" y2="362" stroke="#5CB8E6" stroke-width="3" opacity="0.4"/>
+  <line x1="50" y1="370" x2="500" y2="370" stroke="#FF7F45" stroke-width="3.5" opacity="0.45"/>
+
+  <!-- BAND 8: lower (mirroring band 2) -->
+  <line x1="0" y1="380" x2="360" y2="380" stroke="#FF7F45" stroke-width="2" opacity="0.3"/>
+  <line x1="150" y1="388" x2="500" y2="388" stroke="#5CB8E6" stroke-width="2.5" opacity="0.35"/>
+  <line x1="0" y1="396" x2="420" y2="396" stroke="#FF7F45" stroke-width="3" opacity="0.4"/>
+  <line x1="80" y1="404" x2="500" y2="404" stroke="#5CB8E6" stroke-width="2" opacity="0.3"/>
+  <line x1="0" y1="412" x2="380" y2="412" stroke="#FF7F45" stroke-width="2.5" opacity="0.35"/>
+
+  <!-- BAND 9: far bottom (mirroring band 1) -->
+  <line x1="200" y1="424" x2="500" y2="424" stroke="#FF7F45" stroke-width="1.5" opacity="0.25"/>
+  <line x1="0" y1="434" x2="280" y2="434" stroke="#5CB8E6" stroke-width="1.2" opacity="0.2"/>
+  <line x1="120" y1="444" x2="500" y2="444" stroke="#FF7F45" stroke-width="2" opacity="0.3"/>
+  <line x1="0" y1="454" x2="320" y2="454" stroke="#5CB8E6" stroke-width="1.5" opacity="0.25"/>
+
+  <!-- ============================================================ -->
+  <!-- LATTICE — centered, 5x5, sitting on top of speed lines       -->
+  <!-- Spacing: 60px, centered at (250, 235)                        -->
+  <!-- c: 130, 190, 250, 310, 370                                   -->
+  <!-- r: 115, 175, 235, 295, 355                                   -->
+  <!-- ============================================================ -->
+
+  <!-- Bonds -->
+  <g opacity="0.6">
+    <!-- Row 0 horizontal -->
+    <line x1="144" y1="115" x2="176" y2="115" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="204" y1="115" x2="236" y2="115" stroke="#334455" stroke-width="1.2"/>
+    <line x1="264" y1="115" x2="296" y2="115" stroke="#5CB8E6" stroke-width="2.5"/>
+    <line x1="324" y1="115" x2="356" y2="115" stroke="#334455" stroke-width="1.2"/>
+    <!-- Row 1 -->
+    <line x1="144" y1="175" x2="176" y2="175" stroke="#334455" stroke-width="1.2"/>
+    <line x1="204" y1="175" x2="236" y2="175" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="264" y1="175" x2="296" y2="175" stroke="#334455" stroke-width="1.2"/>
+    <line x1="324" y1="175" x2="356" y2="175" stroke="#5CB8E6" stroke-width="2.5"/>
+    <!-- Row 2 -->
+    <line x1="144" y1="235" x2="176" y2="235" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="204" y1="235" x2="236" y2="235" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="264" y1="235" x2="296" y2="235" stroke="#334455" stroke-width="1.2"/>
+    <line x1="324" y1="235" x2="356" y2="235" stroke="#FF7F45" stroke-width="2.5"/>
+    <!-- Row 3 -->
+    <line x1="144" y1="295" x2="176" y2="295" stroke="#5CB8E6" stroke-width="2.5"/>
+    <line x1="204" y1="295" x2="236" y2="295" stroke="#334455" stroke-width="1.2"/>
+    <line x1="264" y1="295" x2="296" y2="295" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="324" y1="295" x2="356" y2="295" stroke="#334455" stroke-width="1.2"/>
+    <!-- Row 4 -->
+    <line x1="144" y1="355" x2="176" y2="355" stroke="#334455" stroke-width="1.2"/>
+    <line x1="204" y1="355" x2="236" y2="355" stroke="#5CB8E6" stroke-width="2.5"/>
+    <line x1="264" y1="355" x2="296" y2="355" stroke="#334455" stroke-width="1.2"/>
+    <line x1="324" y1="355" x2="356" y2="355" stroke="#FF7F45" stroke-width="2.5"/>
+
+    <!-- Col 0 vertical -->
+    <line x1="130" y1="129" x2="130" y2="161" stroke="#334455" stroke-width="1.2"/>
+    <line x1="130" y1="189" x2="130" y2="221" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="130" y1="249" x2="130" y2="281" stroke="#334455" stroke-width="1.2"/>
+    <line x1="130" y1="309" x2="130" y2="341" stroke="#5CB8E6" stroke-width="2.5"/>
+    <!-- Col 1 -->
+    <line x1="190" y1="129" x2="190" y2="161" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="190" y1="189" x2="190" y2="221" stroke="#334455" stroke-width="1.2"/>
+    <line x1="190" y1="249" x2="190" y2="281" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="190" y1="309" x2="190" y2="341" stroke="#334455" stroke-width="1.2"/>
+    <!-- Col 2 -->
+    <line x1="250" y1="129" x2="250" y2="161" stroke="#334455" stroke-width="1.2"/>
+    <line x1="250" y1="189" x2="250" y2="221" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="250" y1="249" x2="250" y2="281" stroke="#334455" stroke-width="1.2"/>
+    <line x1="250" y1="309" x2="250" y2="341" stroke="#5CB8E6" stroke-width="2.5"/>
+    <!-- Col 3 -->
+    <line x1="310" y1="129" x2="310" y2="161" stroke="#5CB8E6" stroke-width="2.5"/>
+    <line x1="310" y1="189" x2="310" y2="221" stroke="#334455" stroke-width="1.2"/>
+    <line x1="310" y1="249" x2="310" y2="281" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="310" y1="309" x2="310" y2="341" stroke="#334455" stroke-width="1.2"/>
+    <!-- Col 4 -->
+    <line x1="370" y1="129" x2="370" y2="161" stroke="#334455" stroke-width="1.2"/>
+    <line x1="370" y1="189" x2="370" y2="221" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="370" y1="249" x2="370" y2="281" stroke="#FF7F45" stroke-width="2.5"/>
+    <line x1="370" y1="309" x2="370" y2="341" stroke="#334455" stroke-width="1.2"/>
+  </g>
+
+  <!-- Spin nodes -->
+  <g filter="url(#gl9)">
+    <!-- Row 0: U U D D D -->
+    <circle cx="130" cy="115" r="13" fill="url(#u9)"/>
+    <circle cx="190" cy="115" r="13" fill="url(#u9)"/>
+    <circle cx="250" cy="115" r="13" fill="url(#d9)"/>
+    <circle cx="310" cy="115" r="13" fill="url(#d9)"/>
+    <circle cx="370" cy="115" r="13" fill="url(#d9)"/>
+
+    <!-- Row 1: D U U D D -->
+    <circle cx="130" cy="175" r="13" fill="url(#d9)"/>
+    <circle cx="190" cy="175" r="13" fill="url(#u9)"/>
+    <circle cx="250" cy="175" r="13" fill="url(#u9)"/>
+    <circle cx="310" cy="175" r="13" fill="url(#d9)"/>
+    <circle cx="370" cy="175" r="13" fill="url(#d9)"/>
+
+    <!-- Row 2: U U [GOLD] D U -->
+    <circle cx="130" cy="235" r="13" fill="url(#u9)"/>
+    <circle cx="190" cy="235" r="13" fill="url(#u9)"/>
+    <circle cx="310" cy="235" r="13" fill="url(#d9)"/>
+    <circle cx="370" cy="235" r="13" fill="url(#u9)"/>
+
+    <!-- Row 3: D D U U D -->
+    <circle cx="130" cy="295" r="13" fill="url(#d9)"/>
+    <circle cx="190" cy="295" r="13" fill="url(#d9)"/>
+    <circle cx="250" cy="295" r="13" fill="url(#u9)"/>
+    <circle cx="310" cy="295" r="13" fill="url(#u9)"/>
+    <circle cx="370" cy="295" r="13" fill="url(#d9)"/>
+
+    <!-- Row 4: U D D D U -->
+    <circle cx="130" cy="355" r="13" fill="url(#u9)"/>
+    <circle cx="190" cy="355" r="13" fill="url(#d9)"/>
+    <circle cx="250" cy="355" r="13" fill="url(#d9)"/>
+    <circle cx="310" cy="355" r="13" fill="url(#d9)"/>
+    <circle cx="370" cy="355" r="13" fill="url(#u9)"/>
+  </g>
+
+  <!-- Center gold spin -->
+  <g filter="url(#fg9)">
+    <circle cx="250" cy="235" r="17" fill="url(#f9)" opacity="0.95"/>
+  </g>
+
+  <!-- Title -->
+  <text x="250" y="485" font-family="'Courier New', monospace" font-size="42" font-weight="bold" fill="#E8E8E8" text-anchor="middle" letter-spacing="5" opacity="0.9">mcising</text>
+</svg>
