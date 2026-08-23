@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -435,3 +436,121 @@ class TestLegacyCheckpoint:
             checkpoint_run(
                 Simulation(small_config), path, show_progress=False, resume=True
             )
+
+
+class TestResumeRecordDegradation:
+    """P12: resume guards on degraded or absent config records."""
+
+    def _completed_checkpoint(
+        self, small_config: SimulationConfig, tmp_path: Path
+    ) -> Path:
+        path = tmp_path / "ckpt.h5"
+        checkpoint_run(Simulation(small_config), path, show_progress=False)
+        return path
+
+    def test_resume_unreadable_config_record_raises(
+        self, small_config: SimulationConfig, tmp_path: Path
+    ) -> None:
+        path = self._completed_checkpoint(small_config, tmp_path)
+        with h5py.File(path, "a") as f:
+            f["metadata"].attrs["config_json"] = "{broken"
+        with pytest.raises(ConfigurationError, match="unreadable"):
+            checkpoint_run(
+                Simulation(small_config), path, show_progress=False, resume=True
+            )
+
+    def test_resume_null_config_record_raises(
+        self, small_config: SimulationConfig, tmp_path: Path
+    ) -> None:
+        # "null" parses as JSON but is not a dict: still unreadable.
+        path = self._completed_checkpoint(small_config, tmp_path)
+        with h5py.File(path, "a") as f:
+            f["metadata"].attrs["config_json"] = "null"
+        with pytest.raises(ConfigurationError, match="unreadable"):
+            checkpoint_run(
+                Simulation(small_config), path, show_progress=False, resume=True
+            )
+
+    def test_resume_bad_enum_in_record_raises_mismatch(
+        self, small_config: SimulationConfig, tmp_path: Path
+    ) -> None:
+        # A bad enum string in the stored record parses as a dict, so it
+        # surfaces as a config mismatch rather than an unreadable record.
+        path = self._completed_checkpoint(small_config, tmp_path)
+        with h5py.File(path, "a") as f:
+            raw = json.loads(f["metadata"].attrs["config_json"])
+            raw["mode"] = "bogus"
+            f["metadata"].attrs["config_json"] = json.dumps(raw)
+        with pytest.raises(ConfigurationError, match="does not match"):
+            checkpoint_run(
+                Simulation(small_config), path, show_progress=False, resume=True
+            )
+
+    def test_resume_without_config_record_is_unguarded(
+        self, small_config: SimulationConfig, tmp_path: Path
+    ) -> None:
+        # Documented legacy tolerance: no record -> the mismatch guard
+        # silently passes (it cannot see what it cannot read).
+        path = self._completed_checkpoint(small_config, tmp_path)
+        with h5py.File(path, "a") as f:
+            del f["metadata"].attrs["config_json"]
+        changed = replace(
+            small_config, lattice=LatticeConfig(size=4, j1=0.5)
+        )
+        results = checkpoint_run(
+            Simulation(changed), path, show_progress=False, resume=True
+        )
+        assert set(results.temperatures) == {3.0, 2.0, 1.0}
+
+    def test_resume_without_metadata_group_is_unguarded(
+        self, small_config: SimulationConfig, tmp_path: Path
+    ) -> None:
+        path = self._completed_checkpoint(small_config, tmp_path)
+        with h5py.File(path, "a") as f:
+            del f["metadata"]
+        results = checkpoint_run(
+            Simulation(small_config), path, show_progress=False, resume=True
+        )
+        assert set(results.temperatures) == {3.0, 2.0, 1.0}
+
+
+class TestCheckpointTailFlush:
+    def test_interval_larger_than_scan_creates_file_at_end(
+        self, small_config: SimulationConfig, tmp_path: Path
+    ) -> None:
+        # checkpoint_interval > number of temperatures: nothing flushes
+        # mid-run, so the tail flush must create the file itself.
+        path = tmp_path / "tail.h5"
+        checkpoint_run(
+            Simulation(small_config),
+            path,
+            show_progress=False,
+            checkpoint_interval=10,
+        )
+        with h5py.File(path, "r") as f:
+            groups = {k for k in f if k.startswith("T=")}
+        assert groups == {"T=3.000000", "T=2.000000", "T=1.000000"}
+
+
+class TestResumeCorrelationMerge:
+    def test_resumed_correlation_data_merged(self, tmp_path: Path) -> None:
+        config = SimulationConfig(
+            lattice=LatticeConfig(size=4),
+            temperatures=(3.0, 2.0),
+            n_sweeps=20,
+            measurement_interval=10,
+            compute_correlation=True,
+        )
+        path = tmp_path / "corr.h5"
+        checkpoint_run(Simulation(config), path, show_progress=False)
+
+        extended = replace(config, temperatures=(3.0, 2.0, 1.0))
+        results = checkpoint_run(
+            Simulation(extended), path, show_progress=False, resume=True
+        )
+        assert results.temperatures == [3.0, 2.0, 1.0]
+        assert results.correlation_function is not None
+        assert results.correlation_length is not None
+        for temp in (3.0, 2.0, 1.0):
+            assert temp in results.correlation_function
+            assert temp in results.correlation_length

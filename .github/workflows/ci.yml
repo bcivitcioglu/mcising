@@ -57,7 +57,9 @@ jobs:
         run: uv run maturin develop --release
 
       - name: Run tests
-        run: uv run pytest -m "not slow" --cov=mcising --cov-report=term-missing --cov-fail-under=39
+        # The coverage ratchet (fail_under) lives in pyproject.toml
+        # [tool.coverage.report] — single source of truth.
+        run: uv run pytest -m "not slow" --cov=mcising --cov-report=term-missing
 
       - name: Lint (ruff)
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'

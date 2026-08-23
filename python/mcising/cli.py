@@ -229,9 +229,12 @@ def run(
         ),
     ] = ExecutionMode.COOLDOWN,
 ) -> None:
-    """Run a Monte Carlo simulation of the 2D Ising model."""
+    """Run a Monte Carlo simulation of the Ising model."""
     if temperatures and t_range:
         raise typer.BadParameter("Use either -T or --T-range, not both.")
+
+    if resume and checkpoint is None:
+        raise typer.BadParameter("--resume requires --checkpoint.")
 
     if t_range:
         temps = _parse_t_range(t_range)
@@ -539,9 +542,9 @@ def _print_config(config: SimulationConfig) -> None:
     table.add_column("Param", style="bold")
     table.add_column("Value")
 
-    table.add_row("Algorithm", config.algorithm.value)
-    table.add_row("Lattice", f"{config.lattice.size}x{config.lattice.size} square")
     lc = config.lattice
+    table.add_row("Algorithm", config.algorithm.value)
+    table.add_row("Lattice", f"L={lc.size} {lc.lattice_type.value}")
     table.add_row("J1 / J2 / J3 / h", f"{lc.j1} / {lc.j2} / {lc.j3} / {lc.h}")
     table.add_row("Temperatures", ", ".join(f"{t:.3f}" for t in config.temperatures))
     table.add_row("Sweeps", str(config.n_sweeps))

@@ -349,7 +349,9 @@ def load_hdf5(path: str | Path) -> SimulationResults:
         n_cluster_flips: dict[float, int] = {}
         adaptive_diagnostics: dict[float, AdaptiveDiagnostics] = {}
 
-        for group_name in sorted(temp_groups):
+        # Numeric sort: group names are "T={temp:.6f}", and lexical order
+        # misplaces T>=10 (e.g. "T=10..." sorts before "T=2...").
+        for group_name in sorted(temp_groups, key=lambda name: float(name[2:])):
             grp = f[group_name]
             temp = float(grp.attrs["temperature"])
             temperatures.append(temp)
