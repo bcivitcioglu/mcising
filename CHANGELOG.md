@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `mcising run --resume` without `--checkpoint` now exits with a usage
+  error instead of silently running a fresh simulation (#45).
+- The `run` configuration panel reports the actual lattice type; it
+  previously labeled every lattice `"…x… square"` (#46).
+- `mcising run --help` no longer claims the model is 2D-only — chain
+  (1D) and cubic (3D) lattices are supported (#47).
+- `load_hdf5` orders temperatures numerically; lexical group sorting
+  previously misordered results whenever any T ≥ 10 (#48).
+
+### Added
+
+- CLI test coverage for every subcommand and flag combination, and
+  I/O tests pinning bit-exact round-trips (dtypes and shapes per
+  lattice), JSON summary values, and error paths (corrupt/truncated
+  files, unwritable paths, degraded config records). Overall coverage
+  74% → 90%; the CI coverage ratchet rises from 39 to 89 and now lives
+  in `pyproject.toml` (`[tool.coverage.report] fail_under`).
+
 ## [0.26.0] - 2026-08-22
 
 ### Breaking changes in 1.0

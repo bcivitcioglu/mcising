@@ -86,6 +86,12 @@ markers = [
     "statistical: asserts on Monte Carlo estimates; runs over every seed in tests._stats.DEFAULT_SEEDS",
 ]
 
+[tool.coverage.report]
+# Coverage ratchet: raised by each test-debt phase to measured value - 1
+# (P01 baseline 39, P12 measured 90). CI relies on this single source of
+# truth; never lower it to make a build pass.
+fail_under = 89
+
 [tool.ruff]
 target-version = "py310"
 line-length = 88
