@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-08-31
+
 ### Fixed
 
 - `mcising run --resume` without `--checkpoint` now exits with a usage
@@ -26,6 +28,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files, unwritable paths, degraded config records). Overall coverage
   74% → 90%; the CI coverage ratchet rises from 39 to 89 and now lives
   in `pyproject.toml` (`[tool.coverage.report] fail_under`).
+- Plotting figure-content tests: axis labels, error-bar containers,
+  legends, the grid/subsampling and raw-array code paths of
+  `plot_lattice`, and `plot_correlation` (previously untested).
+  `export_lattices` gains a zip/PNG schema contract test — tree and
+  flat arcnames, temperature filtering, and PNG signatures.
+- Benchmark-module tests (`tests/test_benchmarks.py`): the
+  pure-Python/NumPy/Rust runners at tiny sizes, the
+  `BenchmarkResult` work-accounting arms, and `bench_peapods`
+  against a recording stub, pinning the exact peapods call contract
+  and the `ImportError` when peapods is absent.
+- 19 new cargo tests for `parallel.rs` and `simulation.rs`:
+  parallel-tempering swap acceptance against the Metropolis
+  criterion (statistical), bit-identical results under thread-count
+  changes, the exact PT ≡ independent equivalence forms,
+  RNG-state serialization round-trip with bit-identical continuation
+  for all three algorithms, flip/local-energy consistency, and spin
+  configuration validation. `set_spins`, `set_rng_state`,
+  `flip_spin`, and `spin_energy` now delegate to pure-Rust
+  `*_internal` methods (no behavior change) so cargo tests can
+  reach them without a Python interpreter.
+- Coverage ratchet raised: `fail_under` 89 → 97 (overall coverage
+  97.87%; plotting 40% → 97.5% and benchmarks 21% → 100% across the
+  two test-debt phases).
 
 ## [0.26.0] - 2026-08-22
 

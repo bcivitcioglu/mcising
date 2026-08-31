@@ -500,7 +500,8 @@ fn run_parallel_tempering_internal(
         })
         .collect();
 
-    // Compute initial energies (total, not per-site, for swap criterion).
+    // Cache per-site energies; attempt_swaps multiplies by num_sites to
+    // recover the total-energy swap criterion.
     let mut energies: Vec<f64> = replicas
         .iter()
         .map(|sim| {
@@ -895,5 +896,306 @@ mod tests {
         let results = independent(&[2.0], None, true, false).expect("valid run");
         let configs = results[0].configs.as_ref().expect("store_configs=true");
         assert_eq!(configs.len(), 5 * NUM_SITES);
+    }
+
+    /// Ferromagnetic 4×4 metropolis replicas for direct `attempt_swaps`
+    /// tests. The spin contents are irrelevant there — only the energies
+    /// slice drives the criterion — but the sims must exist to be swapped.
+    fn metropolis_replicas(n: usize) -> Vec<IsingSimulation> {
+        build_replicas(n, L, 1.0, 0.0, 0.0, 0.0, 42, "metropolis", "square")
+            .expect("valid replica parameters")
+    }
+
+    /// Run a closure inside a dedicated rayon pool with `n_threads`
+    /// threads (scoped — the global pool is never touched).
+    fn with_pool<T: Send>(n_threads: usize, f: impl FnOnce() -> T + Send) -> T {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(n_threads)
+            .build()
+            .expect("pool builds")
+            .install(f)
+    }
+
+    #[test]
+    // Acceptance is detected through the bit-exact movement of the rigged
+    // energy value — the swap relocates the float, it never recomputes it.
+    #[allow(clippy::float_cmp)]
+    fn test_swap_acceptance_matches_metropolis_probability() {
+        // P(swap) = min(1, exp(delta)) with delta = (β_i−β_j)(E_i−E_j)·N.
+        // Per-site energies are rigged so delta = ln(target_p) exactly,
+        // then the empirical acceptance rate over N_TRIALS near-free
+        // attempt_swaps calls is compared against target_p. The 5σ band
+        // keeps the false-failure probability at ~6e-7 per point, while a
+        // missing exp() or a sign flip sits >90σ away — decisive, and two
+        // target points pin the exponential shape, not just a coin flip.
+        const N_TRIALS: usize = 10_000;
+        const N_SIGMA: f64 = 5.0;
+        let betas = [1.0, 0.5]; // descending, as production sorts them
+        let mut replicas = metropolis_replicas(2);
+        let mut swap_rng = crate::rng::create_rng(999);
+
+        for target_p in [0.5_f64, 0.2] {
+            // delta = (β0−β1)·(0 − e1)·N = ln(target_p)
+            let e1 = -target_p.ln() / ((betas[0] - betas[1]) * NUM_SITES as f64);
+            let mut accepts = 0_usize;
+            for _ in 0..N_TRIALS {
+                let mut energies = [0.0, e1];
+                attempt_swaps(
+                    &mut replicas,
+                    &mut energies,
+                    &betas,
+                    0,
+                    NUM_SITES,
+                    &mut swap_rng,
+                );
+                if energies[0] == e1 {
+                    accepts += 1;
+                }
+            }
+            let p_hat = accepts as f64 / N_TRIALS as f64;
+            let sigma = (target_p * (1.0 - target_p) / N_TRIALS as f64).sqrt();
+            println!("calib swap-acceptance: p={target_p} p_hat={p_hat} sigma={sigma:.5}");
+            assert!(
+                (p_hat - target_p).abs() <= N_SIGMA * sigma,
+                "p={target_p}: p_hat={p_hat} deviates more than {N_SIGMA}σ (σ={sigma:.5})"
+            );
+        }
+    }
+
+    #[test]
+    // The swap moves values bit-exactly; equality is the detection.
+    #[allow(clippy::float_cmp)]
+    fn test_swap_delta_nonnegative_always_accepts() {
+        let betas = [1.0, 0.5];
+        let mut replicas = metropolis_replicas(2);
+        let mut swap_rng = crate::rng::create_rng(7);
+
+        // delta > 0 (hotter replica holds the lower energy): deterministic.
+        for _ in 0..100 {
+            let mut energies = [1.0, 0.0];
+            attempt_swaps(
+                &mut replicas,
+                &mut energies,
+                &betas,
+                0,
+                NUM_SITES,
+                &mut swap_rng,
+            );
+            assert_eq!(energies, [0.0, 1.0], "delta>0 must always swap");
+        }
+
+        // delta == 0 (equal energies): the >= branch swaps unconditionally.
+        // Equal energies are indistinguishable after the swap, so marker
+        // spins detect it. This always-swap at delta=0 is exactly why
+        // "PT at equal betas ≡ independent" holds only as a multiset
+        // statement across replicas, never per index.
+        replicas[0].spins = vec![1; NUM_SITES];
+        replicas[1].spins = vec![-1; NUM_SITES];
+        let mut energies = [0.5, 0.5];
+        attempt_swaps(
+            &mut replicas,
+            &mut energies,
+            &betas,
+            0,
+            NUM_SITES,
+            &mut swap_rng,
+        );
+        assert_eq!(replicas[0].spins, vec![-1; NUM_SITES]);
+        assert_eq!(replicas[1].spins, vec![1; NUM_SITES]);
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn test_swap_strongly_negative_delta_never_accepts() {
+        // delta = −50 → acceptance e^{−50} ≈ 2e-22; over 1000 trials the
+        // false-failure probability is ~2e-19.
+        let betas = [1.0, 0.5];
+        let e1 = 50.0 / ((betas[0] - betas[1]) * NUM_SITES as f64);
+        let mut replicas = metropolis_replicas(2);
+        let mut swap_rng = crate::rng::create_rng(11);
+        for _ in 0..1000 {
+            let mut energies = [0.0, e1];
+            attempt_swaps(
+                &mut replicas,
+                &mut energies,
+                &betas,
+                0,
+                NUM_SITES,
+                &mut swap_rng,
+            );
+            assert_eq!(energies, [0.0, e1], "delta=-50 swap accepted");
+        }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn test_swap_even_odd_pair_alternation() {
+        // Three replicas, every adjacent delta rigged positive: the round
+        // parity alone selects which pairs may swap — round 0 touches only
+        // (0,1), round 1 only (1,2).
+        let betas = [1.0, 0.5, 0.25];
+        let mut swap_rng = crate::rng::create_rng(13);
+        for (round, expected) in [(0_usize, [2.0, 3.0, 1.0]), (1, [3.0, 1.0, 2.0])] {
+            let mut replicas = metropolis_replicas(3);
+            let mut energies = [3.0, 2.0, 1.0];
+            attempt_swaps(
+                &mut replicas,
+                &mut energies,
+                &betas,
+                round,
+                NUM_SITES,
+                &mut swap_rng,
+            );
+            assert_eq!(energies, expected, "round={round}");
+        }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn test_swap_two_replicas_odd_round_is_noop() {
+        // offset=1 with two replicas yields the empty range 1..1 — no pair
+        // exists, so even a rigged delta>0 must not swap.
+        let betas = [1.0, 0.5];
+        let mut replicas = metropolis_replicas(2);
+        let mut swap_rng = crate::rng::create_rng(17);
+        let mut energies = [1.0, 0.0];
+        attempt_swaps(
+            &mut replicas,
+            &mut energies,
+            &betas,
+            1,
+            NUM_SITES,
+            &mut swap_rng,
+        );
+        assert_eq!(energies, [1.0, 0.0]);
+    }
+
+    #[test]
+    // Bit-identity IS the contract — PT with one replica has no swap pairs,
+    // so it must degenerate to the independent runner exactly.
+    #[allow(clippy::float_cmp)]
+    fn test_pt_single_temperature_equals_independent_bitwise() {
+        // Same seed (base+0), same thermalization, same sweep granularity
+        // (swap_interval = measurement_interval), and an empty swap loop
+        // that never draws from the swap RNG.
+        let pt_results = pt(&[2.5], 50, 10, 10).expect("valid run");
+        let ind_results = independent(&[2.5], None, true, false).expect("valid run");
+        assert_eq!(pt_results.len(), 1);
+        assert_eq!(pt_results[0].temperature, ind_results[0].temperature);
+        assert_eq!(pt_results[0].energies, ind_results[0].energies);
+        assert_eq!(pt_results[0].magnetizations, ind_results[0].magnetizations);
+        assert_eq!(pt_results[0].configs, ind_results[0].configs);
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn test_pt_identical_betas_one_round_matches_independent_multiset() {
+        // At equal betas delta = 0, so the swap ALWAYS fires and per-index
+        // trajectories are permuted — the naive per-index "PT ≡ independent"
+        // is false by design. The exact statement is over the multiset of
+        // replicas: with one round (swap = measurement = n_sweeps) the swap
+        // only permutes already-recorded values, so the sorted measurements
+        // must match the independent runner's bit-for-bit (PT replica i and
+        // independent temperature i share seed base+i).
+        let pt_results = run_parallel_tempering_internal(
+            L,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            42,
+            "metropolis",
+            "square",
+            &[2.5, 2.5],
+            20,
+            50,
+            50,
+            50,
+            false,
+            false,
+        )
+        .expect("valid run");
+        let ind_results = run_independent_internal(
+            L,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            42,
+            "metropolis",
+            "square",
+            &[2.5, 2.5],
+            20,
+            50,
+            50,
+            false,
+            false,
+            None,
+        )
+        .expect("valid run");
+
+        let sorted_single = |results: &[TempResult], pick: fn(&TempResult) -> f64| {
+            let mut values: Vec<f64> = results.iter().map(pick).collect();
+            values.sort_by(f64::total_cmp);
+            values
+        };
+        assert_eq!(
+            sorted_single(&pt_results, |r| r.energies[0]),
+            sorted_single(&ind_results, |r| r.energies[0]),
+        );
+        assert_eq!(
+            sorted_single(&pt_results, |r| r.magnetizations[0]),
+            sorted_single(&ind_results, |r| r.magnetizations[0]),
+        );
+    }
+
+    #[test]
+    // Determinism under thread-count changes is by construction (per-replica
+    // seeds, a serial swap RNG, order-preserving collect) — this pins it.
+    #[allow(clippy::float_cmp)]
+    fn test_pt_deterministic_under_thread_counts() {
+        let reference = with_pool(1, || pt(&[1.5, 2.5, 3.5], 40, 10, 10)).expect("valid run");
+        for n_threads in [2, 4] {
+            let run = with_pool(n_threads, || pt(&[1.5, 2.5, 3.5], 40, 10, 10)).expect("valid run");
+            for (r, expected) in run.iter().zip(&reference) {
+                assert_eq!(r.temperature, expected.temperature, "n_threads={n_threads}");
+                assert_eq!(r.energies, expected.energies, "n_threads={n_threads}");
+                assert_eq!(
+                    r.magnetizations, expected.magnetizations,
+                    "n_threads={n_threads}"
+                );
+                assert_eq!(r.configs, expected.configs, "n_threads={n_threads}");
+            }
+        }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn test_independent_deterministic_under_thread_counts() {
+        let reference =
+            with_pool(1, || independent(&[1.5, 2.5, 3.5], None, true, false)).expect("valid run");
+        for n_threads in [2, 4] {
+            let run = with_pool(n_threads, || {
+                independent(&[1.5, 2.5, 3.5], None, true, false)
+            })
+            .expect("valid run");
+            for (r, expected) in run.iter().zip(&reference) {
+                assert_eq!(r.temperature, expected.temperature, "n_threads={n_threads}");
+                assert_eq!(r.energies, expected.energies, "n_threads={n_threads}");
+                assert_eq!(
+                    r.magnetizations, expected.magnetizations,
+                    "n_threads={n_threads}"
+                );
+                assert_eq!(r.configs, expected.configs, "n_threads={n_threads}");
+            }
+        }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn test_pt_returns_sorted_temperatures_for_unsorted_input() {
+        let results = pt(&[3.5, 1.5, 2.5], 50, 10, 10).expect("valid run");
+        let temps: Vec<f64> = results.iter().map(|r| r.temperature).collect();
+        assert_eq!(temps, vec![1.5, 2.5, 3.5]);
     }
 }

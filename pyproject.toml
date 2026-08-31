@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "mcising"
-version = "0.26.0"
+version = "0.27.0"
 description = "High-performance Ising model Monte Carlo simulation with Rust core"
 readme = "README.md"
 license = "MIT"
@@ -88,9 +88,9 @@ markers = [
 
 [tool.coverage.report]
 # Coverage ratchet: raised by each test-debt phase to measured value - 1
-# (P01 baseline 39, P12 measured 90). CI relies on this single source of
-# truth; never lower it to make a build pass.
-fail_under = 89
+# (P01 baseline 39, P12 measured 90, P13 measured 98). CI relies on this
+# single source of truth; never lower it to make a build pass.
+fail_under = 97
 
 [tool.ruff]
 target-version = "py310"

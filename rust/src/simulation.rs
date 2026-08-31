@@ -1,7 +1,4 @@
-use numpy::{
-    IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArrayDyn,
-    PyUntypedArrayMethods,
-};
+use numpy::{IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArrayDyn};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use rand::Rng;
@@ -148,6 +145,92 @@ impl IsingSimulation {
         })
     }
 
+    /// Replace the spin configuration (pure Rust, no PyO3).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `data` has the wrong length for this lattice
+    /// or contains a value other than +1/-1.
+    pub(crate) fn set_spins_internal(&mut self, data: &[i8]) -> Result<(), MCIsingError> {
+        let expected = self.lattice.num_sites();
+        if data.len() != expected {
+            return Err(MCIsingError::InvalidSpinConfiguration(format!(
+                "Expected {expected} spins, got {total}",
+                total = data.len()
+            )));
+        }
+
+        for &val in data {
+            if val != 1 && val != -1 {
+                return Err(MCIsingError::InvalidSpinConfiguration(format!(
+                    "All spins must be +1 or -1, found {val}"
+                )));
+            }
+        }
+
+        self.spins.clear();
+        self.spins.extend_from_slice(data);
+        Ok(())
+    }
+
+    /// Restore the RNG from its serialized state (pure Rust, no PyO3).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `state` is not a serialized Xoshiro256** state.
+    pub(crate) fn set_rng_state_internal(&mut self, state: &[u8]) -> Result<(), MCIsingError> {
+        let rng: Xoshiro256StarStar = serde_json::from_slice(state).map_err(|e| {
+            MCIsingError::InvalidSpinConfiguration(format!("Invalid RNG state: {e}"))
+        })?;
+        self.rng = rng;
+        Ok(())
+    }
+
+    /// Flip the spin at a flat site index (pure Rust, no PyO3).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `site` is out of bounds.
+    pub(crate) fn flip_spin_internal(&mut self, site: usize) -> Result<(), MCIsingError> {
+        if site >= self.spins.len() {
+            return Err(MCIsingError::InvalidSpinConfiguration(format!(
+                "Site index {site} out of bounds for lattice with {n} sites",
+                n = self.spins.len()
+            )));
+        }
+        self.spins[site] = -self.spins[site];
+        Ok(())
+    }
+
+    /// Local energy of the spin at a flat site index (pure Rust, no PyO3).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `site` is out of bounds.
+    pub(crate) fn spin_energy_internal(&self, site: usize) -> Result<f64, MCIsingError> {
+        if site >= self.spins.len() {
+            return Err(MCIsingError::InvalidSpinConfiguration(format!(
+                "Site index {site} out of bounds for lattice with {n} sites",
+                n = self.spins.len()
+            )));
+        }
+
+        with_lattice!(&self.lattice, lat => {
+            let spin = f64::from(self.spins[site]);
+            let mut local_field: f64 = 0.0;
+            for &nbr in lat.nearest_neighbors(site) {
+                local_field += self.j1 * f64::from(self.spins[nbr]);
+            }
+            for &nbr in lat.next_nearest_neighbors(site) {
+                local_field += self.j2 * f64::from(self.spins[nbr]);
+            }
+            for &nbr in lat.third_nearest_neighbors(site) {
+                local_field += self.j3 * f64::from(self.spins[nbr]);
+            }
+            Ok(-spin * local_field - self.h * spin)
+        })
+    }
+
     /// Perform sweeps (pure Rust, no PyO3). Used by parallel runner.
     pub fn sweep_internal(&mut self, n_sweeps: usize, beta: f64) -> SweepResult {
         let mut total = SweepResult {
@@ -220,31 +303,10 @@ impl IsingSimulation {
 
     /// Set the spin configuration from a NumPy array.
     fn set_spins(&mut self, spins: PyReadonlyArrayDyn<'_, i8>) -> PyResult<()> {
-        let total: usize = spins.shape().iter().product();
-        let expected = self.lattice.num_sites();
-        if total != expected {
-            return Err(MCIsingError::InvalidSpinConfiguration(format!(
-                "Expected {expected} spins, got {total}"
-            ))
-            .into());
-        }
-
         let data = spins.as_slice().map_err(|e| {
             MCIsingError::InvalidSpinConfiguration(format!("Cannot read array: {e}"))
         })?;
-
-        for &val in data {
-            if val != 1 && val != -1 {
-                return Err(MCIsingError::InvalidSpinConfiguration(format!(
-                    "All spins must be +1 or -1, found {val}"
-                ))
-                .into());
-            }
-        }
-
-        self.spins.clear();
-        self.spins.extend_from_slice(data);
-        Ok(())
+        self.set_spins_internal(data).map_err(Into::into)
     }
 
     /// Flip the spin at a flat site index.
@@ -253,41 +315,12 @@ impl IsingSimulation {
     /// a (row, col) pair cannot address cubic ([L, L, L]) or honeycomb
     /// ([L, L, 2]) sites (B6).
     fn flip_spin(&mut self, site: usize) -> PyResult<()> {
-        if site >= self.spins.len() {
-            return Err(MCIsingError::InvalidSpinConfiguration(format!(
-                "Site index {site} out of bounds for lattice with {n} sites",
-                n = self.spins.len()
-            ))
-            .into());
-        }
-        self.spins[site] = -self.spins[site];
-        Ok(())
+        self.flip_spin_internal(site).map_err(Into::into)
     }
 
     /// Compute the local energy of the spin at a flat site index.
     fn spin_energy(&self, site: usize) -> PyResult<f64> {
-        if site >= self.spins.len() {
-            return Err(MCIsingError::InvalidSpinConfiguration(format!(
-                "Site index {site} out of bounds for lattice with {n} sites",
-                n = self.spins.len()
-            ))
-            .into());
-        }
-
-        with_lattice!(&self.lattice, lat => {
-            let spin = f64::from(self.spins[site]);
-            let mut local_field: f64 = 0.0;
-            for &nbr in lat.nearest_neighbors(site) {
-                local_field += self.j1 * f64::from(self.spins[nbr]);
-            }
-            for &nbr in lat.next_nearest_neighbors(site) {
-                local_field += self.j2 * f64::from(self.spins[nbr]);
-            }
-            for &nbr in lat.third_nearest_neighbors(site) {
-                local_field += self.j3 * f64::from(self.spins[nbr]);
-            }
-            Ok(-spin * local_field - self.h * spin)
-        })
+        self.spin_energy_internal(site).map_err(Into::into)
     }
 
     /// Compute the correlation function.
@@ -346,11 +379,7 @@ impl IsingSimulation {
     }
 
     fn set_rng_state(&mut self, state: Vec<u8>) -> PyResult<()> {
-        let rng: Xoshiro256StarStar = serde_json::from_slice(&state).map_err(|e| {
-            MCIsingError::InvalidSpinConfiguration(format!("Invalid RNG state: {e}"))
-        })?;
-        self.rng = rng;
-        Ok(())
+        self.set_rng_state_internal(&state).map_err(Into::into)
     }
 
     /// Anneal along a temperature schedule: one sweep per positive entry.
@@ -557,5 +586,213 @@ mod tests {
             IsingSimulation::new_internal(4, -1.0, 0.0, 0.0, 0.0, 42, "metropolis", "square")
                 .is_ok()
         );
+    }
+
+    /// A ferromagnetic 4×4 square simulation, the workhorse of the
+    /// state-continuation tests below.
+    fn square_sim(algorithm: &str) -> IsingSimulation {
+        IsingSimulation::new_internal(4, 1.0, 0.0, 0.0, 0.0, 42, algorithm, "square")
+            .expect("valid constructor arguments")
+    }
+
+    #[test]
+    // Bit-identity IS the contract under test — approximate agreement would
+    // hide a reseeded or diverged RNG stream.
+    #[allow(clippy::float_cmp)]
+    fn test_rng_roundtrip_bit_identical_continuation() {
+        // The checkpoint contract: capturing (spins, rng_state) mid-run and
+        // restoring both into a FRESH simulation must reproduce the original
+        // trajectory bit-for-bit. Exercised for all three algorithms — Wolff
+        // and Swendsen-Wang carry scratch buffers that are NOT serialized,
+        // so this also pins that the scratch is stateless between sweeps.
+        for algorithm in ["metropolis", "wolff", "swendsen_wang"] {
+            let beta = 0.5;
+            let mut original = square_sim(algorithm);
+            original.sweep_internal(10, beta);
+            let state = original.get_rng_state();
+            let snapshot = original.spins.clone();
+
+            original.sweep_internal(20, beta);
+            let spins_ahead = original.spins.clone();
+            let energy_ahead = original.energy();
+
+            let mut restored = square_sim(algorithm);
+            restored
+                .set_spins_internal(&snapshot)
+                .expect("snapshot has valid length and values");
+            restored
+                .set_rng_state_internal(&state)
+                .expect("state round-trips");
+            restored.sweep_internal(20, beta);
+
+            assert_eq!(restored.spins, spins_ahead, "algorithm={algorithm}");
+            assert_eq!(restored.energy(), energy_ahead, "algorithm={algorithm}");
+        }
+    }
+
+    #[test]
+    fn test_set_rng_state_restores_old_stream() {
+        // Restoring a STALE state must rewind the stream: replaying the
+        // same sweeps from the same spins reproduces the first replay even
+        // after the generator has been advanced far past the capture point.
+        let beta = 0.5;
+        let mut sim = square_sim("metropolis");
+        sim.sweep_internal(10, beta);
+        let state = sim.get_rng_state();
+        let snapshot = sim.spins.clone();
+
+        sim.sweep_internal(5, beta);
+        let first_replay = sim.spins.clone();
+
+        sim.sweep_internal(7, beta); // advance well past the capture point
+        sim.set_spins_internal(&snapshot)
+            .expect("snapshot round-trips");
+        sim.set_rng_state_internal(&state)
+            .expect("state round-trips");
+        sim.sweep_internal(5, beta);
+
+        assert_eq!(sim.spins, first_replay);
+    }
+
+    #[test]
+    fn test_set_rng_state_malformed_is_err() {
+        let mut sim = square_sim("metropolis");
+        for bad in [&b"not json"[..], b"", b"{}"] {
+            let err = sim
+                .set_rng_state_internal(bad)
+                .expect_err("malformed state must be rejected");
+            assert!(err.to_string().contains("Invalid RNG state"), "{err}");
+        }
+    }
+
+    #[test]
+    fn test_flip_energy_identity() {
+        // Local/global consistency (B6 regression class): flipping site i
+        // changes the total energy by -2·spin_energy(i), i.e. the per-site
+        // energy() by -2·spin_energy(i)/N. Couplings cover every shell plus
+        // the field so all neighbor tables enter the identity.
+        let mut sim =
+            IsingSimulation::new_internal(4, 1.0, 0.3, 0.2, 0.1, 42, "metropolis", "square")
+                .expect("square supports j2/j3");
+        sim.sweep_internal(5, 0.7); // a generic (non-symmetric) configuration
+        let n = sim.spins.len() as f64;
+
+        for site in [0, 7, 15] {
+            let before = sim.energy();
+            let local = sim.spin_energy_internal(site).expect("site in bounds");
+            sim.flip_spin_internal(site).expect("site in bounds");
+            let after = sim.energy();
+            let expected_shift = -2.0 * local / n;
+            assert!(
+                (after - before - expected_shift).abs() < 1e-12,
+                "site={site}: shift {got:.17} vs expected {expected_shift:.17}",
+                got = after - before
+            );
+        }
+    }
+
+    #[test]
+    // Double flip restores the exact configuration, so the recomputed energy
+    // follows the identical summation path — bit-equality is the contract.
+    #[allow(clippy::float_cmp)]
+    fn test_double_flip_restores_state() {
+        let mut sim = square_sim("metropolis");
+        sim.sweep_internal(3, 0.7);
+        let spins_before = sim.spins.clone();
+        let energy_before = sim.energy();
+
+        sim.flip_spin_internal(5).expect("site in bounds");
+        sim.flip_spin_internal(5).expect("site in bounds");
+
+        assert_eq!(sim.spins, spins_before);
+        assert_eq!(sim.energy(), energy_before);
+    }
+
+    #[test]
+    fn test_flip_and_spin_energy_out_of_bounds_is_err() {
+        let mut sim = square_sim("metropolis");
+        let n = sim.spins.len();
+        for site in [n, usize::MAX] {
+            let err = sim
+                .flip_spin_internal(site)
+                .expect_err("out-of-bounds flip must be rejected");
+            assert!(err.to_string().contains("out of bounds"), "{err}");
+            let err = sim
+                .spin_energy_internal(site)
+                .expect_err("out-of-bounds spin_energy must be rejected");
+            assert!(err.to_string().contains("out of bounds"), "{err}");
+        }
+    }
+
+    #[test]
+    // All-up and Néel energies are exact in floating point (spins ±1,
+    // couplings that are binary fractions), so equality is exact.
+    #[allow(clippy::float_cmp)]
+    fn test_set_spins_internal_roundtrip() {
+        // All-up ferromagnet with a field: E/site = -(z/2)·j1 - h = -2.5
+        // on the square lattice (z=4) with j1=1, h=0.5 — every term is a
+        // binary fraction, so the sum is exact.
+        let mut sim =
+            IsingSimulation::new_internal(4, 1.0, 0.0, 0.0, 0.5, 42, "metropolis", "square")
+                .expect("valid constructor arguments");
+        let all_up = vec![1_i8; 16];
+        sim.set_spins_internal(&all_up).expect("valid spins");
+        assert_eq!(sim.spins, all_up);
+        assert_eq!(sim.energy(), -2.5);
+
+        // Néel checkerboard at h=0: every NN bond is antialigned, so
+        // E/site = +(z/2)·j1 = +2 — pins the sign convention.
+        let mut sim = square_sim("metropolis");
+        let checkerboard: Vec<i8> = (0..16)
+            .map(|i| if (i / 4 + i % 4) % 2 == 0 { 1 } else { -1 })
+            .collect();
+        sim.set_spins_internal(&checkerboard).expect("valid spins");
+        assert_eq!(sim.spins, checkerboard);
+        assert_eq!(sim.energy(), 2.0);
+    }
+
+    #[test]
+    fn test_set_spins_internal_validation() {
+        let mut sim = square_sim("metropolis");
+        let spins_before = sim.spins.clone();
+
+        let err = sim
+            .set_spins_internal(&[1_i8; 15])
+            .expect_err("wrong length must be rejected");
+        assert!(err.to_string().contains("Expected 16 spins"), "{err}");
+
+        for bad in [0_i8, 2, -2] {
+            let mut data = vec![1_i8; 16];
+            data[3] = bad;
+            let err = sim
+                .set_spins_internal(&data)
+                .expect_err("non-±1 value must be rejected");
+            assert!(err.to_string().contains("must be +1 or -1"), "{err}");
+        }
+
+        // Failed calls must not have touched the configuration.
+        assert_eq!(sim.spins, spins_before);
+
+        let mixed: Vec<i8> = (0..16).map(|i| if i < 8 { 1 } else { -1 }).collect();
+        assert!(sim.set_spins_internal(&mixed).is_ok());
+        assert_eq!(sim.spins, mixed);
+    }
+
+    #[test]
+    // 1/2 and 1/1 are exact in floating point.
+    #[allow(clippy::float_cmp)]
+    fn test_beta_from_temperature_edges() {
+        assert_eq!(beta_from_temperature(2.0).expect("valid T"), 0.5);
+        assert_eq!(beta_from_temperature(1.0).expect("valid T"), 1.0);
+        assert!(beta_from_temperature(f64::MIN_POSITIVE)
+            .expect("tiny positive T is valid")
+            .is_finite());
+
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(
+                beta_from_temperature(bad).is_err(),
+                "T={bad} must be rejected"
+            );
+        }
     }
 }
