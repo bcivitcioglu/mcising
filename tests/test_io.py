@@ -242,6 +242,12 @@ class TestSchemaCompat:
         loaded = load_hdf5(path)
         assert loaded.metadata["version"] == "unknown"
 
+    def test_legacy_elapsed_seconds_restored(self, tmp_path: Path) -> None:
+        path = tmp_path / "legacy.h5"
+        write_legacy_hdf5(path, elapsed_seconds=12.5)
+        loaded = load_hdf5(path)
+        assert loaded.metadata["elapsed_seconds"] == 12.5
+
     def test_legacy_config_best_effort_restored(self, tmp_path: Path) -> None:
         config = _small_config(seed=7)
         path = tmp_path / "legacy.h5"

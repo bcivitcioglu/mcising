@@ -22,6 +22,7 @@ def write_legacy_hdf5(
     *,
     version: str | None = "0.2.0",
     config_json: str | None = "{}",
+    elapsed_seconds: float | None = None,
     temperatures: tuple[float, ...] = (3.0, 2.0),
     n_samples: int = 5,
     size: int = 4,
@@ -38,6 +39,9 @@ def write_legacy_hdf5(
         (some very old files predate it).
     config_json : str or None
         Value for the ``config_json`` attribute; None omits it.
+    elapsed_seconds : float or None
+        Value for the ``elapsed_seconds`` attribute; None (default)
+        omits it, as most legacy files did.
     temperatures : tuple[float, ...]
         Temperature groups to create.
     n_samples : int
@@ -54,6 +58,8 @@ def write_legacy_hdf5(
             meta.attrs["version"] = version
         if config_json is not None:
             meta.attrs["config_json"] = config_json
+        if elapsed_seconds is not None:
+            meta.attrs["elapsed_seconds"] = elapsed_seconds
         for temp in temperatures:
             grp = f.create_group(f"T={temp:.6f}")
             grp.attrs["temperature"] = temp
