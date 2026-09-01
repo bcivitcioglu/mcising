@@ -12,8 +12,11 @@ from mcising.config import (
     LatticeType,
     SimulationConfig,
 )
+from mcising.constants import TC_SQUARE_2D
 from mcising.exceptions import ConfigurationError
-from mcising.simulation import Simulation
+from mcising.simulation import Simulation, SimulationResults
+
+from tests._stats import DEFAULT_SEEDS, assert_samples_agree
 
 
 class TestPTBasic:
@@ -289,3 +292,74 @@ class TestPTCorrelation:
             assert distances.size > 0
             assert distances.shape == correlations.shape
             assert results.correlation_length[temp].shape == (5,)  # 50 // 10
+
+
+#: Shared ladder for the PT-vs-independent comparison: straddles Tc so the
+#: replica exchange actually mixes ordered and disordered configurations.
+PT_AGREEMENT_TEMPERATURES = (2.0, TC_SQUARE_2D, 2.5, 3.0, 3.5)
+
+
+class TestPTMatchesIndependent:
+    """Replica exchange leaves every temperature's marginal untouched.
+
+    PT samples the joint distribution prod_i exp(-beta_i E(s_i)); its
+    marginal at each beta_i must therefore equal what an independent run
+    at that temperature measures. Any error in the swap criterion (sign,
+    missing energy swap, wrong beta pairing) shows up as a disagreement
+    at some shared temperature.
+    """
+
+    @staticmethod
+    def _run(seed: int, mode: ExecutionMode) -> SimulationResults:
+        config = SimulationConfig(
+            lattice=LatticeConfig(size=16),
+            algorithm=Algorithm.SWENDSEN_WANG,
+            temperatures=PT_AGREEMENT_TEMPERATURES,
+            n_sweeps=4_000,
+            n_thermalization=2_000,
+            measurement_interval=10,
+            mode=mode,
+            swap_interval=5 if mode is ExecutionMode.PARALLEL_TEMPERING else 1,
+            seed=seed,
+        )
+        return Simulation(config).run(show_progress=False)
+
+    @pytest.mark.statistical
+    def test_pt_matches_independent_at_every_temperature(self) -> None:
+        """<E> and <|m|> agree within 3 sigma at every shared temperature.
+
+        Design. Swendsen-Wang in both modes: independent mode quenches
+        from a random start at each target T, and Metropolis then freezes
+        into stripes below Tc (test_independent.py compares only T >= 3.0
+        for that reason); SW reorganizes globally and equilibrates from
+        the quench, so the ladder can reach T=2.0 < Tc. n_thermalization
+        is load-bearing — 500 sweeps left a +2.8 sigma pooled bias at
+        T=2.0 (thermalization, not physics); 2000 removes it. The series
+        are pooled across DEFAULT_SEEDS before comparing so every seed
+        contributes while the test stays at 10 comparisons (5 T x 2
+        observables) at 3 sigma: ~2.7% nominal family false-fail, well
+        below 1% given the blocking error's conservatism, versus ~13% for
+        50 per-seed comparisons. Runs are seed-deterministic, so the
+        calibrated margins hold in CI. Calibration (release build): worst
+        of the 10 comparisons 1.48 sigma, ~0.6 s for all runs.
+        """
+        series: dict[tuple[ExecutionMode, str, float], list[np.ndarray]] = {}
+        modes = (ExecutionMode.PARALLEL_TEMPERING, ExecutionMode.INDEPENDENT)
+        for seed in DEFAULT_SEEDS:
+            for mode in modes:
+                results = self._run(seed, mode)
+                for t in PT_AGREEMENT_TEMPERATURES:
+                    series.setdefault((mode, "E", t), []).append(results.energy[t])
+                    series.setdefault((mode, "|m|", t), []).append(
+                        np.abs(results.magnetization[t])
+                    )
+        pt, ind = modes
+        for t in PT_AGREEMENT_TEMPERATURES:
+            for observable in ("E", "|m|"):
+                assert_samples_agree(
+                    np.concatenate(series[(pt, observable, t)]),
+                    np.concatenate(series[(ind, observable, t)]),
+                    n_sigma=3.0,
+                    label_a=f"PT <{observable}>(T={t:.3f})",
+                    label_b=f"independent <{observable}>(T={t:.3f})",
+                )

@@ -13,10 +13,11 @@ from typing import Final
 import numpy as np
 import pytest
 from mcising._core import IsingSimulation
-from mcising.config import LatticeConfig, SimulationConfig
+from mcising.config import Algorithm, ExecutionMode, LatticeConfig, SimulationConfig
 from mcising.constants import TC_SQUARE_2D
-from mcising.simulation import Simulation
+from mcising.simulation import Simulation, SimulationResults
 
+from tests._analytic import complete_elliptic_k, onsager_energy_per_site
 from tests._stats import (
     DEFAULT_SEEDS,
     assert_mean_above,
@@ -475,3 +476,121 @@ class TestFieldEffect:
             assert_mean_below(mags, -0.5, label=f"<m>(h=-2, seed={seed})")
 
         assert_over_seeds(check)
+
+
+# --- Onsager exact solution ----------------------------------------------
+
+#: Lattice size for the Onsager comparisons. The finite-lattice energy at Tc
+#: deviates from the thermodynamic limit by ~c/L with c ~ 0.62 (the exact 4x4
+#: value -1.5658 gives 0.61; measured 1.36% at L=32 and 0.64% at L=64), so
+#: L=32 fails a 1% gate on systematics alone and L=64 is the smallest power
+#: of two that fits with room for the statistical error.
+ONSAGER_L: Final = 64
+#: Off-critical temperatures for the u(T) curve. Tc itself is excluded: the
+#: exact formula is 0*inf there (its limit -sqrt(2) has its own test), and
+#: away from Tc the finite-size correction is exp(-L/xi) < 1e-5 at L=64.
+ONSAGER_CURVE_TEMPERATURES: Final = (1.5, 2.0, 2.5, 3.0, 3.5)
+
+
+def _run_onsager(
+    seed: int, temperatures: tuple[float, ...], n_sweeps: int, *, algorithm: Algorithm
+) -> SimulationResults:
+    config = SimulationConfig(
+        lattice=LatticeConfig(size=ONSAGER_L),
+        algorithm=algorithm,
+        mode=ExecutionMode.INDEPENDENT,
+        temperatures=temperatures,
+        n_sweeps=n_sweeps,
+        n_thermalization=2_000,
+        measurement_interval=5,
+        store_configs=False,  # N comes from the config; 8000 x 64x64 configs = 32 MB/T
+        seed=seed,
+    )
+    return Simulation(config).run(show_progress=False)
+
+
+class TestOnsagerEnergy:
+    """Square-lattice internal energy against Onsager's exact solution.
+
+    Two cluster algorithms, each where it decorrelates. Wolff at Tc: one
+    cluster spans ~L^(7/4) ~ 35% of the 64x64 lattice, and the energy
+    series has tau_int of 1-2 samples at 5 clusters per sample. Swendsen-
+    Wang off-critical: in the disordered phase a single Wolff cluster
+    flips only a few dozen spins, and at 5 clusters per sample the series
+    stayed so correlated that the 8-block error could not resolve tau
+    (calibration: pooled -3.2 sigma at T=3.0 with tau_int reported as
+    ~40 samples, gone at 10x the thermalization) — the quoted error was
+    not honest. SW updates every site each sweep and has tau_int < 1.2
+    samples at every temperature here. Both run in independent mode:
+    cluster updates equilibrate from a random start even below Tc (no
+    quench trap).
+    """
+
+    def test_exact_helper_limits(self) -> None:
+        """Pin the reference helpers before trusting them as oracles."""
+        assert abs(complete_elliptic_k(0.0) - math.pi / 2.0) < 1e-15
+        # K(1/sqrt(2)) = Gamma(1/4)^2 / (4 sqrt(pi)), a tabulated constant.
+        assert abs(complete_elliptic_k(math.sqrt(0.5)) - 1.8540746773013719) < 1e-12
+        for side in (1.0 - 1e-6, 1.0 + 1e-6):
+            u = onsager_energy_per_site(TC_SQUARE_2D * side)
+            assert abs(u + math.sqrt(2.0)) < 1e-4, (side, u)
+        # High-temperature limit: u -> -(z/2) tanh(beta) + O(beta^3).
+        assert abs(onsager_energy_per_site(100.0) + 2.0 * math.tanh(0.01)) < 1e-5
+        curve = [onsager_energy_per_site(t) for t in ONSAGER_CURVE_TEMPERATURES]
+        assert all(a < b for a, b in zip(curve, curve[1:])), curve
+
+    @pytest.mark.statistical
+    @pytest.mark.parametrize("seed", DEFAULT_SEEDS)
+    def test_energy_at_tc_within_one_percent(self, seed: int) -> None:
+        """<E>/site at Tc on 64x64 reproduces Onsager's -sqrt(2) within 1%.
+
+        Tolerance budget: 0.64% finite-size systematic at L=64 (see
+        ONSAGER_L) plus 4 sigma_stat, where sigma_stat <= 0.0025 (0.18%)
+        is enforced as a canary so the run cannot be shortened until noise
+        eats the margin. The blocking error of the mean is the quoted
+        uncertainty. Calibration over DEFAULT_SEEDS (release build):
+        deviations 0.64-0.77%, errors 0.0009-0.0012, worst margin to the
+        1% line 2.6 sigma_stat; the 5-seed mean -1.4240(5) puts the L=64
+        offset at 0.69% — the c/L systematic, not noise.
+        """
+        results = _run_onsager(
+            seed, (TC_SQUARE_2D,), n_sweeps=40_000, algorithm=Algorithm.WOLFF
+        )
+        est = results.statistics(TC_SQUARE_2D).energy
+        exact = -math.sqrt(2.0)
+        deviation = abs(est.value - exact)
+        assert est.error <= 0.0025, f"error budget exceeded: <E>/site = {est}"
+        assert deviation <= 0.01 * abs(exact), (
+            f"<E>/site(Tc, L={ONSAGER_L}, seed={seed}) = {est} vs Onsager "
+            f"{exact:.6f}: |dev| = {deviation:.5f} "
+            f"({100.0 * deviation / abs(exact):.2f}%) exceeds the 1% tolerance "
+            f"({0.01 * abs(exact):.5f})"
+        )
+
+    @pytest.mark.slow
+    @pytest.mark.statistical
+    @pytest.mark.parametrize("seed", DEFAULT_SEEDS)
+    def test_internal_energy_curve_matches_onsager(self, seed: int) -> None:
+        """<E>/site within 4 sigma of the exact u(T) at 5 off-critical temperatures.
+
+        4000 samples per temperature (20000 Swendsen-Wang sweeps at
+        interval 5; see the class docstring for why not Wolff). Two-sided
+        against the exact infinite-lattice value: at L=64 the finite-size
+        shift exp(-L/xi) is below 1e-5 at every temperature here, far
+        below the ~1e-3 blocking errors, so no systematic allowance is
+        needed. Calibration over DEFAULT_SEEDS (release build): worst
+        1.80 sigma, every per-temperature pooled deviation within 1.3
+        sigma, tau_int 0.5-1.2 samples, ~2 s per seed.
+        """
+        results = _run_onsager(
+            seed,
+            ONSAGER_CURVE_TEMPERATURES,
+            n_sweeps=20_000,
+            algorithm=Algorithm.SWENDSEN_WANG,
+        )
+        for t in ONSAGER_CURVE_TEMPERATURES:
+            assert_within_sigma(
+                results.energy[t],
+                onsager_energy_per_site(t),
+                label=f"<E>/site (T={t}, L={ONSAGER_L}, seed={seed})",
+            )

@@ -13,6 +13,8 @@ and independent of the B1 fix).
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
 from mcising._core import IsingSimulation
@@ -166,4 +168,93 @@ class TestSinglePathMatchesMultiPath:
         multi = self._energies(self.EPS, 0.0, -1.0, seed + 1000)
         assert_samples_agree(
             single, multi, label_a="sweep_j3 (J3=-1)", label_b="sweep_j1j3 (J1=eps)"
+        )
+
+
+# --- exact ground states (static, no dynamics) ---------------------------
+
+
+def _square_neel(size: int) -> np.ndarray:
+    rows, cols = np.indices((size, size))
+    return np.where((rows + cols) % 2 == 0, 1, -1).astype(np.int8)
+
+
+def _chain_neel(size: int) -> np.ndarray:
+    return np.where(np.arange(size) % 2 == 0, 1, -1).astype(np.int8)
+
+
+def _honeycomb_neel(size: int) -> np.ndarray:
+    # Spins are indexed (row, col, sublattice) and every NN bond joins the
+    # two sublattices, so a sublattice sign split is the Neel state.
+    spins = np.empty((size, size, 2), dtype=np.int8)
+    spins[:, :, 0] = 1
+    spins[:, :, 1] = -1
+    return spins
+
+
+def _cubic_neel(size: int) -> np.ndarray:
+    i, j, k = np.indices((size, size, size))
+    return np.where((i + j + k) % 2 == 0, 1, -1).astype(np.int8)
+
+
+def _triangular_stripe(size: int) -> np.ndarray:
+    _, cols = np.indices((size, size))
+    return np.where(cols % 2 == 0, 1, -1).astype(np.int8)
+
+
+# (lattice_type, size, ground-state builder, exact E/site at J1=-1). Sizes
+# are even so the patterns wrap consistently under periodic boundaries
+# (triangular/honeycomb require even L anyway).
+EXACT_GROUND_STATES: list[tuple[str, int, Callable[[int], np.ndarray], float]] = [
+    ("square", 6, _square_neel, -2.0),
+    ("chain", 10, _chain_neel, -1.0),
+    ("honeycomb", 6, _honeycomb_neel, -1.5),
+    ("cubic", 4, _cubic_neel, -3.0),
+    ("triangular", 6, _triangular_stripe, -1.0),
+]
+
+
+class TestExactGroundStates:
+    """First-principles AFM ground-state energies, checked statically.
+
+    Extends the all-up grid of test_cross_lattice.py (FM ground state,
+    E/site = -(J1 z_nn + J2 z_nnn + J3 z_tnn)/2 - h) to J1 = -1, where the
+    ground state is no longer the trivial one. Configurations are set
+    directly and only the energy is read, so no dynamics is involved and
+    the chain is included despite #26.
+    """
+
+    @pytest.mark.parametrize(
+        ("lattice", "size", "build", "e_exact"),
+        EXACT_GROUND_STATES,
+        ids=[row[0] for row in EXACT_GROUND_STATES],
+    )
+    def test_ground_state_energy(
+        self,
+        lattice: str,
+        size: int,
+        build: Callable[[int], np.ndarray],
+        e_exact: float,
+    ) -> None:
+        """The constructed state has exactly the derived ground-state energy.
+
+        Bipartite lattices (square, chain, honeycomb, cubic): the Neel
+        state anti-aligns every NN bond, so all N z_nn / 2 bonds sit at
+        their minimum -|J1| and E/site = -z_nn |J1| / 2. That is the global
+        minimum because no bond can contribute less.
+
+        Triangular (frustrated, no Neel state): three mutually anti-aligned
+        spins are impossible, so every elementary triangle carries at
+        least one frustrated (aligned, +|J1|) bond. With 2N triangles, 3N
+        bonds and each bond shared by two triangles, at least N bonds are
+        frustrated, giving E/site >= (-(3N - N) + N) |J1| / N = -|J1|. The
+        column stripe frustrates exactly the two in-column bonds per site
+        (N bonds total) and attains the bound, so it is a true ground state.
+        """
+        sim = IsingSimulation(size, -1.0, 0.0, 0.0, 0.0, 42, "metropolis", lattice)
+        sim.set_spins(build(size))
+        assert sim.magnetization() == 0.0, "pattern sanity: zero net moment"
+        assert abs(sim.energy() - e_exact) < 1e-10, (
+            f"{lattice} L={size} ground state: E/site={sim.energy():.12f} "
+            f"expected {e_exact}"
         )

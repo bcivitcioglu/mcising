@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Exact-results validation suite. Onsager: `<E>/site` at Tc on a 64x64
+  square lattice within 1% of -sqrt(2) with the blocking error quoted in
+  the assertion (measured 0.64-0.77% across seeds — the O(1/L)
+  finite-size offset; L=32 would fail on that alone), plus the exact
+  u(T) curve at five off-critical temperatures (slow-marked). 1D chain:
+  `<E>` and signed chi against the finite-N transfer matrix at five
+  temperatures within 4 sigma, via Wolff (sequential Metropolis never
+  equilibrates the chain, #26). Parallel tempering vs independent mode
+  within 3 sigma at every shared temperature. First-principles
+  antiferromagnetic ground states on all five lattices, including the
+  frustrated triangular stripe bound. Reference formulas live in
+  `tests/_analytic.py` (Onsager via an AGM elliptic integral — no scipy).
+
 ## [0.27.0] - 2026-08-31
 
 ### Fixed

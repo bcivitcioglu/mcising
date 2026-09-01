@@ -401,6 +401,7 @@ class TestWrapperFidelity:
         assert _stats.__all__ == [
             "DEFAULT_N_SIGMA",
             "DEFAULT_SEEDS",
+            "assert_estimate_within_sigma",
             "assert_mean_above",
             "assert_mean_below",
             "assert_ordered_means",
