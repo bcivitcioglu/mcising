@@ -1,8 +1,11 @@
 """Benchmark baselines for performance comparison.
 
-Contains pure Python and NumPy-vectorized Metropolis implementations
-for benchmarking against the Rust core. These are intentionally minimal
-— just enough to measure the hot loop fairly.
+Contains a pure Python single-spin-flip loop and a NumPy checkerboard
+(whole-array sublattice) Metropolis implementation for benchmarking
+against the Rust core, plus runners for the Rust core itself and for the
+external peapods package. These are intentionally minimal — just enough
+to measure the hot loop fairly. ``benchmarks/run_all.py`` drives them to
+regenerate every published number.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 import numpy as np
+from numpy.typing import NDArray
 
 from mcising.constants import TC_SQUARE_2D
 
@@ -147,90 +151,73 @@ def bench_pure_python(
 
 
 # ---------------------------------------------------------------------------
-# NumPy-vectorized checkerboard Metropolis
+# NumPy checkerboard Metropolis (whole-array sublattice updates)
 # ---------------------------------------------------------------------------
 
 
 def _numpy_metropolis(
     lattice_size: int, n_sweeps: int, beta: float, seed: int
 ) -> tuple[float, float, float]:
-    """Run random single-spin-flip Metropolis using NumPy arrays.
+    """Run checkerboard Metropolis with whole-array NumPy updates.
 
-    Same algorithm as pure Python (random site, compute dE, accept/reject),
-    but uses NumPy arrays for spin storage and neighbor lookup tables.
-    Returns (elapsed, energy, mag).
+    The square lattice splits into two sublattices (sites with even and
+    odd ``row + col``) that share no bonds, so every site of one
+    sublattice can be updated at once: the local field comes from four
+    rolled copies of the spin array, the Boltzmann factor is evaluated on
+    the whole array and the accepted flips are applied through a mask.
+    One sweep updates both sublattices, i.e. attempts every site once —
+    the same work as a sequential single-spin-flip sweep, in a different
+    order. Returns (elapsed, energy, mag).
     """
+    if lattice_size % 2:
+        raise ValueError(
+            "checkerboard Metropolis needs an even lattice size so the two "
+            f"periodic sublattices close, got {lattice_size}"
+        )
     rng = np.random.default_rng(seed)
-    n = lattice_size * lattice_size
+    shape = (lattice_size, lattice_size)
+    spins: NDArray[np.int8] = rng.choice(np.array([-1, 1], dtype=np.int8), size=shape)
+    rows, cols = np.indices(shape)
+    masks: list[NDArray[np.bool_]] = [(rows + cols) % 2 == parity for parity in (0, 1)]
 
-    # Initialize random spins as flat NumPy array
-    spins = rng.choice(np.array([-1, 1], dtype=np.int8), size=n)
-
-    # Precompute neighbor table as (N, 4) array
-    nn = np.empty((n, 4), dtype=np.intp)
-    for idx in range(n):
-        row, col = divmod(idx, lattice_size)
-        nn[idx, 0] = ((row - 1) % lattice_size) * lattice_size + col
-        nn[idx, 1] = ((row + 1) % lattice_size) * lattice_size + col
-        nn[idx, 2] = row * lattice_size + (col - 1) % lattice_size
-        nn[idx, 3] = row * lattice_size + (col + 1) % lattice_size
-
-    # Precompute exp table for possible dE values
-    exp_table = {de: math.exp(-beta * de) for de in (-8, -4, 0, 4, 8)}
+    def sweep() -> None:
+        nonlocal spins
+        for mask in masks:
+            field = (
+                np.roll(spins, 1, axis=0)
+                + np.roll(spins, -1, axis=0)
+                + np.roll(spins, 1, axis=1)
+                + np.roll(spins, -1, axis=1)
+            )
+            # dE = 2 s h with h in {-4, ..., 4}: stays within int8.
+            de = 2 * spins * field
+            accept = mask & ((de <= 0) | (rng.random(shape) < np.exp(-beta * de)))
+            spins = np.where(accept, -spins, spins)
 
     # Warmup
     for _ in range(100):
-        for _ in range(n):
-            idx = int(rng.integers(n))
-            s = int(spins[idx])
-            local_field = int(
-                spins[nn[idx, 0]]
-                + spins[nn[idx, 1]]
-                + spins[nn[idx, 2]]
-                + spins[nn[idx, 3]]
-            )
-            de = 2 * s * local_field
-            if de <= 0 or rng.random() < exp_table[de]:
-                spins[idx] = -spins[idx]
+        sweep()
 
     # Timed run
     start = time.perf_counter()
     for _ in range(n_sweeps):
-        for _ in range(n):
-            idx = int(rng.integers(n))
-            s = int(spins[idx])
-            local_field = int(
-                spins[nn[idx, 0]]
-                + spins[nn[idx, 1]]
-                + spins[nn[idx, 2]]
-                + spins[nn[idx, 3]]
-            )
-            de = 2 * s * local_field
-            if de <= 0 or rng.random() < exp_table[de]:
-                spins[idx] = -spins[idx]
+        sweep()
     elapsed = time.perf_counter() - start
 
-    # Observables
-    energy = 0.0
-    for idx in range(n):
-        s = int(spins[idx])
-        row, col = divmod(idx, lattice_size)
-        right = row * lattice_size + (col + 1) % lattice_size
-        down = ((row + 1) % lattice_size) * lattice_size + col
-        energy -= s * (int(spins[right]) + int(spins[down]))
-    energy_per_site = energy / n
-
+    # Observables: right and down neighbors only, so each bond counts once.
+    bonds = np.roll(spins, -1, axis=0) + np.roll(spins, -1, axis=1)
+    energy_per_site = -float(np.sum(spins * bonds, dtype=np.int64)) / spins.size
     mag_per_site = float(np.mean(spins))
 
     return elapsed, energy_per_site, mag_per_site
 
 
 def bench_numpy(lattice_size: int, n_sweeps: int, seed: int = 42) -> BenchmarkResult:
-    """Benchmark NumPy-array Metropolis (same algorithm, NumPy storage)."""
+    """Benchmark the NumPy checkerboard Metropolis (even ``lattice_size`` only)."""
     beta = 1.0 / TC_SQUARE_2D
     elapsed, energy, mag = _numpy_metropolis(lattice_size, n_sweeps, beta, seed)
     return BenchmarkResult(
-        name="NumPy",
+        name="NumPy (checkerboard)",
         lattice_size=lattice_size,
         n_sweeps=n_sweeps,
         elapsed=elapsed,
@@ -298,9 +285,10 @@ def bench_peapods(
     """Benchmark the external peapods package (one parametrized runner).
 
     Replaces the pre-1.0 ``bench_peapods_{triangular,cubic,wolff,sw}``
-    near-copies. peapods is a deliberately undeclared competitor
-    package: install it manually to run comparisons (see
-    ``benchmarks/compare_peapods.py``).
+    near-copies. peapods is not a dependency of mcising: install it with
+    ``uv sync --group benchmark``. The published comparison is produced
+    by ``benchmarks/run_all.py``, whose matched-physics runners record
+    the energy every sweep on both sides.
     """
     from peapods import Ising
 

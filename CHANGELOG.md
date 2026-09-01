@@ -7,8 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-09-01
+
 ### Added
 
+- `benchmarks/run_all.py` regenerates every published performance
+  number. It measures eight sections — Metropolis across lattices, the
+  pure-Python and NumPy baselines, the cluster algorithms with their
+  autocorrelation times, throughput against lattice size, the execution
+  modes against thread count, `Simulation.run()` overhead, the
+  correlation-function cost and a matched-physics comparison with
+  peapods — writes `benchmarks/results.json` with full provenance
+  (mcising version and commit, Python, CPU and core counts, memory,
+  peapods version, the complete budget) and renders the
+  `<!-- benchmarks:<section>:begin/end -->` blocks in `README.md` and the
+  docs. `tests/test_run_all.py` fails when a page and the JSON disagree,
+  when the committed run used less than the full budget or a debug build,
+  and when any page states a speed-up, throughput or timing with a digit
+  outside a generated block.
+- `benchmark` dependency group (`uv sync --group benchmark`) installs
+  peapods for the head-to-head rows; CI does not install it.
+- The cluster-algorithm table reports, next to attempted flips per second,
+  the integrated autocorrelation time of the energy and of the absolute
+  magnetization and the wall time per statistically independent sample
+  (Metropolis 176 µs, Wolff 63 µs, Swendsen–Wang 124 µs on 32² at Tc) —
+  the quantity that is actually comparable between algorithms.
+- Scaling (throughput against L, flat at 320–350M updates/s from 8² to
+  256²) and parallel-execution tables (independent mode 5.6× faster than
+  the cooldown on 10 cores with 20 temperatures at 128², parallel
+  tempering 2.0×) in `docs/advanced/performance.md`.
 - `SimulationConfig.correlation_interval` (CLI `--correlation-interval`):
   evaluate the O(N²) spin-spin correlation function and correlation length
   at every k-th measurement instead of every measurement — `1` (the
@@ -25,11 +52,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/data/golden_runs.json`, and `tests/test_golden.py` replays them
   bit for bit in the canonical suite — any change to the random-number
   consumption order or the observable arithmetic now fails a test.
-- `benchmarks/measurement_overhead.py` times `Simulation.run()` end to end
-  on the 64², 200-sweep, measure-every-sweep workload.
+- The `overhead` section of `benchmarks/run_all.py` times
+  `Simulation.run()` end to end on the 64², 200-sweep, measure-every-sweep
+  workload.
 
 ### Changed
 
+- Every benchmark number was re-measured on the current code (Apple M4,
+  release build) and every page now carries its measurement context.
+  Headline: 351M Metropolis spin updates/s on 32² at Tc, 140× pure Python,
+  15× a NumPy checkerboard, 2.4× peapods 0.2.0 on a matched workload. The
+  previous "430× faster than pure Python" was measured against the
+  mislabelled NumPy baseline (below), and "2.7–3.4× faster than peapods"
+  compared a sweeps-only timing with one that measured every sweep, a
+  snapshot energy with a block average, and 100 warm-up sweeps at Tc on
+  both sides. The matched comparison — same Hamiltonian, same sequential
+  Metropolis sweep, 5,000 thermalization sweeps, 100,000 timed sweeps with
+  the energy recorded every sweep on both sides, three seeds — agrees on
+  the mean energy per site within 0.15 % on the square, triangular and
+  cubic lattices and gives 2.2–2.4×. Wolff and Swendsen–Wang are no longer
+  compared with peapods, which interleaves cluster updates with Metropolis
+  sweeps: no workload matches.
+- `mcising.benchmarks.bench_numpy` is a genuine checkerboard Metropolis
+  that updates each sublattice as a whole array. The previous
+  implementation ran the scalar loop over NumPy scalars — three times
+  *slower* than pure Python while labelled "NumPy-vectorized". The result
+  label is `NumPy (checkerboard)`; odd lattice sizes are rejected.
+- The parallel-execution speed table (millisecond wall times at the noise
+  floor) and the README's "~6x faster with 10 cores" comment are replaced
+  by the measured thread-count table; the `268M`/`269M` copy drift is gone
+  because the pages are generated. The measurement-overhead table shows
+  the current numbers only — the 0.28.0 → 0.29.0 before/after is recorded
+  below.
+- CI lints and type-checks `benchmarks/`.
 - The cooldown path (the default mode) makes two Rust calls per
   temperature instead of one per thermalization sweep plus three to five
   per measurement: `IsingSimulation.anneal` walks the ramp and
@@ -46,7 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-dyadic). Every path measures energy — adaptive thermalization and
   the parallel runners benefit too.
 - Reference workload (Metropolis 64², 100 annealing + 200 production
-  sweeps measured every sweep, configurations stored, Apple M2 Pro):
+  sweeps measured every sweep, configurations stored, Apple M4):
   10.15 ms → 5.06 ms median (2.0×); Wolff 6.31 → 0.94 ms; Swendsen–Wang
   24.97 → 19.9 ms. Of the remaining 5 ms, 47 % is the Metropolis sweeps
   themselves, 31 % the annealing ramp and 17 % the energy measurements
@@ -63,6 +118,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schedule) and gates PyPI publication in `release.yml`: a change ships
   only after the physics is re-confirmed, and a wheel is published only
   for a tag that passed.
+
+### Removed
+
+- `benchmarks/compare_peapods.py` and `benchmarks/measurement_overhead.py`,
+  folded into `benchmarks/run_all.py` (`--sections peapods` and
+  `--sections overhead`).
 
 ## [0.28.0] - 2026-09-01
 

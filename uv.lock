@@ -1252,7 +1252,7 @@ wheels = [
 
 [[package]]
 name = "mcising"
-version = "0.28.0"
+version = "0.29.0"
 source = { editable = "." }
 dependencies = [
     { name = "h5py" },
@@ -1274,6 +1274,9 @@ plot = [
 ]
 
 [package.dev-dependencies]
+benchmark = [
+    { name = "peapods", marker = "python_full_version >= '3.11'" },
+]
 dev = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -1303,6 +1306,7 @@ requires-dist = [
 provides-extras = ["plot", "dataframe"]
 
 [package.metadata.requires-dev]
+benchmark = [{ name = "peapods", marker = "python_full_version >= '3.11'", specifier = ">=0.2.0" }]
 dev = [
     { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "maturin", specifier = ">=1.12.6" },
@@ -1903,6 +1907,38 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5a/82/42f767fc1c1143d6fd36efb827202a2d997a375e160a71eb2888a925aac1/pathspec-1.1.1.tar.gz", hash = "sha256:17db5ecd524104a120e173814c90367a96a98d07c45b2e10c2f3919fff91bf5a", size = 135180, upload-time = "2026-04-27T01:46:08.907Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/d9/7fb5aa316bc299258e68c73ba3bddbc499654a07f151cba08f6153988714/pathspec-1.1.1-py3-none-any.whl", hash = "sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189", size = 57328, upload-time = "2026-04-27T01:46:07.06Z" },
+]
+
+[[package]]
+name = "peapods"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/46/fa/276db83a49285d00ed7c2e37f7cef372f1bdd38373e2ec70083f13b6fbe4/peapods-0.2.0.tar.gz", hash = "sha256:19172887c657b1a844f0bff7fbbf3a98d2d7f4ba04fd46e316b87982648ac131", size = 225872, upload-time = "2026-03-15T03:14:13.276Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/bb/e5528a3ae65eb46d76f8cb9faf6de107b474e94af02190bdadb372d68db8/peapods-0.2.0-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:005d2317986224252f5b0bb3f3e7db80f3c3c45a877b27573018d695635b0bb2", size = 570807, upload-time = "2026-03-15T03:13:44.949Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/e4/3f6ab0e174e41ab8c05059c0fc6bfaf2b50dff843c7cc62259a8266c6e30/peapods-0.2.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:5b5b415698819feb8e0fdd32ef8e1e109ce790a59dde48e56e98ab33adab6003", size = 555038, upload-time = "2026-03-15T03:13:46.651Z" },
+    { url = "https://files.pythonhosted.org/packages/47/29/6df685a0298be994a431142e8482776e16f487c67a2fa56662bac0f45426/peapods-0.2.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:618109540b2095fce82822b6102d5e1219878e998daf60d68b3763151177671b", size = 613349, upload-time = "2026-03-15T03:13:48.072Z" },
+    { url = "https://files.pythonhosted.org/packages/76/f8/5fce4c343649c5729bd56d4ff5d0f1407ef3b20169ba442344e2fea4a6fe/peapods-0.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:09df4352c0826d475b439401af94d5ef0eed8972eccf8c83cfb5d8d5879a23a1", size = 657570, upload-time = "2026-03-15T03:13:49.565Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/a7/94c12c70a7dd9f5ad378446ff4148fa074362a2a5b016231bfdd426d9a7c/peapods-0.2.0-cp310-cp310-win_amd64.whl", hash = "sha256:05df1dff7be289834bbd6b1b06abf092ad427afa0f92deb219a8af6f5f262b87", size = 426421, upload-time = "2026-03-15T03:13:50.709Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/d6/cb8957b5030d338bf673ee81c858d63fc0577870c629ac311eeb9b12e4b5/peapods-0.2.0-cp311-cp311-macosx_10_12_x86_64.whl", hash = "sha256:c5890293989db5857209023e85becaadf54f0803bddcf0aedb56e17737dbfc3a", size = 570617, upload-time = "2026-03-15T03:13:52.295Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/23/a2451dab6c9677b221832579ace93fbbe0637c4992775edb7ab676ce66a9/peapods-0.2.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:f51e869abb91278e7942626ec8d8ab3efcb32faf680aa4d111b4d06f372b7e4b", size = 554655, upload-time = "2026-03-15T03:13:53.453Z" },
+    { url = "https://files.pythonhosted.org/packages/34/af/02e8facbd88aff910f0867f1f538e9429f741309d39b5aaac60230b104b1/peapods-0.2.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0685b31e166f0875cf6007a439c8550ede2ded45c6fc8a5ff8faafa65651c407", size = 613299, upload-time = "2026-03-15T03:13:55.029Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/e7/ae3f2da68a97c82cfe5a8d0dd74e72c9eab46e27416b5acdb33a048f7cbd/peapods-0.2.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7497ae012c94e6f4376cc9c9b22b6ab5e77fcc9d96e0fd206c5c67da404950ad", size = 657527, upload-time = "2026-03-15T03:13:56.271Z" },
+    { url = "https://files.pythonhosted.org/packages/37/c6/947c094e36c22b3d01826a880aeebb888227b660e655c1ee355db78e7ac0/peapods-0.2.0-cp311-cp311-win_amd64.whl", hash = "sha256:53ea206e2141e49ce9ed4f7f6a5f3fda4c236c78d72056594d5f1eb398624f6e", size = 426588, upload-time = "2026-03-15T03:13:57.654Z" },
+    { url = "https://files.pythonhosted.org/packages/72/70/437569707c5fd902910bf8a4c35c6a77f4b3f8cace06c6525844926c9ff9/peapods-0.2.0-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:85c64095ac5a32245a7c918ab4bd3f9f7e49791379f03338d17a1835f0b1f210", size = 567308, upload-time = "2026-03-15T03:13:59.143Z" },
+    { url = "https://files.pythonhosted.org/packages/de/90/2260743c6cf8cb3905c363ec2ad599355aea2b88ea034f41be9764866fe9/peapods-0.2.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:f2f577a6d79fbe0cede902efa851ba3be9d15876a2f245a35e4a40cd9a66c5e8", size = 552639, upload-time = "2026-03-15T03:14:00.665Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/b8/bb36c1abd6d61281efc03c64138ad9d7e63b606caac5eb8a635baf6d3be5/peapods-0.2.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1d0f9e375ffc4246ebaa7dd1b3d647207f09fce675bf4c855d7bffc5757110b0", size = 612230, upload-time = "2026-03-15T03:14:02.091Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/8c/068a18f71ba469495958bde511d0cda05bdaf623b0a16e84fa1859e1aa89/peapods-0.2.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:55ba71d3a54654198ae9d515e9b03531104201580c3d8bbadc64e02c70bb8ab4", size = 656785, upload-time = "2026-03-15T03:14:03.74Z" },
+    { url = "https://files.pythonhosted.org/packages/34/27/82a1dd9e5cc095e1f30056375d32194daf3b2e6db8b7e481ec182f260acb/peapods-0.2.0-cp312-cp312-win_amd64.whl", hash = "sha256:b9e506c75a0dd3cc97b857198829cd81fc213df5e8545f87e2a7e065c24cf78f", size = 426421, upload-time = "2026-03-15T03:14:05.009Z" },
+    { url = "https://files.pythonhosted.org/packages/76/49/8e6d44d8bbb53241514e5c38455123eddc07ed04e50d19bac7dbb2e65e1e/peapods-0.2.0-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:6a814c9531a6a1a2deb9a4a89fcc1af9f396b7b86c30305df9a9a4b6e85948dd", size = 567249, upload-time = "2026-03-15T03:14:06.297Z" },
+    { url = "https://files.pythonhosted.org/packages/db/f9/f3aa1e1cc3debdf18038d282d078de55c114a4d686df64e2067a23c0d9aa/peapods-0.2.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:ec48ed5ea90b46326d10751b02000b571d03864d2dd0601392106d23c92ba953", size = 552553, upload-time = "2026-03-15T03:14:07.762Z" },
+    { url = "https://files.pythonhosted.org/packages/19/dc/825bf4b037d2ff26e0a537333765df3b16c7a3823aec40ce161ecf2dfa81/peapods-0.2.0-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:48841cdbc920c751ef5a6f6db8dc7e1dd186887afa621d71730f2e12910793fd", size = 612888, upload-time = "2026-03-15T03:14:08.92Z" },
+    { url = "https://files.pythonhosted.org/packages/27/d8/e6228a0bdb84ab3c6cbd1410930ef750be60ed6521046c628ee78d0dfc63/peapods-0.2.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:02fc263923d65f4ac30bbb72281908b62ce17ce93fedd3ba46475dabb4a90918", size = 656695, upload-time = "2026-03-15T03:14:10.436Z" },
+    { url = "https://files.pythonhosted.org/packages/43/a3/1b2602573af95714821cf4d6bcde8ad68a4f4ea91117ef14086a6531e98a/peapods-0.2.0-cp313-cp313-win_amd64.whl", hash = "sha256:17e222cd1c3b7d829484ee45e8e41170677c64e859682a112d6578dbedb0d665", size = 425941, upload-time = "2026-03-15T03:14:11.844Z" },
 ]
 
 [[package]]

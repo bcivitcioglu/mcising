@@ -304,8 +304,8 @@ class SimulationConfig:
     compute_correlation : bool
         Whether to compute the spin-spin correlation function ``C(r)`` and
         the second-moment correlation length. Each evaluation is a full
-        pair sum, ``O(N^2)`` in the number of sites — about 0.3 ms at 16²,
-        7 ms at 32² and 130 ms at 64² — so at ``measurement_interval=1``
+        pair sum, ``O(N^2)`` in the number of sites (measured costs are on
+        the performance page of the docs), so at ``measurement_interval=1``
         it dominates the run; use ``correlation_interval`` to thin it.
     correlation_interval : int
         Evaluate the correlation observables at every k-th measurement

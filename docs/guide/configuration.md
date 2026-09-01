@@ -45,8 +45,19 @@ footprint and output files).
 
 `compute_correlation=True` adds the spin-spin correlation function `C(r)`
 and the second-moment correlation length. Each evaluation is a full pair
-sum — `O(N²)` in the number of sites, about 0.3 ms at 16², 7 ms at 32² and
-130 ms at 64² — so at `measurement_interval=1` it dominates the run.
+sum — `O(N²)` in the number of sites — so at `measurement_interval=1` it
+dominates the run:
+
+<!-- benchmarks:correlation:begin -->
+| Lattice | Sites | Per evaluation |
+|---|---|---|
+| 16×16 | 256 | 0.35 ms |
+| 32×32 | 1,024 | 7.04 ms |
+| 64×64 | 4,096 | 134.98 ms |
+
+One `correlation_function()` evaluation (the O(N²) pair sum) on the square lattice, Apple M4 (10 cores: 4 performance + 6 efficiency); medians of 5 evaluations.
+<!-- benchmarks:correlation:end -->
+
 `correlation_interval=k` evaluates it at every k-th measurement instead
 (the k-th, 2k-th, …): `1` is every measurement, `n_sweeps //
 measurement_interval` exactly once at the final one. The stored `C(r)` is
