@@ -21,6 +21,7 @@ pub mod error;
 #[cfg(test)]
 mod exact_enumeration;
 pub mod lattice;
+pub mod measurement;
 pub mod observables;
 pub mod parallel;
 pub mod rng;

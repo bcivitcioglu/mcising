@@ -11,6 +11,7 @@ use crate::algorithm::{AlgorithmKind, AlgorithmState, McAlgorithm, SweepResult};
 use crate::autocorrelation;
 use crate::error::MCIsingError;
 use crate::lattice::{with_lattice, Lattice, LatticeKind};
+use crate::measurement::TempResult;
 use crate::observables;
 use crate::rng::create_rng;
 
@@ -32,15 +33,6 @@ pub struct IsingSimulation {
     shape: Vec<usize>,
     algorithm: AlgorithmState,
 }
-
-/// Per-run measurement arrays:
-/// (energies, magnetizations, optional configs, cluster_flips).
-type SweepMeasurements<'py> = (
-    Bound<'py, PyArray1<f64>>,
-    Bound<'py, PyArray1<f64>>,
-    Option<PyObject>,
-    usize,
-);
 
 /// Validate a user-supplied temperature and return beta = 1/T.
 fn beta_from_temperature(temperature: f64) -> Result<f64, MCIsingError> {
@@ -436,9 +428,26 @@ impl IsingSimulation {
 
     /// Run production measurement sweeps, collecting observables at each interval.
     ///
-    /// The 4th tuple element is the total number of cluster flips across
-    /// all production sweeps (0 for Metropolis).
-    #[pyo3(signature = (n_measurements, interval, *, temperature, store_configs))]
+    /// One FFI crossing for the whole production block: `n_measurements`
+    /// blocks of `interval` sweeps, measuring energy and magnetization after
+    /// each block, plus a configuration snapshot when `store_configs` and
+    /// the correlation observables at every `correlation_interval`-th
+    /// measurement when `compute_correlation`. The RNG is consumed exactly
+    /// as `n_measurements` separate `sweep(interval)` calls would consume it.
+    /// The GIL is released while sweeping.
+    ///
+    /// Returns the per-temperature dict the parallel runners return
+    /// (`temperature`, `energies`, `magnetizations`, `n_cluster_flips`, and
+    /// the optional `configurations` / `correlation_*` arrays).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `temperature` is non-positive or non-finite, or
+    /// `interval` / `correlation_interval` is zero.
+    #[pyo3(signature = (
+        n_measurements, interval, *, temperature, store_configs,
+        compute_correlation = false, correlation_interval = 1
+    ))]
     fn production_sweeps<'py>(
         &mut self,
         py: Python<'py>,
@@ -446,40 +455,28 @@ impl IsingSimulation {
         interval: usize,
         temperature: f64,
         store_configs: bool,
-    ) -> PyResult<SweepMeasurements<'py>> {
+        compute_correlation: bool,
+        correlation_interval: usize,
+    ) -> PyResult<Bound<'py, PyDict>> {
         let beta = beta_from_temperature(temperature)?;
-
-        let mut energies = Vec::with_capacity(n_measurements);
-        let mut magnetizations = Vec::with_capacity(n_measurements);
-        let mut cluster_flips = 0;
-        let mut configs: Option<Vec<i8>> = if store_configs {
-            Some(Vec::with_capacity(n_measurements * self.spins.len()))
-        } else {
-            None
-        };
-
-        for _ in 0..n_measurements {
-            cluster_flips += self.sweep_internal(interval, beta).cluster_flips;
-            energies.push(self.compute_energy());
-            magnetizations.push(observables::magnetization_per_site(&self.spins));
-            if let Some(ref mut c) = configs {
-                c.extend_from_slice(&self.spins);
-            }
+        if interval == 0 {
+            return Err(MCIsingError::InvalidInterval("interval", 0).into());
         }
-
-        let py_energies = energies.into_pyarray(py);
-        let py_mags = magnetizations.into_pyarray(py);
-        let py_configs = match configs {
-            Some(c) => {
-                let flat = numpy::PyArray1::from_vec(py, c);
-                let mut reshape_dims: Vec<usize> = vec![n_measurements];
-                reshape_dims.extend_from_slice(&self.shape);
-                Some(flat.reshape(reshape_dims)?.into_any().unbind())
-            }
-            None => None,
-        };
-
-        Ok((py_energies, py_mags, py_configs, cluster_flips))
+        if correlation_interval == 0 {
+            return Err(MCIsingError::InvalidInterval("correlation_interval", 0).into());
+        }
+        let result = py.allow_threads(|| {
+            self.production_internal(
+                n_measurements,
+                interval,
+                beta,
+                temperature,
+                store_configs,
+                compute_correlation,
+                correlation_interval,
+            )
+        });
+        result.into_pydict(py)
     }
 
     fn __repr__(&self) -> String {
@@ -503,6 +500,38 @@ impl IsingSimulation {
         with_lattice!(&self.lattice, lat => {
             observables::energy_per_site(&self.spins, lat, self.j1, self.j2, self.j3, self.h)
         })
+    }
+
+    /// Production block shared by `production_sweeps` and the tests: sweep
+    /// `interval` times, measure, repeat `n_measurements` times.
+    ///
+    /// Pure Rust, so `cargo test` can pin it against a hand-driven
+    /// `sweep_internal` + `compute_energy` loop bit for bit.
+    pub(crate) fn production_internal(
+        &mut self,
+        n_measurements: usize,
+        interval: usize,
+        beta: f64,
+        temperature: f64,
+        store_configs: bool,
+        compute_correlation: bool,
+        correlation_interval: usize,
+    ) -> TempResult {
+        let mut result = TempResult::with_capacity(
+            temperature,
+            n_measurements,
+            self.spins.len(),
+            self.shape.clone(),
+            store_configs,
+            compute_correlation,
+            correlation_interval,
+        );
+        for _ in 0..n_measurements {
+            result.cluster_flips += self.sweep_internal(interval, beta).cluster_flips;
+            let energy = self.compute_energy();
+            with_lattice!(&self.lattice, lat => result.push(&self.spins, lat, energy));
+        }
+        result
     }
 
     /// Dispatch a single sweep via with_lattice! × algorithm match.
@@ -794,5 +823,88 @@ mod tests {
                 "T={bad} must be rejected"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod production_tests {
+    use super::*;
+
+    fn twins(algorithm: &str, lattice_type: &str) -> (IsingSimulation, IsingSimulation) {
+        let make = || {
+            IsingSimulation::new_internal(8, 1.0, 0.0, 0.0, 0.0, 7, algorithm, lattice_type)
+                .expect("valid simulation")
+        };
+        (make(), make())
+    }
+
+    fn bits(values: &[f64]) -> Vec<u64> {
+        values.iter().map(|x| x.to_bits()).collect()
+    }
+
+    /// The batched block must consume the RNG and measure exactly as the
+    /// per-sweep loop the Python cooldown path used to drive.
+    #[test]
+    fn test_production_internal_matches_hand_driven_loop_bit_for_bit() {
+        for (algorithm, lattice_type) in [
+            ("metropolis", "square"),
+            ("wolff", "triangular"),
+            ("swendsen_wang", "honeycomb"),
+            ("metropolis", "cubic"),
+            ("wolff", "chain"),
+        ] {
+            let (mut batched, mut manual) = twins(algorithm, lattice_type);
+            let beta = 1.0 / 2.5;
+            let result = batched.production_internal(6, 3, beta, 2.5, true, true, 2);
+
+            let mut energies = Vec::new();
+            let mut mags = Vec::new();
+            let mut configs = Vec::new();
+            let mut lengths = Vec::new();
+            let mut flips = 0;
+            for m in 1..=6 {
+                flips += manual.sweep_internal(3, beta).cluster_flips;
+                energies.push(manual.compute_energy());
+                mags.push(observables::magnetization_per_site(&manual.spins));
+                configs.extend_from_slice(&manual.spins);
+                if m % 2 == 0 {
+                    with_lattice!(&manual.lattice, lat => {
+                        let bins = observables::correlation_bins(&manual.spins, lat);
+                        lengths.push(observables::correlation_length(&bins, lat.dimension()));
+                    });
+                }
+            }
+
+            let label = format!("{algorithm}/{lattice_type}");
+            assert_eq!(bits(&result.energies), bits(&energies), "{label}");
+            assert_eq!(bits(&result.magnetizations), bits(&mags), "{label}");
+            assert_eq!(
+                result.configs.as_deref(),
+                Some(configs.as_slice()),
+                "{label}"
+            );
+            assert_eq!(result.cluster_flips, flips, "{label}");
+            let corr = result.correlation.expect("compute_correlation");
+            assert_eq!(bits(&corr.lengths), bits(&lengths), "{label}");
+            assert_eq!(result.shape, manual.shape, "{label}");
+            assert_eq!(batched.spins, manual.spins, "{label}");
+
+            // Same RNG state afterwards: one more sweep agrees.
+            batched.sweep_internal(1, beta);
+            manual.sweep_internal(1, beta);
+            assert_eq!(batched.spins, manual.spins, "{label}: RNG state diverged");
+        }
+    }
+
+    #[test]
+    fn test_production_internal_without_optional_records() {
+        let (mut sim, _) = twins("metropolis", "square");
+        let result = sim.production_internal(4, 2, 0.5, 2.0, false, false, 1);
+        assert_eq!(result.energies.len(), 4);
+        assert_eq!(result.magnetizations.len(), 4);
+        assert!(result.configs.is_none());
+        assert!(result.correlation.is_none());
+        assert_eq!(result.cluster_flips, 0);
+        assert!((result.temperature - 2.0).abs() < f64::EPSILON);
     }
 }

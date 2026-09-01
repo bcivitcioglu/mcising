@@ -52,7 +52,8 @@ def save_hdf5(results: SimulationResults, path: str | Path) -> None:
         │   ├── magnetization   (n_samples, float64)
         │   ├── correlation_function  (n_distances, float64) [optional]
         │   ├── correlation_distances (n_distances, float64) [optional]
-        │   ├── correlation_length    (n_samples, float64)  [optional]
+        │   ├── correlation_length    (n_samples // correlation_interval, float64)
+        │   │                         [optional]
         │   └── statistics/     (derived observable estimates, attributes:
         │       n_samples, tau_int, and value + ``*_error`` pairs for
         │       energy, magnetization, abs_magnetization, specific_heat,

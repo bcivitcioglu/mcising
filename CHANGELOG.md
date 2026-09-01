@@ -7,8 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `SimulationConfig.correlation_interval` (CLI `--correlation-interval`):
+  evaluate the O(N²) spin-spin correlation function and correlation length
+  at every k-th measurement instead of every measurement — `1` (the
+  default) keeps the previous cadence, `n_sweeps // measurement_interval`
+  records exactly one evaluation, at the final measurement. Applies to the
+  cooldown, independent and parallel-tempering modes; adaptive mode keeps
+  its single end-of-production snapshot. A `k` that would record no sample
+  is rejected at construction. The cost is now documented (about 0.3 ms
+  per evaluation at 16², 7 ms at 32², 130 ms at 64²).
+- Golden replay fixtures: `scripts/capture_golden.py` records eleven
+  fixed-seed runs covering every execution path (cooldown on all five
+  lattices and three algorithms, J1-J2-h / J1-J3 / antiferromagnetic
+  couplings, independent, parallel tempering, adaptive) into
+  `tests/data/golden_runs.json`, and `tests/test_golden.py` replays them
+  bit for bit in the canonical suite — any change to the random-number
+  consumption order or the observable arithmetic now fails a test.
+- `benchmarks/measurement_overhead.py` times `Simulation.run()` end to end
+  on the 64², 200-sweep, measure-every-sweep workload.
+
 ### Changed
 
+- The cooldown path (the default mode) makes two Rust calls per
+  temperature instead of one per thermalization sweep plus three to five
+  per measurement: `IsingSimulation.anneal` walks the ramp and
+  `production_sweeps` sweeps, measures, snapshots and — when requested —
+  computes the correlation observables, with the GIL released. Fixed-seed
+  results are bit-identical (golden suite); the correlation bins are
+  computed once per evaluation instead of twice.
+- `energy_per_site` skips the J1/J2/J3/field shells whose couplings are
+  exactly zero and sums the shells in integer arithmetic when every
+  coupling is dyadic-exact (1, 0.5, 0.25, …), proven and tested
+  bit-identical to the serial f64 sum; non-dyadic couplings such as 0.3
+  keep the serial order. Per-measurement energy at 64² drops from 29.5 µs
+  to 4.2 µs (J1 only), 7.1 µs (J1-J2 dyadic) or 19.4 µs (J1-J2-h
+  non-dyadic). Every path measures energy — adaptive thermalization and
+  the parallel runners benefit too.
+- Reference workload (Metropolis 64², 100 annealing + 200 production
+  sweeps measured every sweep, configurations stored, Apple M2 Pro):
+  10.15 ms → 5.06 ms median (2.0×); Wolff 6.31 → 0.94 ms; Swendsen–Wang
+  24.97 → 19.9 ms. Of the remaining 5 ms, 47 % is the Metropolis sweeps
+  themselves, 31 % the annealing ramp and 17 % the energy measurements
+  (`docs/advanced/performance.md`).
+- `mcising._core.IsingSimulation.production_sweeps` (internal) returns the
+  per-temperature dict the parallel runners return and accepts
+  `compute_correlation` / `correlation_interval`; both runners accept
+  `correlation_interval`.
+- `mcising._provenance.package_version()` is cached — it was a dist-info
+  disk read on every `run()`.
 - The slow physics-validation suite (the Onsager u(T) curve, the
   five-seed Tc-campaign rerun) now runs on every pull request and every
   push to `master` (`.github/workflows/slow.yml`, replacing the nightly

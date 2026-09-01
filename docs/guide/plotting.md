@@ -117,7 +117,9 @@ plot_magnetization_histogram("results.h5", temperature=2.269)
 
 ### Correlation function
 
-Requires `compute_correlation=True` in the simulation config:
+Requires `compute_correlation=True` in the simulation config; the plotted
+`C(r)` is the run's last evaluation (see `correlation_interval` in the
+[configuration guide](configuration.md)):
 
 ```python
 from mcising import plot_correlation

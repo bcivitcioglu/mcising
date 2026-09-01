@@ -7,7 +7,130 @@ use std::collections::BTreeMap;
 ///        - sum_{<<<i,j>>>} J3*si*sj - h*sum_i si) / N
 ///
 /// Interaction terms are divided by 2 to correct for double-counting.
+///
+/// The reference evaluation is `energy_per_site_serial` (test-only): one
+/// serial f64 accumulation over every shell of every site. This entry point
+/// returns the same bits by a cheaper route, pinned by `to_bits` tests:
+///
+/// * when every nonzero coupling is dyadic-exact for this lattice
+///   ([`dyadic_exact`]), every partial sum of the serial chain is exactly
+///   representable, so the serial result *is* the exact value — which the
+///   integer shell sums reproduce in a single pass;
+/// * otherwise the serial chain runs with the exactly-zero shells skipped:
+///   a `-(±0.0)` term never changes an accumulator that starts at `+0.0`
+///   and can never become `-0.0` (`x - x = +0.0`, `+0.0 - (±0.0) = +0.0`).
 pub fn energy_per_site<L: Lattice>(
+    spins: &[i8],
+    lattice: &L,
+    j1: f64,
+    j2: f64,
+    j3: f64,
+    h: f64,
+) -> f64 {
+    let n = lattice.num_sites();
+    if dyadic_exact(lattice, j1, j2, j3, h) {
+        let sums = shell_sums(spins, lattice, j1 != 0.0, j2 != 0.0, j3 != 0.0);
+        // `0.0 - x` (not `-x`) keeps a zero shell at +0.0, as the serial
+        // accumulator does; every product and difference below is exact.
+        let interaction = 0.0 - j1 * sums.nn as f64 - j2 * sums.nnn as f64 - j3 * sums.tnn as f64;
+        let field = 0.0 - h * sums.magnetization as f64;
+        return (interaction / 2.0 + field) / n as f64;
+    }
+    energy_per_site_sparse(spins, lattice, j1, j2, j3, h)
+}
+
+/// Ordered-pair spin products per shell, plus the total magnetization.
+struct ShellSums {
+    nn: i64,
+    nnn: i64,
+    tnn: i64,
+    magnetization: i64,
+}
+
+/// Single integer pass over the requested shells (`|sum| <= z * N`).
+fn shell_sums<L: Lattice>(spins: &[i8], lattice: &L, nn: bool, nnn: bool, tnn: bool) -> ShellSums {
+    let mut sums = ShellSums {
+        nn: 0,
+        nnn: 0,
+        tnn: 0,
+        magnetization: 0,
+    };
+    for (idx, &spin) in spins.iter().enumerate() {
+        let spin = i64::from(spin);
+        sums.magnetization += spin;
+        if nn {
+            let s: i64 = lattice
+                .nearest_neighbors(idx)
+                .iter()
+                .map(|&j| i64::from(spins[j]))
+                .sum();
+            sums.nn += spin * s;
+        }
+        if nnn {
+            let s: i64 = lattice
+                .next_nearest_neighbors(idx)
+                .iter()
+                .map(|&j| i64::from(spins[j]))
+                .sum();
+            sums.nnn += spin * s;
+        }
+        if tnn {
+            let s: i64 = lattice
+                .third_nearest_neighbors(idx)
+                .iter()
+                .map(|&j| i64::from(spins[j]))
+                .sum();
+            sums.tnn += spin * s;
+        }
+    }
+    sums
+}
+
+/// The serial accumulation with exactly-zero shells skipped (bit-identical
+/// to `energy_per_site_serial`, see [`energy_per_site`]).
+fn energy_per_site_sparse<L: Lattice>(
+    spins: &[i8],
+    lattice: &L,
+    j1: f64,
+    j2: f64,
+    j3: f64,
+    h: f64,
+) -> f64 {
+    let n = lattice.num_sites();
+    let (use1, use2, use3, use_h) = (j1 != 0.0, j2 != 0.0, j3 != 0.0, h != 0.0);
+    let mut interaction = 0.0;
+    let mut field = 0.0;
+
+    for idx in 0..n {
+        let spin = f64::from(spins[idx]);
+
+        if use1 {
+            for &nbr in lattice.nearest_neighbors(idx) {
+                interaction -= j1 * spin * f64::from(spins[nbr]);
+            }
+        }
+        if use2 {
+            for &nbr in lattice.next_nearest_neighbors(idx) {
+                interaction -= j2 * spin * f64::from(spins[nbr]);
+            }
+        }
+        if use3 {
+            for &nbr in lattice.third_nearest_neighbors(idx) {
+                interaction -= j3 * spin * f64::from(spins[nbr]);
+            }
+        }
+        if use_h {
+            field -= h * spin;
+        }
+    }
+
+    (interaction / 2.0 + field) / n as f64
+}
+
+/// The original evaluation, kept verbatim as the bit-level reference for
+/// the tests: every shell of every site in one serial f64 chain.
+#[cfg(test)]
+fn energy_per_site_serial<L: Lattice>(
     spins: &[i8],
     lattice: &L,
     j1: f64,
@@ -36,6 +159,60 @@ pub fn energy_per_site<L: Lattice>(
 
     // Interaction terms double-counted (each pair counted twice), field is not
     (interaction / 2.0 + field) / n as f64
+}
+
+/// Whether the integer-shell evaluation is bit-identical to the serial one.
+///
+/// Every nonzero coupling `c` is an integer multiple of its ulp `2^(e_c)`.
+/// With `e = min e_c`, each partial sum of the serial chain — in any
+/// interleaving of shells — is an integer multiple of `2^e` bounded by
+/// `B = Σ_k z_k·N·|J_k| + N·|h|`, and any multiple of `2^e` below
+/// `2^53·2^e` is representable, so every intermediate rounding is exact and
+/// the chain returns the exact value. The bound is compared against `2^51`
+/// (a factor-4 margin over the f64 rounding of the check itself); an
+/// overflow to `inf` fails the check, which is the safe direction.
+/// Subnormal couplings fall back to the serial path.
+fn dyadic_exact<L: Lattice>(lattice: &L, j1: f64, j2: f64, j3: f64, h: f64) -> bool {
+    let n = lattice.num_sites() as f64;
+    let terms = [
+        (j1, lattice.coordination_number() as f64 * n),
+        (j2, lattice.nnn_coordination_number() as f64 * n),
+        (j3, lattice.tnn_coordination_number() as f64 * n),
+        (h, n),
+    ];
+    let mut min_exp: Option<i32> = None;
+    for &(c, _) in &terms {
+        if c == 0.0 {
+            continue;
+        }
+        match ulp_exponent(c) {
+            Some(e) => min_exp = Some(min_exp.map_or(e, |m| m.min(e))),
+            None => return false,
+        }
+    }
+    let Some(e) = min_exp else {
+        // Every coupling is zero: both paths return exactly +0.0.
+        return true;
+    };
+    let scale = 2f64.powi(-e);
+    let bound: f64 = terms
+        .iter()
+        .filter(|&&(c, _)| c != 0.0)
+        .map(|&(c, count)| c.abs() * scale * count)
+        .sum();
+    bound < 2f64.powi(51)
+}
+
+/// Exponent of the ulp of a normal, nonzero f64 (`c = m·2^e` with `m` odd);
+/// `None` for zero, subnormal, infinite or NaN inputs.
+fn ulp_exponent(c: f64) -> Option<i32> {
+    let bits = c.to_bits();
+    let biased = ((bits >> 52) & 0x7ff) as i32;
+    if biased == 0 || biased == 0x7ff {
+        return None;
+    }
+    let significand = (bits & ((1u64 << 52) - 1)) | (1u64 << 52);
+    Some(biased - 1023 - 52 + significand.trailing_zeros() as i32)
 }
 
 /// Compute the magnetization per site.
@@ -164,7 +341,139 @@ pub fn correlation_length(bins: &CorrelationBins, dimension: usize) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lattice::chain::ChainLattice;
+    use crate::lattice::cubic::CubicLattice;
+    use crate::lattice::honeycomb::HoneycombLattice;
     use crate::lattice::square::SquareLattice;
+    use crate::lattice::triangular::TriangularLattice;
+    use crate::rng::create_rng;
+    use rand::Rng;
+
+    /// Dyadic-exact sets (integer path), non-dyadic sets (sparse serial
+    /// path), a mixed-ulp set, the all-zero set and a field-only set.
+    const COUPLING_SETS: [(f64, f64, f64, f64); 9] = [
+        (1.0, 0.0, 0.0, 0.0),
+        (1.0, 0.5, 0.0, 0.0),
+        (-1.0, 0.0, 0.25, 0.0),
+        (1.0, 0.0, 0.0, 0.5),
+        (1.0, 0.0, 0.0, 1.0),
+        (1.0, -0.3, 0.0, 0.1),
+        (0.3, 0.0, 0.0, 0.0),
+        (1.0, 9.094_947_017_729_282e-13, 0.0, 0.0), // 2^-40: mixed ulps
+        (0.0, 0.0, 0.0, 0.0),
+    ];
+
+    fn random_spins(n: usize, seed: u64) -> Vec<i8> {
+        let mut rng = create_rng(seed);
+        (0..n)
+            .map(|_| if rng.gen::<bool>() { 1 } else { -1 })
+            .collect()
+    }
+
+    fn assert_fast_path_bit_identical<L: Lattice>(lattice: &L, label: &str) {
+        for seed in 0..8u64 {
+            let spins = random_spins(lattice.num_sites(), seed);
+            for &(j1, j2, j3, h) in &COUPLING_SETS {
+                let fast = energy_per_site(&spins, lattice, j1, j2, j3, h);
+                let reference = energy_per_site_serial(&spins, lattice, j1, j2, j3, h);
+                assert_eq!(
+                    fast.to_bits(),
+                    reference.to_bits(),
+                    "{label} seed={seed} J=({j1},{j2},{j3},{h}): {fast:e} vs {reference:e}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_energy_fast_path_bit_identical_square() {
+        assert_fast_path_bit_identical(&SquareLattice::new(6).unwrap(), "square");
+    }
+
+    #[test]
+    fn test_energy_fast_path_bit_identical_triangular() {
+        assert_fast_path_bit_identical(&TriangularLattice::new(6).unwrap(), "triangular");
+    }
+
+    #[test]
+    fn test_energy_fast_path_bit_identical_honeycomb() {
+        assert_fast_path_bit_identical(&HoneycombLattice::new(4).unwrap(), "honeycomb");
+    }
+
+    #[test]
+    fn test_energy_fast_path_bit_identical_cubic() {
+        assert_fast_path_bit_identical(&CubicLattice::new(4).unwrap(), "cubic");
+    }
+
+    #[test]
+    fn test_energy_fast_path_bit_identical_chain() {
+        assert_fast_path_bit_identical(&ChainLattice::new(16).unwrap(), "chain");
+    }
+
+    #[test]
+    fn test_dyadic_exact_classifies_couplings() {
+        let lattice = SquareLattice::new(64).unwrap();
+        assert!(dyadic_exact(&lattice, 1.0, 0.0, 0.0, 0.0));
+        assert!(dyadic_exact(&lattice, 1.0, 0.5, 0.25, 0.0));
+        assert!(dyadic_exact(&lattice, -1.0, 0.0, 0.0, 1.5));
+        assert!(dyadic_exact(&lattice, 0.0, 0.0, 0.0, 0.0));
+        assert!(!dyadic_exact(&lattice, 0.3, 0.0, 0.0, 0.0));
+        assert!(!dyadic_exact(&lattice, 1.0, -0.3, 0.0, 0.0));
+        // Mixed ulps: 4·4096·2^40 exceeds the 2^51 budget at L = 64 ...
+        assert!(!dyadic_exact(&lattice, 1.0, 2f64.powi(-40), 0.0, 0.0));
+        // ... but fits at L = 6 (the property test above takes that path).
+        assert!(dyadic_exact(
+            &SquareLattice::new(6).unwrap(),
+            1.0,
+            2f64.powi(-40),
+            0.0,
+            0.0
+        ));
+        // Subnormal couplings are never classified exact.
+        assert!(!dyadic_exact(
+            &lattice,
+            f64::MIN_POSITIVE / 2.0,
+            0.0,
+            0.0,
+            0.0
+        ));
+    }
+
+    #[test]
+    fn test_ulp_exponent() {
+        assert_eq!(ulp_exponent(1.0), Some(0));
+        assert_eq!(ulp_exponent(0.5), Some(-1));
+        assert_eq!(ulp_exponent(-0.25), Some(-2));
+        assert_eq!(ulp_exponent(3.0), Some(0));
+        assert_eq!(ulp_exponent(1.5), Some(-1));
+        assert_eq!(ulp_exponent(2f64.powi(-40)), Some(-40));
+        assert_eq!(ulp_exponent(0.3), Some(-54));
+        assert_eq!(ulp_exponent(0.0), None);
+        assert_eq!(ulp_exponent(f64::MIN_POSITIVE / 2.0), None);
+        assert_eq!(ulp_exponent(f64::INFINITY), None);
+        assert_eq!(ulp_exponent(f64::NAN), None);
+    }
+
+    #[test]
+    fn test_energy_exactly_zero_keeps_positive_zero() {
+        // Alternating rows on a square lattice: every site has two aligned
+        // and two anti-aligned nearest neighbours, so S1 = 0 and, for a
+        // dyadic J1, E is exactly +0.0 on both paths.
+        let lattice = SquareLattice::new(4).unwrap();
+        let spins: Vec<i8> = (0..16)
+            .map(|idx| if (idx / 4) % 2 == 0 { 1 } else { -1 })
+            .collect();
+        for &j1 in &[1.0, -1.0, 0.5] {
+            let e = energy_per_site(&spins, &lattice, j1, 0.0, 0.0, 0.0);
+            assert_eq!(e.to_bits(), 0.0f64.to_bits(), "J1={j1} gave {e:?}");
+            let reference = energy_per_site_serial(&spins, &lattice, j1, 0.0, 0.0, 0.0);
+            assert_eq!(e.to_bits(), reference.to_bits());
+        }
+        // Non-dyadic J1 takes the sparse path; still bit-identical.
+        let e = energy_per_site(&spins, &lattice, 0.3, 0.0, 0.0, 0.0);
+        let reference = energy_per_site_serial(&spins, &lattice, 0.3, 0.0, 0.0, 0.0);
+        assert_eq!(e.to_bits(), reference.to_bits());
+    }
 
     #[test]
     fn test_energy_all_up_ferromagnetic() {

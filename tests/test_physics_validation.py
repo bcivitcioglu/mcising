@@ -372,10 +372,12 @@ class TestDetailedBalance:
 
         sim = IsingSimulation(DB_SIZE, 1.0, 0.0, 0.0, 0.0, seed, algorithm)
         sim.sweep(DB_THERMALIZATION, temperature=DB_TEMPERATURE)
-        energies, mags, configs, _ = sim.production_sweeps(
+        raw = sim.production_sweeps(
             DB_N_SAMPLES, DB_INTERVAL, temperature=DB_TEMPERATURE, store_configs=True
         )
-        idx = _state_indices(np.asarray(configs))
+        energies = raw["energies"]
+        mags = raw["magnetizations"]
+        idx = _state_indices(np.asarray(raw["configurations"]))
 
         # Free cross-check: the in-test energy table agrees with the Rust
         # per-site energies for every sampled state — validates the bit

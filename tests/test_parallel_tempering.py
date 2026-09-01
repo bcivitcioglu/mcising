@@ -363,3 +363,25 @@ class TestPTMatchesIndependent:
                     label_a=f"PT <{observable}>(T={t:.3f})",
                     label_b=f"independent <{observable}>(T={t:.3f})",
                 )
+
+
+class TestPTCorrelationInterval:
+    """correlation_interval applies to the replica ladder too (P16)."""
+
+    def test_every_kth_measurement(self) -> None:
+        dense = Simulation(_small_pt_config(n_sweeps=50, compute_correlation=True)).run(
+            show_progress=False
+        )
+        sparse = Simulation(
+            _small_pt_config(
+                n_sweeps=50, compute_correlation=True, correlation_interval=5
+            )
+        ).run(show_progress=False)
+        assert dense.correlation_length is not None
+        assert sparse.correlation_length is not None
+        for temp in (3.0, 2.0):
+            assert sparse.correlation_length[temp].shape == (1,)  # 50 // 10 = 5
+            assert np.array_equal(
+                sparse.correlation_length[temp], dense.correlation_length[temp][4::5]
+            )
+            assert np.array_equal(sparse.energy[temp], dense.energy[temp])

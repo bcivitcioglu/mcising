@@ -302,7 +302,18 @@ class SimulationConfig:
         Collect a measurement every this many sweeps. In parallel
         tempering it must be a multiple of ``swap_interval``.
     compute_correlation : bool
-        Whether to compute the correlation function.
+        Whether to compute the spin-spin correlation function ``C(r)`` and
+        the second-moment correlation length. Each evaluation is a full
+        pair sum, ``O(N^2)`` in the number of sites — about 0.3 ms at 16²,
+        7 ms at 32² and 130 ms at 64² — so at ``measurement_interval=1``
+        it dominates the run; use ``correlation_interval`` to thin it.
+    correlation_interval : int
+        Evaluate the correlation observables at every k-th measurement
+        (the k-th, 2k-th, ...): ``1`` evaluates at every measurement,
+        ``n_sweeps // measurement_interval`` exactly once, at the final
+        one. The stored ``C(r)`` is the last evaluation; the correlation
+        length series has one entry per evaluation. Ignored by adaptive
+        mode, which always takes a single end-of-production snapshot.
     store_configs : bool
         Whether to store spin configurations at every measurement.
         Disable to cut memory and file size when only scalar
@@ -325,6 +336,7 @@ class SimulationConfig:
     n_thermalization: int = DEFAULT_N_THERMALIZATION
     measurement_interval: int = DEFAULT_MEASUREMENT_INTERVAL
     compute_correlation: bool = False
+    correlation_interval: int = 1
     store_configs: bool = True
     adaptive: AdaptiveConfig = field(default_factory=AdaptiveConfig)
     mode: ExecutionMode = ExecutionMode.COOLDOWN
@@ -340,6 +352,25 @@ class SimulationConfig:
         if self.measurement_interval < 1:
             msg = f"measurement_interval must be >= 1, got {self.measurement_interval}"
             raise ConfigurationError(msg)
+        if self.correlation_interval < 1:
+            msg = f"correlation_interval must be >= 1, got {self.correlation_interval}"
+            raise ConfigurationError(msg)
+        n_measurements = self.n_sweeps // self.measurement_interval
+        if (
+            self.compute_correlation
+            and not self.adaptive.enabled
+            and n_measurements >= 1
+            and self.correlation_interval > n_measurements
+        ):
+            # Every k-th measurement of fewer than k measurements is none:
+            # the run would record no correlation sample at all.
+            raise ConfigurationError(
+                "correlation_interval exceeds the number of measurements "
+                f"(n_sweeps // measurement_interval = {n_measurements}), so no "
+                "correlation sample would be recorded; lower "
+                f"correlation_interval (got {self.correlation_interval}) or "
+                "raise n_sweeps."
+            )
         if self.swap_interval < 1:
             msg = f"swap_interval must be >= 1, got {self.swap_interval}"
             raise ConfigurationError(msg)

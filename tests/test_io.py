@@ -300,6 +300,7 @@ class TestConfigJson:
             "n_thermalization",
             "measurement_interval",
             "compute_correlation",
+            "correlation_interval",
             "store_configs",
             "adaptive",
             "mode",
