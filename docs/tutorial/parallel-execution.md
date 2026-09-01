@@ -68,15 +68,28 @@ Best for: frustrated systems, spin glasses, any system where Metropolis gets stu
 
 ## Speed comparison
 
-With 20 temperatures on a 10-core machine:
+Independent mode runs one temperature per Rayon thread; parallel tempering
+does the same and adds the replica-exchange synchronisation. The cooldown
+mode is the single-threaded reference.
 
-| Mode | Wall-clock time | Speedup |
-|---|---|---|
-| Cooldown | 0.018s | 1.0x |
-| Independent | 0.003s | **6x faster** |
-| Parallel Tempering | 0.075s | slower (swap overhead) |
+<!-- benchmarks:parallel:begin -->
+| Mode | Threads | Wall time | Speed-up vs cooldown |
+|---|---|---|---|
+| Cooldown | 1 | 3.01 s | 1.0× |
+| Independent | 1 | 3.03 s | 1.0× |
+| Independent | 2 | 1.62 s | 1.9× |
+| Independent | 4 | 0.84 s | 3.6× |
+| Independent | 8 | 0.57 s | 5.3× |
+| Independent | 10 | 0.54 s | 5.6× |
+| Parallel tempering | 10 | 1.47 s | 2.0× |
 
-Independent mode gives the biggest wall-clock speedup. Parallel Tempering is slower in raw time but produces better-sampled configurations at low temperature.
+Metropolis, 128×128 square lattice, 20 temperatures from 3.5 to 1.5, 500 thermalization + 2,000 production sweeps per temperature (measured every 10), Apple M4 (10 cores: 4 performance + 6 efficiency); medians of 3 runs. The independent and parallel-tempering rows each run in a fresh process with `RAYON_NUM_THREADS` set to the thread count; the cooldown mode is single-threaded by construction.
+<!-- benchmarks:parallel:end -->
+
+Independent mode gives the wall-clock speed-up; it grows with the number
+of performance cores until the temperatures run out. Parallel tempering
+pays for the swap synchronisation on top, in exchange for far better
+sampling of the low-temperature replicas — which is what it is for.
 
 ## RNG seeding
 

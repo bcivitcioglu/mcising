@@ -23,8 +23,8 @@ uv run pytest
 uv run pytest -m slow
 
 # Linting
-uv run ruff check python/ tests/ scripts/
-uv run mypy python/mcising/ scripts/
+uv run ruff check python/ tests/ scripts/ benchmarks/
+uv run mypy python/mcising/ scripts/ benchmarks/
 ```
 
 ## Project structure

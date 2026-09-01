@@ -46,8 +46,8 @@ All interactions are covered by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Run checks locally:
 ```bash
-uv run ruff check python/ tests/
-uv run mypy python/mcising/
+uv run ruff check python/ tests/ scripts/ benchmarks/
+uv run mypy python/mcising/ scripts/ benchmarks/
 cargo fmt -- --check
 cargo clippy -- -D warnings
 ```

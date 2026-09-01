@@ -69,11 +69,13 @@ This runs a Monte Carlo simulation of the 2D Ising model on a 32x32 square latti
 
     [:octicons-arrow-right-24: Lattice types](tutorial/lattice-types.md)
 
--   :material-lightning-bolt:{ .lg .middle } **268M spin updates/sec**
+-   :material-lightning-bolt:{ .lg .middle } **Rust-core throughput**
 
     ---
 
-    Rust core via PyO3. 3.4x faster than peapods. 430x faster than pure Python.
+    <!-- benchmarks:index-card:begin -->
+    351M Metropolis spin updates per second on one core (32×32 at Tc, Apple M4) — 140.4× faster than pure Python, 15.0× faster than a NumPy checkerboard.
+    <!-- benchmarks:index-card:end -->
 
     [:octicons-arrow-right-24: Performance](advanced/performance.md)
 

@@ -18,51 +18,37 @@
 
 ## Performance
 
-**2.7-3.4x faster** than [peapods](https://github.com/PeaBrane/peapods) (Rust/PyO3) across all shared benchmarks.
+<!-- benchmarks:headline:begin -->
+On one core of an Apple M4 (10 cores: 4 performance + 6 efficiency), mcising performs **351M Metropolis spin updates per second** on a 32×32 square lattice at Tc — 140.4× faster than pure Python and 15.0× faster than a NumPy checkerboard implementation of the same update, and 2.4× faster than peapods on a matched workload (energy recorded every sweep on both sides).
 
-MacBook Pro 14-inch (2023, Apple M2 Pro, 32 GB). Reproduce with [`benchmarks/compare_peapods.py`](benchmarks/compare_peapods.py).
+mcising 0.29.0 (commit 2e3548a), Python 3.12.11, measured 2026-09-01; medians of repeated runs. Regenerate with `uv run --group benchmark python benchmarks/run_all.py --write-docs`.
+<!-- benchmarks:headline:end -->
 
-```
-Metropolis: Square (32×32, T=2.269)
-┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┓
-┃ Implementation  ┃    Time ┃ Updates/sec ┃ Sweeps/sec ┃  E/site ┃  vs mcising ┃
-┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━┩
-│ mcising         │ 0.038 s │ 269,221,877 │    262,912 │ -1.3906 │        1.0x │
-│ peapods         │ 0.131 s │  78,146,389 │     76,315 │ -1.4250 │ 3.4x slower │
-└─────────────────┴─────────┴─────────────┴────────────┴─────────┴─────────────┘
+<!-- benchmarks:baselines:begin -->
+| Implementation | Lattice | Timed sweeps | Spin updates/s | mcising is |
+|---|---|---|---|---|
+| Pure Python | 32×32 | 200 | 2M | 140.4× |
+| NumPy (checkerboard) | 32×32 | 1,000 | 23M | 15.0× |
+| mcising (Rust) | 32×32 | 10,000 | 351M | — |
+| NumPy (checkerboard) | 128×128 | 200 | 69M | 4.7× |
+| mcising (Rust) | 128×128 | 1,000 | 324M | — |
 
-Metropolis: Triangular (32×32, T=3.641)
-┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┓
-┃ Implementation  ┃    Time ┃ Updates/sec ┃ Sweeps/sec ┃  E/site ┃  vs mcising ┃
-┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━┩
-│ mcising         │ 0.046 s │ 223,340,013 │    218,105 │ -2.1836 │        1.0x │
-│ peapods         │ 0.157 s │  65,100,107 │     63,574 │ -2.0238 │ 3.4x slower │
-└─────────────────┴─────────┴─────────────┴────────────┴─────────┴─────────────┘
+Single-spin-flip Metropolis on the square lattice at Tc, one thread, Apple M4 (10 cores: 4 performance + 6 efficiency). Pure Python is a plain loop with precomputed neighbour and Boltzmann tables; the NumPy implementation updates the two checkerboard sublattices as whole arrays. Spin updates/s counts attempted flips; timed sweeps exclude 100 warm-up sweeps.
+<!-- benchmarks:baselines:end -->
 
-Metropolis: Cubic (16³, T=4.5115)
-┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┓
-┃ Implementation  ┃    Time ┃ Updates/sec ┃ Sweeps/sec ┃  E/site ┃  vs mcising ┃
-┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━┩
-│ mcising         │ 0.279 s │ 146,924,310 │     35,870 │ -1.1982 │        1.0x │
-│ peapods         │ 0.812 s │  50,430,683 │     12,312 │ -1.0385 │ 2.9x slower │
-└─────────────────┴─────────┴─────────────┴────────────┴─────────┴─────────────┘
+<!-- benchmarks:peapods:begin -->
+Matched physics against [peapods](https://github.com/PeaBrane/peapods) 0.2.0 (Rust/PyO3): the same Hamiltonian (H = −J Σ s_i s_j, J = 1, energies per site, bond counted once), the same Metropolis sweep (a sequential scan with one attempt per site), the same temperature (Tc), 5,000 thermalization sweeps, then 100,000 timed sweeps with the energy recorded every sweep on both sides, one thread, 3 seeds per side, Apple M4 (10 cores: 4 performance + 6 efficiency). peapods reports +Σ J s_i s_j / N, so its sign is flipped before comparison. A row is published only when the two mean energies agree within 0.5 %.
 
-Wolff: Square (32×32, T=2.269)
-┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┓
-┃ Implementation  ┃    Time ┃ Updates/sec ┃ Sweeps/sec ┃  E/site ┃  vs mcising ┃
-┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━┩
-│ mcising (wolff) │ 0.103 s │  99,690,738 │     97,354 │ -1.5117 │        1.0x │
-│ peapods         │ 0.337 s │  30,386,647 │     29,674 │ -1.4337 │ 3.3x slower │
-└─────────────────┴─────────┴─────────────┴────────────┴─────────┴─────────────┘
+| Lattice | E/site mcising | E/site peapods | Δ | Sweeps/s mcising | Sweeps/s peapods | mcising is |
+|---|---|---|---|---|---|---|
+| Square 32×32 | -1.4325 ± 0.0018 | -1.4346 ± 0.0007 | 0.15 % | 249,160 | 104,786 | 2.4× |
+| Triangular 32×32 | -2.0305 ± 0.0012 | -2.0320 ± 0.0014 | 0.07 % | 203,737 | 86,013 | 2.4× |
+| Cubic 16×16×16 | -1.0346 ± 0.0010 | -1.0347 ± 0.0002 | 0.01 % | 34,196 | 15,677 | 2.2× |
 
-Swendsen-Wang: Square (32×32, T=2.269)
-┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┓
-┃ Implementation  ┃    Time ┃ Updates/sec ┃ Sweeps/sec ┃  E/site ┃  vs mcising ┃
-┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━┩
-│ mcising         │ 0.214 s │  47,960,246 │     46,836 │ -1.3125 │        1.0x │
-│ peapods         │ 0.569 s │  18,008,160 │     17,586 │ -1.4323 │ 2.7x slower │
-└─────────────────┴─────────┴─────────────┴────────────┴─────────┴─────────────┘
-```
+Wolff and Swendsen-Wang are not compared: peapods interleaves cluster updates with Metropolis sweeps rather than running cluster-only sweeps, so no peapods workload matches an mcising cluster sweep.
+<!-- benchmarks:peapods:end -->
+
+Every number above is written by [`benchmarks/run_all.py`](benchmarks/run_all.py) from the committed [`benchmarks/results.json`](benchmarks/results.json), and the test suite fails if the two drift apart. Regenerate with `uv run --group benchmark python benchmarks/run_all.py --write-docs` (a few minutes), or re-render the committed results with `--from-json benchmarks/results.json --write-docs`. The [performance page](https://bcivitcioglu.github.io/mcising/advanced/performance/) adds the per-lattice, cluster-algorithm, scaling and parallel-execution tables.
 
 mcising also supports features not available in peapods: J2/J3 coupling, external magnetic field, honeycomb lattice, 1D chain, and parallel tempering.
 
@@ -152,7 +138,7 @@ config = SimulationConfig(
     lattice=LatticeConfig(size=32),
     temperatures=(3.0, 2.5, 2.269, 2.0, 1.5),
     n_sweeps=1000,
-    mode=ExecutionMode.INDEPENDENT,  # ~6x faster with 10 cores
+    mode=ExecutionMode.INDEPENDENT,  # one temperature per core
 )
 
 # Parallel Tempering: parallel + replica swap for better sampling

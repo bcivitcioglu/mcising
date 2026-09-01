@@ -120,7 +120,7 @@ class TestPurePython:
 class TestNumpy:
     def test_bench_numpy_tiny(self) -> None:
         result = bench_numpy(4, 5)
-        _assert_physical(result, "NumPy", 4)
+        _assert_physical(result, "NumPy (checkerboard)", 4)
         assert result.n_sweeps == 5
         assert result.num_sites is None
 
@@ -129,6 +129,25 @@ class TestNumpy:
         second = bench_numpy(4, 5, seed=123)
         assert first.energy == second.energy
         assert first.magnetization == second.magnetization
+
+    def test_numpy_rejects_odd_size(self) -> None:
+        # The two checkerboard sublattices only close under periodic
+        # boundaries for even L.
+        with pytest.raises(ValueError, match="even lattice size"):
+            bench_numpy(5, 1)
+
+    def test_numpy_update_is_metropolis(self) -> None:
+        # A genuinely vectorized update must still sample the Boltzmann
+        # weight: from a random start (E/site ~ 0) 60 sweeps at beta = 2
+        # order the 8x8 lattice (domain walls may survive, so the bound is
+        # loose), while at beta = 0.05 the energy stays near the
+        # high-temperature value -2 tanh(beta) ~ -0.1.
+        from mcising.benchmarks import _numpy_metropolis
+
+        _, cold_energy, _ = _numpy_metropolis(8, 60, beta=2.0, seed=3)
+        assert cold_energy < -1.0
+        _, hot_energy, hot_mag = _numpy_metropolis(8, 60, beta=0.05, seed=3)
+        assert -0.6 < hot_energy < 0.2 and abs(hot_mag) < 0.5
 
 
 class TestMcising:

@@ -10,7 +10,7 @@ authors:
 repository-code: "https://github.com/bcivitcioglu/mcising"
 url: "https://bcivitcioglu.github.io/mcising/"
 license: MIT
-version: 0.28.0
+version: 0.29.0
 date-released: '2026-09-01'
 keywords:
   - "Ising model"

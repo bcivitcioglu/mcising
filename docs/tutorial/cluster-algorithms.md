@@ -81,21 +81,21 @@ Metropolis flips one spin at a time. Near the critical temperature, this gets sl
 
 ## Performance comparison
 
-On a 32x32 square lattice at Tc=2.269, 10,000 sweeps:
+Raw throughput and statistical efficiency pull in opposite directions.
+Metropolis attempts the most flips per second, but near Tc its samples
+stay correlated for many sweeps; one Wolff cluster or one Swendsen-Wang
+sweep decorrelates the magnetization within a few. The last column — wall
+time per statistically independent sample — is the one to compare.
 
-| Algorithm | Updates/sec |
-|---|---|
-| Metropolis | 268M |
-| Wolff | 100M[^wolff-updates] |
-| Swendsen-Wang | 48M |
+<!-- benchmarks:cluster:begin -->
+| Algorithm | µs per sweep | Attempted flips/s | τ_int (energy) | τ_int (abs. magnetization) | µs per independent sample |
+|---|---|---|---|---|---|
+| Metropolis | 2.93 µs | 349M | 10.8 | 29.9 | 175.54 µs |
+| Wolff | 8.10 µs | 59M | 4.3 | 3.9 | 63.15 µs |
+| Swendsen-Wang | 16.96 µs | 60M | 4.5 | 3.7 | 124.26 µs |
 
-[^wolff-updates]: Measured before 1.0, when the benchmark counted one
-    Wolff sweep as `num_sites` updates — an overstatement of roughly
-    `N / ⟨cluster size⟩` (a Wolff sweep is one cluster). The benchmark
-    now counts real attempted flips; re-measured numbers land with the
-    benchmark-integrity pass (P17).
-
-Metropolis has the highest raw throughput, but Wolff and Swendsen-Wang produce statistically independent samples much faster near Tc because each sweep decorrelates more effectively.
+32×32 square lattice at Tc, one thread, Apple M4 (10 cores: 4 performance + 6 efficiency). Attempted flips/s counts real work: a Metropolis sweep attempts every site once, a Swendsen-Wang sweep touches every site, and one Wolff sweep is one cluster (475 spins on average here). τ_int is the integrated autocorrelation time in sweeps from a 100,000-sweep series after 5,000 thermalization sweeps (blocking estimate). µs per independent sample = µs per sweep × 2 τ_int of the absolute magnetization, the slowest observable.
+<!-- benchmarks:cluster:end -->
 
 ## Cluster algorithms on any lattice
 
