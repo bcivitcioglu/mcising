@@ -18,9 +18,13 @@ cargo test
 # Python tests (260 tests)
 uv run pytest
 
+# Slow physics-validation suite (minutes; excluded from the per-push CI
+# gate, run nightly by .github/workflows/nightly.yml)
+uv run pytest -m slow
+
 # Linting
-uv run ruff check python/ tests/
-uv run mypy python/mcising/
+uv run ruff check python/ tests/ scripts/
+uv run mypy python/mcising/ scripts/
 ```
 
 ## Project structure
