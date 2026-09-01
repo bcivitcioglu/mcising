@@ -26,19 +26,21 @@ from typing import Final
 
 import numpy as np
 from mcising.statistics import (
-    as_float_array as _as_array,
-)
-from mcising.statistics import (
+    Estimate,
     blocking_se,
     jackknife_se,
     naive_se,
     tau_int_blocking,
+)
+from mcising.statistics import (
+    as_float_array as _as_array,
 )
 from numpy.typing import NDArray
 
 __all__ = [
     "DEFAULT_N_SIGMA",
     "DEFAULT_SEEDS",
+    "assert_estimate_within_sigma",
     "assert_mean_above",
     "assert_mean_below",
     "assert_ordered_means",
@@ -98,6 +100,30 @@ def assert_within_sigma(
         f"{label} is {_sigmas(deviation, err)} sigma from expected "
         f"(limit {n_sigma}): mean={mean:.5f} expected={expected:.5f} "
         f"se={err:.5f} | {_describe(label, x)}"
+    )
+
+
+def assert_estimate_within_sigma(
+    estimate: Estimate,
+    expected: float,
+    *,
+    n_sigma: float = DEFAULT_N_SIGMA,
+    label: str = "estimate",
+) -> None:
+    """Assert a value-with-error agrees with an exact expected value.
+
+    Two-sided, for nonlinear estimators that carry their own jackknife
+    error as an :class:`~mcising.statistics.Estimate` rather than a raw
+    series (a susceptibility, a cumulant). A missing error bar fails
+    loudly — it must never let the comparison pass vacuously.
+    """
+    assert math.isfinite(estimate.error) and estimate.error > 0.0, (
+        f"{label} has no usable error bar: {estimate} (expected {expected:.5f})"
+    )
+    deviation = abs(estimate.value - expected)
+    assert deviation <= n_sigma * estimate.error, (
+        f"{label} is {_sigmas(deviation, estimate.error)} sigma from expected "
+        f"(limit {n_sigma}): {estimate} vs expected={expected:.5f}"
     )
 
 
