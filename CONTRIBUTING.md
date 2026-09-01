@@ -80,8 +80,10 @@ cargo test
 # With coverage
 uv run pytest --cov=mcising
 
-# The slow suite (physics validation runs taking minutes: the Onsager
-# u(T) curve, the Tc-campaign rerun). CI's per-push gate excludes it;
-# .github/workflows/nightly.yml runs it every night and on manual dispatch.
+# The slow suite (physics-validation runs taking minutes: the Onsager
+# u(T) curve, the five-seed Tc-campaign rerun). The fast CI matrix
+# excludes it; .github/workflows/slow.yml runs it on every pull request
+# and push to master, release.yml runs it before publishing, and it can
+# be dispatched manually.
 uv run pytest -m slow
 ```

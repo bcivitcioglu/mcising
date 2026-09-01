@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The slow physics-validation suite (the Onsager u(T) curve, the
+  five-seed Tc-campaign rerun) now runs on every pull request and every
+  push to `master` (`.github/workflows/slow.yml`, replacing the nightly
+  schedule) and gates PyPI publication in `release.yml`: a change ships
+  only after the physics is re-confirmed, and a wheel is published only
+  for a tag that passed.
+
 ## [0.28.0] - 2026-09-01
 
 ### Added

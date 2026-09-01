@@ -1,0 +1,45 @@
+name: Slow suite
+
+# The slow physics-validation tests (the Onsager u(T) curve, the five-seed
+# Tc-campaign rerun) take minutes rather than seconds, so the fast CI
+# matrix excludes them (-m "not slow"). A scientific library has to
+# re-confirm its physics every time a change ships: this runs the suite
+# on every pull request and every push to master (release.yml runs it
+# again before publishing a tag), and it can be dispatched by hand.
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: slow-${{ github.ref }}
+  # Superseded pushes to a PR branch are cancelled; master runs never are.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  slow:
+    name: Slow suite (release build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --python 3.12
+
+      - name: Build Rust extension (release)
+        run: uv run maturin develop --release
+
+      - name: Run the slow suite
+        # No --cov: the coverage ratchet belongs to the canonical suite.
+        run: uv run pytest -m slow --durations=10

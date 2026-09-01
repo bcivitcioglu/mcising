@@ -18,8 +18,8 @@ cargo test
 # Python tests (260 tests)
 uv run pytest
 
-# Slow physics-validation suite (minutes; excluded from the per-push CI
-# gate, run nightly by .github/workflows/nightly.yml)
+# Slow physics-validation suite (minutes; runs on every pull request and
+# push to master via .github/workflows/slow.yml and gates every release)
 uv run pytest -m slow
 
 # Linting

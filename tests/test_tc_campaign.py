@@ -44,8 +44,8 @@ DOCS_PAGE = REPO_ROOT / "docs" / "advanced" / "physics.md"
 GATE_RELATIVE = 0.02
 #: Floor on the rerun-vs-committed tolerance as a fraction of Tc. Four
 #: combined sigmas is the nominal test; the floor absorbs the ~13% noise of
-#: the jackknife errors themselves and keeps the nightly false-fail rate
-#: negligible over a year of runs.
+#: the jackknife errors themselves and keeps the false-fail rate
+#: negligible over hundreds of CI runs.
 RERUN_FLOOR_RELATIVE = 0.0025
 #: Fit-quality canary on the committed headline crossings: chi2/dof of the
 #: quadratic fit (6 dof) beyond this would mean dishonest errors or an

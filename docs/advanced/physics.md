@@ -30,7 +30,8 @@ measures Tc on every lattice with the library itself. Its results are
 committed next to it (`scripts/tc_campaign_results.json`) and checked by
 the test suite (`tests/test_tc_campaign.py`): the committed table against
 the constants on every CI run, and a full quick-budget rerun on fresh
-random streams every night.
+random streams on every pull request, every push to `master`, and before
+every release is published.
 
 **Method.** For each lattice and several linear sizes L, the Binder
 cumulant U4 = 1 − ⟨m⁴⟩ / (3 ⟨m²⟩²) and the specific heat are measured on a
@@ -117,7 +118,7 @@ Reproduce or refresh the tables with
 
 ```bash
 uv run python scripts/tc_campaign.py --write-docs   # full budget, ~5 min on 10 cores
-uv run python scripts/tc_campaign.py --quick        # the nightly test's budget
+uv run python scripts/tc_campaign.py --quick        # the CI slow-suite budget
 ```
 
 ## Monte Carlo algorithms
