@@ -7,8 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-09-01
+
 ### Added
 
+- Tc campaign: `scripts/tc_campaign.py` measures the critical temperature
+  of every 2D/3D lattice with the library itself — Binder-cumulant
+  crossings (Swendsen–Wang, independent mode, sizes up to 64² / 24³) plus
+  specific-heat peak locations, with bootstrap statistical errors, the
+  finite-size drift as a separate systematic, and χ²/dof canaries on every
+  fit. The committed results (`scripts/tc_campaign_results.json`) agree
+  with the reference values to −0.05 % (square), −0.02 % (triangular),
+  −0.09 % (honeycomb) and +0.03 % (cubic), all within one to two
+  statistical errors; the table is rendered in `docs/advanced/physics.md`
+  and `--reanalyse` recomputes every estimate from the stored tables
+  without re-simulating.
+- `tests/test_tc_campaign.py`: the committed campaign is checked against
+  `mcising.constants` on every CI run (2 % gate, full-budget provenance,
+  docs table in sync), and a slow-marked quick-budget rerun over every
+  seed reproduces it nightly. `tests/test_constants.py` pins the closed
+  forms through their defining identities.
+- `.github/workflows/nightly.yml` runs the slow suite every night and on
+  manual dispatch (release build, no coverage ratchet).
 - Exact-results validation suite. Onsager: `<E>/site` at Tc on a 64x64
   square lattice within 1% of -sqrt(2) with the blocking error quoted in
   the assertion (measured 0.64-0.77% across seeds — the O(1/L)
@@ -21,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   antiferromagnetic ground states on all five lattices, including the
   frustrated triangular stripe bound. Reference formulas live in
   `tests/_analytic.py` (Onsager via an AGM elliptic integral — no scipy).
+
+### Changed
+
+- `TC_CUBIC_3D` is now `1 / 0.221654626` = 4.511523… (Ferrenberg, Xu &
+  Landau 2018) instead of the rounded literal 4.5115 — a 5 ppm change —
+  and every critical-temperature constant carries its source citation.
+- CI lints and type-checks `scripts/` alongside the package and tests.
 
 ## [0.27.0] - 2026-08-31
 
