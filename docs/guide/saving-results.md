@@ -2,6 +2,19 @@
 
 mcising provides three ways to persist simulation data: HDF5 (full data), JSON (summaries), and checkpointing (crash recovery).
 
+The examples below persist this run:
+
+```python
+from mcising import LatticeConfig, Simulation, SimulationConfig
+
+config = SimulationConfig(
+    lattice=LatticeConfig(size=16),
+    temperatures=(3.0, 2.269, 1.5),
+    n_sweeps=500,
+)
+results = Simulation(config).run()
+```
+
 ## HDF5 — full data
 
 ```python
@@ -31,7 +44,7 @@ results.h5
 ├── T=2.269/
 │   ├── energy           (n_samples,)
 │   ├── magnetization    (n_samples,)
-│   ├── configurations   (n_samples, L, L)
+│   ├── configurations   (n_samples, *lattice shape) — see below
 │   └── statistics/      (derived estimates as attributes: n_samples,
 │                         tau_int, and value + *_error pairs for energy,
 │                         magnetization, abs_magnetization, specific_heat,
@@ -39,6 +52,12 @@ results.h5
 └── T=1.500/
     └── ...
 ```
+
+`configurations` has the lattice's own shape after the sample axis:
+`(L, L)` for the square and triangular lattices, `(L, L, 2)` for the
+honeycomb (two sites per cell), `(L, L, L)` for the cubic lattice and
+`(L,)` for the chain — the same array `IsingSimulation.get_spins()`
+returns.
 
 The `statistics` subgroup (schema 3) exists for external tools —
 `h5dump`, pandas, a referee's notebook — so a saved file quotes its

@@ -18,6 +18,10 @@ cargo test
 # Python tests (260 tests)
 uv run pytest
 
+# Every documentation code fence (Python fences also run in the canonical
+# suite; the shell fences and doctests here take about a minute)
+uv run pytest tests/test_docs_snippets.py -m ""
+
 # Slow physics-validation suite (minutes; runs on every pull request and
 # push to master via .github/workflows/slow.yml and gates every release)
 uv run pytest -m slow

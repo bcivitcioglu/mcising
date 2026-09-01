@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Every code fence in the documentation executes in CI. `tests/test_docs_snippets.py`
+  runs the Python fences of every page in order (one namespace per page, a
+  temporary working directory) in the canonical suite, runs every `mcising`
+  command of the shell fences in the slow suite and in a dedicated
+  "Doc snippets" CI job, and runs the package's `>>>` docstring examples as
+  doctests. A snippet that no longer matches the API now fails a test.
+- `IsingSimulation` is in the API reference (Simulation page), rendered from
+  `python/mcising/_core.pyi`, whose every public symbol now carries a
+  docstring — what `sweep` returns per algorithm, the lattice-dependent
+  shape of `get_spins`, the `production_sweeps` dict, the analysis fields
+  of `analyze_thermalization_series`, the two parallel runners.
+  `tests/test_core_stub_docs.py` enforces the docstrings.
+
+### Fixed
+
+- Documentation snippets that could not run: the saving-results and
+  plotting guides assumed a `results` object from another page, the
+  plotting examples referenced a temperature outside their own scan and
+  HDF5 files nothing had written, the cluster-algorithms example lacked
+  its imports, and the CLI page's coupling-comparison plot read files no
+  command created. The `SimulationResults.configurations` shape is
+  documented per lattice (`(L, L, 2)` honeycomb, `(L, L, L)` cubic,
+  `(L,)` chain) instead of `(n_samples, L, L)` for all.
+
 ## [0.29.0] - 2026-09-01
 
 ### Added

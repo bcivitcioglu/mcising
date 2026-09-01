@@ -4,7 +4,7 @@ mcising provides a full command-line interface for running simulations, inspecti
 
 ## Overview
 
-```bash
+```
 mcising run        # Run a simulation → HDF5 file
 mcising summary    # Inspect results from HDF5
 mcising plot       # Generate plots from HDF5
@@ -115,6 +115,10 @@ mcising plot susceptibility results.h5 -o chi.png
 Multi-file overlay for comparing different coupling configurations:
 
 ```bash
+# Runs that differ in one coupling, overlaid with auto-generated legends
+mcising run -L 32 --j2 0.0 -o j2_0.h5
+mcising run -L 32 --j2 0.3 -o j2_0.3.h5
+mcising run -L 32 --j2 0.5 -o j2_0.5.h5
 mcising plot energy j2_0.h5 j2_0.3.h5 j2_0.5.h5 -o compare.png
 ```
 

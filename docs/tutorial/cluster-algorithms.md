@@ -102,7 +102,7 @@ time per statistically independent sample — is the one to compare.
 All three algorithms work on all 5 lattice types:
 
 ```python
-from mcising import LatticeType
+from mcising import Algorithm, LatticeConfig, LatticeType, SimulationConfig
 
 # Wolff on triangular lattice
 config = SimulationConfig(

@@ -160,7 +160,10 @@ class SimulationResults:
     magnetization : dict[float, NDArray[np.float64]]
         Magnetization per site measurements at each temperature.
     configurations : dict[float, NDArray[np.int8]]
-        Spin configurations at each temperature. Shape: (n_samples, L, L).
+        Spin configurations at each temperature, shape ``(n_samples,
+        *lattice_shape)``: ``(L, L)`` for the square and triangular
+        lattices, ``(L, L, 2)`` for the honeycomb, ``(L, L, L)`` for the
+        cubic lattice and ``(L,)`` for the chain.
     correlation_function : dict[float, tuple[NDArray, NDArray]] | None
         (distances, correlations) at each temperature, or None if not computed.
     correlation_length : dict[float, NDArray[np.float64]] | None
@@ -437,7 +440,9 @@ class Simulation:
     ...     n_sweeps=500,
     ... )
     >>> sim = Simulation(config)
-    >>> results = sim.run()
+    >>> results = sim.run(show_progress=False)
+    >>> sorted(results.energy) == [1.5, 2.269, 3.0]
+    True
     """
 
     def __init__(self, config: SimulationConfig) -> None:
