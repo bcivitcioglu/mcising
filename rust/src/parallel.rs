@@ -8,7 +8,6 @@
 //! All user-reachable failures are rejected up front by the validators in
 //! this file; the hot loops themselves are panic-free for validated input.
 
-use numpy::{IntoPyArray, PyArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use rand::Rng;
@@ -16,78 +15,9 @@ use rayon::prelude::*;
 
 use crate::error::MCIsingError;
 use crate::lattice::{with_lattice, Lattice, LatticeKind};
+use crate::measurement::TempResult;
 use crate::observables;
 use crate::simulation::IsingSimulation;
-
-/// Correlation data collected for one temperature.
-///
-/// `distances`/`values` hold the correlation function of the most recent
-/// measurement (the representative pair, mirroring the cooldown path);
-/// `lengths` collects the correlation length at every measurement.
-struct CorrelationRecord {
-    distances: Vec<f64>,
-    values: Vec<f64>,
-    lengths: Vec<f64>,
-}
-
-/// Result for a single temperature, returned to Python as a dict.
-struct TempResult {
-    temperature: f64,
-    energies: Vec<f64>,
-    magnetizations: Vec<f64>,
-    configs: Option<Vec<i8>>,
-    correlation: Option<CorrelationRecord>,
-    shape: Vec<usize>,
-    /// Cluster flips during measurement sweeps only (0 for Metropolis);
-    /// thermalization work is never counted.
-    cluster_flips: usize,
-}
-
-impl TempResult {
-    fn with_capacity(
-        temperature: f64,
-        n_measurements: usize,
-        num_sites: usize,
-        shape: Vec<usize>,
-        store_configs: bool,
-        compute_correlation: bool,
-    ) -> Self {
-        Self {
-            temperature,
-            energies: Vec::with_capacity(n_measurements),
-            magnetizations: Vec::with_capacity(n_measurements),
-            configs: store_configs.then(|| Vec::with_capacity(n_measurements * num_sites)),
-            correlation: compute_correlation.then(|| CorrelationRecord {
-                distances: Vec::new(),
-                values: Vec::new(),
-                lengths: Vec::with_capacity(n_measurements),
-            }),
-            shape,
-            cluster_flips: 0,
-        }
-    }
-
-    /// Record one measurement: energy, magnetization, and (when enabled)
-    /// a configuration snapshot and correlation data.
-    ///
-    /// The correlation observables are pure functions of `spins` — they draw
-    /// no RNG, so enabling them never perturbs the sampling streams.
-    fn push<L: Lattice>(&mut self, spins: &[i8], lattice: &L, energy: f64) {
-        self.energies.push(energy);
-        self.magnetizations
-            .push(observables::magnetization_per_site(spins));
-        if let Some(ref mut c) = self.configs {
-            c.extend_from_slice(spins);
-        }
-        if let Some(ref mut corr) = self.correlation {
-            let bins = observables::correlation_bins(spins, lattice);
-            corr.lengths
-                .push(observables::correlation_length(&bins, lattice.dimension()));
-            corr.distances = bins.distances();
-            corr.values = bins.correlations;
-        }
-    }
-}
 
 /// Reject invalid run parameters before entering the parallel sections.
 ///
@@ -107,6 +37,7 @@ fn validate_run_params(
     lattice_type: &str,
     temperatures: &[f64],
     measurement_interval: usize,
+    correlation_interval: usize,
 ) -> Result<(), MCIsingError> {
     IsingSimulation::new_internal(
         lattice_size,
@@ -130,6 +61,12 @@ fn validate_run_params(
         return Err(MCIsingError::InvalidInterval(
             "measurement_interval",
             measurement_interval,
+        ));
+    }
+    if correlation_interval < 1 {
+        return Err(MCIsingError::InvalidInterval(
+            "correlation_interval",
+            correlation_interval,
         ));
     }
     Ok(())
@@ -178,6 +115,7 @@ fn run_independent_internal(
     measurement_interval: usize,
     store_configs: bool,
     compute_correlation: bool,
+    correlation_interval: usize,
     seed_offsets: Option<&[u64]>,
 ) -> Result<Vec<TempResult>, MCIsingError> {
     validate_run_params(
@@ -191,6 +129,7 @@ fn run_independent_internal(
         lattice_type,
         temperatures,
         measurement_interval,
+        correlation_interval,
     )?;
     if let Some(offsets) = seed_offsets {
         if offsets.len() != temperatures.len() {
@@ -235,6 +174,7 @@ fn run_independent_internal(
                 shape,
                 store_configs,
                 compute_correlation,
+                correlation_interval,
             );
 
             for _ in 0..n_measurements {
@@ -274,7 +214,8 @@ fn run_independent_internal(
 #[pyo3(signature = (
     lattice_size, j1, j2, j3, h, base_seed, algorithm, lattice_type,
     temperatures, n_thermalization, n_sweeps, measurement_interval,
-    store_configs = false, compute_correlation = false, seed_offsets = None
+    store_configs = false, compute_correlation = false, seed_offsets = None,
+    correlation_interval = 1
 ))]
 pub fn run_independent_temperatures<'py>(
     py: Python<'py>,
@@ -293,6 +234,7 @@ pub fn run_independent_temperatures<'py>(
     store_configs: bool,
     compute_correlation: bool,
     seed_offsets: Option<Vec<u64>>,
+    correlation_interval: usize,
 ) -> PyResult<Vec<Bound<'py, PyDict>>> {
     // Clone strings for use inside the GIL-free section (which requires Send).
     let algo = algorithm.to_string();
@@ -315,6 +257,7 @@ pub fn run_independent_temperatures<'py>(
             measurement_interval,
             store_configs,
             compute_correlation,
+            correlation_interval,
             seed_offsets.as_deref(),
         )
     })?;
@@ -322,41 +265,12 @@ pub fn run_independent_temperatures<'py>(
     convert_results_to_py(py, results)
 }
 
-/// Convert `TempResult`s to Python dicts.
-///
-/// Array shapes are derived from the actual number of collected
-/// measurements, never from a precomputed count — a cadence bug upstream
-/// can therefore shorten arrays but can no longer cause a reshape panic.
+/// Convert `TempResult`s to Python dicts (one per temperature).
 fn convert_results_to_py(
     py: Python<'_>,
     results: Vec<TempResult>,
 ) -> PyResult<Vec<Bound<'_, PyDict>>> {
-    let mut py_results = Vec::with_capacity(results.len());
-    for r in results {
-        let n_measurements = r.energies.len();
-        let dict = PyDict::new(py);
-        dict.set_item("temperature", r.temperature)?;
-        dict.set_item("energies", r.energies.into_pyarray(py))?;
-        dict.set_item("magnetizations", r.magnetizations.into_pyarray(py))?;
-        dict.set_item("n_cluster_flips", r.cluster_flips)?;
-
-        if let Some(configs) = r.configs {
-            let flat = numpy::PyArray1::from_vec(py, configs);
-            let mut reshape_dims: Vec<usize> = vec![n_measurements];
-            reshape_dims.extend_from_slice(&r.shape);
-            let reshaped = flat.reshape(reshape_dims)?;
-            dict.set_item("configurations", reshaped)?;
-        }
-
-        if let Some(corr) = r.correlation {
-            dict.set_item("correlation_distances", corr.distances.into_pyarray(py))?;
-            dict.set_item("correlation_function", corr.values.into_pyarray(py))?;
-            dict.set_item("correlation_length", corr.lengths.into_pyarray(py))?;
-        }
-
-        py_results.push(dict);
-    }
-    Ok(py_results)
+    results.into_iter().map(|r| r.into_pydict(py)).collect()
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -437,6 +351,7 @@ fn run_parallel_tempering_internal(
     swap_interval: usize,
     store_configs: bool,
     compute_correlation: bool,
+    correlation_interval: usize,
 ) -> Result<Vec<TempResult>, MCIsingError> {
     validate_run_params(
         lattice_size,
@@ -449,6 +364,7 @@ fn run_parallel_tempering_internal(
         lattice_type,
         temperatures,
         measurement_interval,
+        correlation_interval,
     )?;
     validate_swap_cadence(measurement_interval, swap_interval)?;
 
@@ -496,6 +412,7 @@ fn run_parallel_tempering_internal(
                 shape.clone(),
                 store_configs,
                 compute_correlation,
+                correlation_interval,
             )
         })
         .collect();
@@ -589,7 +506,8 @@ fn run_parallel_tempering_internal(
 #[pyo3(signature = (
     lattice_size, j1, j2, j3, h, base_seed, algorithm, lattice_type,
     temperatures, n_thermalization, n_sweeps, measurement_interval,
-    swap_interval = 1, store_configs = false, compute_correlation = false
+    swap_interval = 1, store_configs = false, compute_correlation = false,
+    correlation_interval = 1
 ))]
 pub fn run_parallel_tempering<'py>(
     py: Python<'py>,
@@ -608,6 +526,7 @@ pub fn run_parallel_tempering<'py>(
     swap_interval: usize,
     store_configs: bool,
     compute_correlation: bool,
+    correlation_interval: usize,
 ) -> PyResult<Vec<Bound<'py, PyDict>>> {
     let algo = algorithm.to_string();
     let lat_type = lattice_type.to_string();
@@ -629,6 +548,7 @@ pub fn run_parallel_tempering<'py>(
             swap_interval,
             store_configs,
             compute_correlation,
+            correlation_interval,
         )
     })?;
 
@@ -663,6 +583,7 @@ mod tests {
             10,
             store_configs,
             compute_correlation,
+            1,
             seed_offsets,
         )
     }
@@ -689,6 +610,7 @@ mod tests {
             swap_interval,
             true,
             false,
+            1,
         )
     }
 
@@ -748,12 +670,117 @@ mod tests {
             0,
             false,
             false,
+            1,
             None,
         ));
         assert!(
             err.to_string().contains("measurement_interval"),
             "got: {err}"
         );
+    }
+
+    #[test]
+    fn test_validate_rejects_zero_correlation_interval() {
+        let err = error_of(run_independent_internal(
+            L,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            42,
+            "metropolis",
+            "square",
+            &[2.0],
+            10,
+            50,
+            10,
+            false,
+            true,
+            0,
+            None,
+        ));
+        assert!(
+            err.to_string().contains("correlation_interval"),
+            "got: {err}"
+        );
+        let err = error_of(run_parallel_tempering_internal(
+            L,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            42,
+            "metropolis",
+            "square",
+            &[1.5, 2.5],
+            10,
+            50,
+            10,
+            1,
+            false,
+            true,
+            0,
+        ));
+        assert!(
+            err.to_string().contains("correlation_interval"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_runners_honor_correlation_interval() {
+        // 50 sweeps / interval 10 = 5 measurements; k = 2 evaluates after
+        // the 2nd and 4th, k = 5 exactly once at the last.
+        let results = run_independent_internal(
+            L,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            42,
+            "metropolis",
+            "square",
+            &[2.0],
+            20,
+            50,
+            10,
+            false,
+            true,
+            2,
+            None,
+        )
+        .expect("valid run");
+        let corr = results[0]
+            .correlation
+            .as_ref()
+            .expect("compute_correlation=true");
+        assert_eq!(corr.lengths.len(), 2);
+        assert_eq!(results[0].energies.len(), 5);
+
+        let results = run_parallel_tempering_internal(
+            L,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            42,
+            "metropolis",
+            "square",
+            &[1.5, 2.5],
+            10,
+            50,
+            10,
+            5,
+            false,
+            true,
+            5,
+        )
+        .expect("valid run");
+        for r in &results {
+            let corr = r.correlation.as_ref().expect("compute_correlation=true");
+            assert_eq!(corr.lengths.len(), 1);
+            assert_eq!(r.energies.len(), 5);
+        }
     }
 
     #[test]
@@ -819,6 +846,7 @@ mod tests {
             1,
             false,
             false,
+            1,
         ));
         assert!(err.to_string().contains("J1>0"), "got: {err}");
     }
@@ -855,6 +883,7 @@ mod tests {
             5,
             false,
             true,
+            1,
         )
         .expect("valid run");
         for r in &results {
@@ -1113,6 +1142,7 @@ mod tests {
             50,
             false,
             false,
+            1,
         )
         .expect("valid run");
         let ind_results = run_independent_internal(
@@ -1130,6 +1160,7 @@ mod tests {
             50,
             false,
             false,
+            1,
             None,
         )
         .expect("valid run");

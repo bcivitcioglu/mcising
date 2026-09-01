@@ -40,28 +40,42 @@ __all__: Final[list[str]] = [
 ]
 
 
+def _fill_results_entry(
+    temp: float, entry: dict[str, Any], results: SimulationResults
+) -> None:
+    """Copy one per-temperature Rust measurement dict into ``results``.
+
+    ``temp`` is the caller's key object (the configured temperature), so the
+    dict's float round-trip never changes key identity. Correlation data is
+    recorded only when at least one evaluation happened — a run shorter than
+    one ``correlation_interval`` leaves the entry absent, as a run shorter
+    than one measurement always has.
+    """
+    results.energy[temp] = np.asarray(entry["energies"])
+    results.magnetization[temp] = np.asarray(entry["magnetizations"])
+    if "n_cluster_flips" in entry:
+        results.n_cluster_flips[temp] = int(entry["n_cluster_flips"])
+    if "configurations" in entry:
+        results.configurations[temp] = np.asarray(entry["configurations"])
+    if (
+        "correlation_function" in entry
+        and results.correlation_function is not None
+        and results.correlation_length is not None
+        and len(entry["correlation_length"]) > 0
+    ):
+        results.correlation_function[temp] = (
+            np.asarray(entry["correlation_distances"]),
+            np.asarray(entry["correlation_function"]),
+        )
+        results.correlation_length[temp] = np.asarray(entry["correlation_length"])
+
+
 def _fill_results_from_raw(
     raw: list[dict[str, Any]], results: SimulationResults
 ) -> None:
     """Copy per-temperature arrays from Rust runner dicts into results."""
     for entry in raw:
-        temp = float(entry["temperature"])
-        results.energy[temp] = np.asarray(entry["energies"])
-        results.magnetization[temp] = np.asarray(entry["magnetizations"])
-        if "n_cluster_flips" in entry:
-            results.n_cluster_flips[temp] = int(entry["n_cluster_flips"])
-        if "configurations" in entry:
-            results.configurations[temp] = np.asarray(entry["configurations"])
-        if (
-            "correlation_function" in entry
-            and results.correlation_function is not None
-            and results.correlation_length is not None
-        ):
-            results.correlation_function[temp] = (
-                np.asarray(entry["correlation_distances"]),
-                np.asarray(entry["correlation_function"]),
-            )
-            results.correlation_length[temp] = np.asarray(entry["correlation_length"])
+        _fill_results_entry(float(entry["temperature"]), entry, results)
 
 
 def _run_metadata(config: SimulationConfig) -> dict[str, object]:
@@ -643,6 +657,7 @@ class Simulation:
                 measurement_interval=self.config.measurement_interval,
                 store_configs=self.config.store_configs,
                 compute_correlation=self.config.compute_correlation,
+                correlation_interval=self.config.correlation_interval,
                 seed_offsets=seed_offsets,
             )
 
@@ -732,6 +747,7 @@ class Simulation:
                 swap_interval=self.config.swap_interval,
                 store_configs=self.config.store_configs,
                 compute_correlation=self.config.compute_correlation,
+                correlation_interval=self.config.correlation_interval,
             )
 
         _fill_results_from_raw(raw, results)
@@ -906,77 +922,40 @@ class Simulation:
         return float(self._core.magnetization())
 
     def _thermalize(self, from_temp: float, to_temp: float, n_steps: int) -> None:
-        """Gradually cool the system from from_temp to to_temp."""
+        """Anneal from from_temp to to_temp in one Rust call.
+
+        The linear schedule is the one the former per-sweep loop walked
+        (``num=1`` yields ``[from_temp]``); ``anneal`` skips non-positive
+        entries exactly as that loop did and consumes the RNG identically.
+        """
         if n_steps <= 0:
             return
 
         temp_schedule = np.linspace(from_temp, to_temp, num=n_steps)
-        for temp in temp_schedule:
-            # The core rejects T <= 0; skip silently as before.
-            if temp <= 0:
-                continue
-            self._core.sweep(1, temperature=float(temp))
+        self._core.anneal(temp_schedule.tolist())
 
     def _collect_at_temperature(
         self, temperature: float, results: SimulationResults
     ) -> None:
-        """Run sweeps and collect measurements at a single temperature."""
+        """Run the production block at one temperature in a single Rust call.
+
+        ``production_sweeps`` sweeps, measures and snapshots inside Rust
+        with the GIL released. The RNG is consumed exactly as the former
+        per-measurement ``sweep`` / ``energy`` / ``magnetization`` /
+        ``get_spins`` loop consumed it, so fixed-seed results are
+        bit-identical (``tests/test_golden.py``); the correlation bins are
+        computed once per evaluation instead of twice.
+        """
         n_measurements = self.config.n_sweeps // self.config.measurement_interval
-
-        energies = np.empty(n_measurements, dtype=np.float64)
-        magnetizations = np.empty(n_measurements, dtype=np.float64)
-        configs: NDArray[np.int8] | None = None
-        if self.config.store_configs:
-            spin_shape = self._core.get_spins().shape
-            configs = np.empty(
-                (n_measurements, *spin_shape),
-                dtype=np.int8,
-            )
-
-        corr_lengths: list[float] = []
-
-        # Store one representative correlation function per temperature
-        last_distances: NDArray[np.float64] | None = None
-        last_correlations: NDArray[np.float64] | None = None
-
-        total_cluster_flips = 0
-        for m in range(n_measurements):
-            _, _, flips = self._core.sweep(
-                self.config.measurement_interval, temperature=temperature
-            )
-            total_cluster_flips += flips
-
-            energies[m] = self._core.energy()
-            magnetizations[m] = self._core.magnetization()
-            if configs is not None:
-                configs[m] = self._core.get_spins()
-
-            if self.config.compute_correlation:
-                distances, correlations = self._core.correlation_function()
-                last_distances = np.asarray(distances)
-                last_correlations = np.asarray(correlations)
-                corr_lengths.append(self._core.correlation_length())
-
-        results.energy[temperature] = energies
-        results.magnetization[temperature] = magnetizations
-        results.n_cluster_flips[temperature] = total_cluster_flips
-        if configs is not None:
-            results.configurations[temperature] = configs
-
-        if (
-            self.config.compute_correlation
-            and results.correlation_function is not None
-            and results.correlation_length is not None
-            and last_distances is not None
-            and last_correlations is not None
-        ):
-            results.correlation_function[temperature] = (
-                last_distances,
-                last_correlations,
-            )
-            results.correlation_length[temperature] = np.array(
-                corr_lengths, dtype=np.float64
-            )
+        entry = self._core.production_sweeps(
+            n_measurements,
+            self.config.measurement_interval,
+            temperature=temperature,
+            store_configs=self.config.store_configs,
+            compute_correlation=self.config.compute_correlation,
+            correlation_interval=self.config.correlation_interval,
+        )
+        _fill_results_entry(temperature, entry, results)
 
     def _thermalize_adaptive(
         self,
@@ -1089,21 +1068,16 @@ class Simulation:
                 stacklevel=2,
             )
 
-        # Single Rust call for all production measurements
-        energies, magnetizations, configs, cluster_flips = (
-            self._core.production_sweeps(
-                n_measurements,
-                interval,
-                temperature=temperature,
-                store_configs=self.config.store_configs,
-            )
+        # Single Rust call for all production measurements. Correlation
+        # data is deliberately not requested here: adaptive mode takes one
+        # end-of-production snapshot below (unchanged behaviour).
+        entry = self._core.production_sweeps(
+            n_measurements,
+            interval,
+            temperature=temperature,
+            store_configs=self.config.store_configs,
         )
-
-        results.energy[temperature] = np.asarray(energies)
-        results.magnetization[temperature] = np.asarray(magnetizations)
-        results.n_cluster_flips[temperature] = int(cluster_flips)
-        if configs is not None:
-            results.configurations[temperature] = np.asarray(configs)
+        _fill_results_entry(temperature, entry, results)
 
         # Update diagnostics with production info
         if diag is not None:

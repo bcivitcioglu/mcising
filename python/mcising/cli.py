@@ -137,6 +137,13 @@ def run(
         bool,
         typer.Option("--correlation", help="Compute correlation function."),
     ] = False,
+    correlation_interval: Annotated[
+        int,
+        typer.Option(
+            "--correlation-interval",
+            help="Evaluate the correlation function every k-th measurement.",
+        ),
+    ] = 1,
     output: Annotated[
         Path | None,
         typer.Option("-o", "--output", help="Output HDF5 file path."),
@@ -271,6 +278,7 @@ def run(
         seed=seed,
         store_configs=store_configs,
         compute_correlation=correlation,
+        correlation_interval=correlation_interval,
         adaptive=adaptive_config,
         mode=mode,
     )
@@ -552,6 +560,8 @@ def _print_config(config: SimulationConfig) -> None:
     table.add_row("Measurement interval", str(config.measurement_interval))
     table.add_row("Seed", str(config.seed))
     table.add_row("Correlation", str(config.compute_correlation))
+    if config.compute_correlation:
+        table.add_row("Correlation interval", str(config.correlation_interval))
     if config.adaptive.enabled:
         table.add_row("Adaptive", "enabled")
         table.add_row("  Min samples", str(config.adaptive.min_independent_samples))

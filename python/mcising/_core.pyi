@@ -66,6 +66,7 @@ class IsingSimulation:
         c_window: float,
         tau_multiplier: float,
     ) -> dict[str, Any]: ...
+    # Returns the same per-temperature dict as the runners below.
     def production_sweeps(
         self,
         n_measurements: int,
@@ -73,12 +74,9 @@ class IsingSimulation:
         *,
         temperature: float,
         store_configs: bool,
-    ) -> tuple[
-        NDArray[np.float64],
-        NDArray[np.float64],
-        NDArray[np.int8] | None,  # shape depends on lattice type
-        int,  # total cluster flips (0 for Metropolis)
-    ]: ...
+        compute_correlation: bool = False,
+        correlation_interval: int = 1,
+    ) -> dict[str, Any]: ...
     def get_rng_state(self) -> list[int]: ...
     def set_rng_state(self, state: list[int]) -> None: ...
     def __repr__(self) -> str: ...
@@ -86,7 +84,8 @@ class IsingSimulation:
 # Both runners return one dict per temperature with keys "temperature",
 # "energies", "magnetizations", "n_cluster_flips", plus "configurations"
 # when store_configs, and "correlation_distances" /
-# "correlation_function" / "correlation_length" when compute_correlation.
+# "correlation_function" / "correlation_length" when compute_correlation
+# (evaluated at every correlation_interval-th measurement).
 def run_parallel_tempering(
     lattice_size: int,
     j1: float,
@@ -103,6 +102,7 @@ def run_parallel_tempering(
     swap_interval: int = 1,
     store_configs: bool = False,
     compute_correlation: bool = False,
+    correlation_interval: int = 1,
 ) -> list[dict[str, Any]]: ...
 def run_independent_temperatures(
     lattice_size: int,
@@ -120,4 +120,5 @@ def run_independent_temperatures(
     store_configs: bool = False,
     compute_correlation: bool = False,
     seed_offsets: list[int] | None = None,
+    correlation_interval: int = 1,
 ) -> list[dict[str, Any]]: ...

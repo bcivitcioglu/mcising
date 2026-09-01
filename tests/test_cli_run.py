@@ -319,3 +319,40 @@ class TestRunConfigPanel:
         )
         assert result.exit_code == 0, result.output
         assert "xi" in _plain(result.output)
+
+
+class TestRunCorrelationInterval:
+    def test_flag_reaches_the_config_and_thins_the_series(self, tmp_path: Path) -> None:
+        out = tmp_path / "corr.h5"
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                *FAST,
+                "-T",
+                "3.0",
+                "--correlation",
+                "--correlation-interval",
+                "2",
+                "-o",
+                str(out),
+            ],
+            env=PLAIN_ENV,
+        )
+        assert result.exit_code == 0, result.output
+        assert "Correlation interval" in _plain(result.output)
+        with h5py.File(out, "r") as f:
+            raw = f["metadata"].attrs["config_json"]
+            config = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+            assert config["correlation_interval"] == 2
+            # FAST: 8 sweeps at interval 4 = 2 measurements -> one evaluation.
+            assert f["T=3.000000"]["correlation_length"].shape == (1,)
+
+    def test_interval_beyond_the_measurements_is_rejected(self) -> None:
+        result = runner.invoke(
+            app,
+            ["run", *FAST, "-T", "3.0", "--correlation", "--correlation-interval", "3"],
+            env=PLAIN_ENV,
+        )
+        assert result.exit_code != 0
+        assert "correlation_interval" in str(result.exception)

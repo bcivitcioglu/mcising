@@ -27,7 +27,8 @@ config = SimulationConfig(
     n_sweeps=1000,                         # measurement sweeps per temperature
     n_thermalization=100,                  # warmup sweeps
     measurement_interval=10,               # measure every N sweeps
-    compute_correlation=False,             # compute C(r) per temperature
+    compute_correlation=False,             # compute C(r) and the correlation length
+    correlation_interval=1,                # ... at every k-th measurement
     store_configs=True,                    # keep spin snapshots per measurement
     adaptive=AdaptiveConfig(enabled=False),# adaptive thermalization
     mode=ExecutionMode.COOLDOWN,           # cooldown, independent, parallel_tempering
@@ -41,6 +42,18 @@ can only measure on chunk boundaries, so any other cadence is rejected at
 construction. Set `store_configs=False` to skip the per-measurement spin
 snapshots when only scalar observables are needed (smaller memory
 footprint and output files).
+
+`compute_correlation=True` adds the spin-spin correlation function `C(r)`
+and the second-moment correlation length. Each evaluation is a full pair
+sum — `O(N²)` in the number of sites, about 0.3 ms at 16², 7 ms at 32² and
+130 ms at 64² — so at `measurement_interval=1` it dominates the run.
+`correlation_interval=k` evaluates it at every k-th measurement instead
+(the k-th, 2k-th, …): `1` is every measurement, `n_sweeps //
+measurement_interval` exactly once at the final one. The stored `C(r)` is
+the last evaluation and the correlation-length series has one entry per
+evaluation; a `k` larger than the number of measurements is rejected at
+construction. Adaptive mode ignores the knob and always takes a single
+end-of-production snapshot.
 
 Configs round-trip through plain dicts: `dataclasses.asdict(config)`
 serializes (this is what saved files record), and
@@ -95,6 +108,8 @@ temperatures=tuple(np.linspace(1.5, 3.5, 50))
 | `n_sweeps` | `1000` |
 | `n_thermalization` | `100` |
 | `measurement_interval` | `10` |
+| `compute_correlation` | `False` |
+| `correlation_interval` | `1` (every measurement) |
 | `store_configs` | `True` |
 | `mode` | `COOLDOWN` |
 | `swap_interval` | `1` (must divide `measurement_interval` in PT) |

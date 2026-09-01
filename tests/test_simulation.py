@@ -391,3 +391,113 @@ class TestResultsStatistics:
         # on an 8x8 square lattice the ordered phase pins it near 2/3.
         u4 = run_results.binder_cumulant(2.0)
         assert 0.0 <= u4 <= 2.0 / 3.0 + 1e-12
+
+
+class _CoreSpy:
+    """Delegating proxy that counts every method call on a Rust core."""
+
+    def __init__(self, core: object) -> None:
+        self._core = core
+        self.calls: dict[str, int] = {}
+
+    def __getattr__(self, name: str) -> object:
+        attr = getattr(self._core, name)
+        if not callable(attr):
+            return attr
+
+        def wrapped(*args: object, **kwargs: object) -> object:
+            self.calls[name] = self.calls.get(name, 0) + 1
+            return attr(*args, **kwargs)
+
+        return wrapped
+
+
+class TestBatchedCooldown:
+    """The cooldown path runs each temperature in one Rust call (P16)."""
+
+    @staticmethod
+    def _config(**overrides: object) -> SimulationConfig:
+        kwargs: dict[str, object] = {
+            "lattice": LatticeConfig(size=4),
+            "temperatures": (3.0, 2.0),
+            "n_sweeps": 50,
+            "n_thermalization": 10,
+            "measurement_interval": 10,
+        }
+        kwargs.update(overrides)
+        return SimulationConfig(**kwargs)  # type: ignore[arg-type]
+
+    def test_run_crosses_the_ffi_once_per_temperature_and_phase(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        spies: list[_CoreSpy] = []
+        real_build = Simulation._build_core
+
+        def spying_build(self: Simulation) -> object:
+            spy = _CoreSpy(real_build(self))
+            spies.append(spy)
+            return spy
+
+        monkeypatch.setattr(Simulation, "_build_core", spying_build)
+        sim = Simulation(self._config(compute_correlation=True))
+        sim.run(show_progress=False)
+
+        calls = spies[-1].calls  # the core built by run()'s reset()
+        for per_sweep in ("sweep", "energy", "magnetization", "get_spins"):
+            assert calls.get(per_sweep, 0) == 0, calls
+        for per_measurement in ("correlation_function", "correlation_length"):
+            assert calls.get(per_measurement, 0) == 0, calls
+        assert calls["anneal"] == 2
+        assert calls["production_sweeps"] == 2
+
+    def test_correlation_interval_thins_the_series(self) -> None:
+        config = self._config(compute_correlation=True, correlation_interval=2)
+        results = Simulation(config).run(show_progress=False)
+        assert results.correlation_length is not None
+        assert results.correlation_function is not None
+        for temp in (3.0, 2.0):
+            # 5 measurements: evaluations after the 2nd and the 4th.
+            assert results.correlation_length[temp].shape == (2,)
+            distances, values = results.correlation_function[temp]
+            assert distances.shape == values.shape
+            assert distances.size > 0
+
+    def test_correlation_interval_equal_to_measurements_records_once(self) -> None:
+        dense = Simulation(self._config(compute_correlation=True)).run(
+            show_progress=False
+        )
+        sparse = Simulation(
+            self._config(compute_correlation=True, correlation_interval=5)
+        ).run(show_progress=False)
+        assert dense.correlation_length is not None
+        assert dense.correlation_function is not None
+        assert sparse.correlation_length is not None
+        assert sparse.correlation_function is not None
+        for temp in (3.0, 2.0):
+            assert sparse.correlation_length[temp].shape == (1,)
+            # The single evaluation is the dense run's fifth (final) one.
+            assert np.array_equal(
+                sparse.correlation_length[temp], dense.correlation_length[temp][4::5]
+            )
+            assert np.array_equal(
+                sparse.correlation_function[temp][1],
+                dense.correlation_function[temp][1],
+            )
+
+    def test_scalar_series_do_not_depend_on_the_correlation_cadence(self) -> None:
+        plain = Simulation(self._config()).run(show_progress=False)
+        dense = Simulation(self._config(compute_correlation=True)).run(
+            show_progress=False
+        )
+        sparse = Simulation(
+            self._config(compute_correlation=True, correlation_interval=5)
+        ).run(show_progress=False)
+        for temp in (3.0, 2.0):
+            for other in (dense, sparse):
+                assert np.array_equal(plain.energy[temp], other.energy[temp])
+                assert np.array_equal(
+                    plain.magnetization[temp], other.magnetization[temp]
+                )
+                assert np.array_equal(
+                    plain.configurations[temp], other.configurations[temp]
+                )

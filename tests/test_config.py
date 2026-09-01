@@ -255,3 +255,49 @@ class TestFromDict:
     def test_non_mapping_rejected(self) -> None:
         with pytest.raises(ConfigurationError, match="mapping"):
             SimulationConfig.from_dict([("seed", 5)])  # type: ignore[arg-type]
+
+
+class TestCorrelationInterval:
+    """correlation_interval thins the O(N^2) correlation evaluation (P16)."""
+
+    def test_default_is_every_measurement(self) -> None:
+        assert SimulationConfig().correlation_interval == 1
+
+    def test_rejects_zero(self) -> None:
+        with pytest.raises(ConfigurationError, match="correlation_interval"):
+            SimulationConfig(correlation_interval=0)
+
+    def test_rejects_more_than_the_measurements_when_enabled(self) -> None:
+        # 50 // 10 = 5 measurements: every 6th of five is none.
+        with pytest.raises(ConfigurationError, match="no correlation sample"):
+            SimulationConfig(
+                n_sweeps=50,
+                measurement_interval=10,
+                compute_correlation=True,
+                correlation_interval=6,
+            )
+
+    def test_bound_is_inclusive(self) -> None:
+        config = SimulationConfig(
+            n_sweeps=50,
+            measurement_interval=10,
+            compute_correlation=True,
+            correlation_interval=5,
+        )
+        assert config.correlation_interval == 5
+
+    def test_bound_not_enforced_when_disabled_or_adaptive(self) -> None:
+        SimulationConfig(n_sweeps=50, measurement_interval=10, correlation_interval=6)
+        SimulationConfig(
+            n_sweeps=50,
+            measurement_interval=10,
+            compute_correlation=True,
+            correlation_interval=6,
+            adaptive=AdaptiveConfig(enabled=True),
+        )
+
+    def test_from_dict_defaults_a_missing_key(self) -> None:
+        # Records written before the field existed load with the old cadence.
+        data = asdict(SimulationConfig(compute_correlation=True))
+        del data["correlation_interval"]
+        assert SimulationConfig.from_dict(data).correlation_interval == 1

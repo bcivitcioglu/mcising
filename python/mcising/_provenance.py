@@ -19,11 +19,14 @@ from typing import Final
 HDF5_SCHEMA_VERSION: Final[int] = 3
 
 
+@lru_cache(maxsize=1)
 def package_version() -> str:
     """Return the installed mcising version.
 
     Reads the installed distribution metadata, the single source of truth
-    for the package version (``pyproject.toml`` at build time).
+    for the package version (``pyproject.toml`` at build time). Cached: the
+    lookup is a disk read of the dist-info (~0.15 ms) and every ``run()``
+    stamps the version into its metadata.
 
     Returns
     -------
