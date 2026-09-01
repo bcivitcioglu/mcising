@@ -23,13 +23,13 @@ from mcising import (
     Simulation, SimulationConfig, LatticeConfig, save_hdf5,
     plot_energy, plot_magnetization, plot_specific_heat, plot_susceptibility,
 )
-import numpy as np
 
 config = SimulationConfig(
-    lattice=LatticeConfig(size=32),
-    temperatures=tuple(np.linspace(1.5, 3.5, 20)),
+    lattice=LatticeConfig(size=16),
+    temperatures=(3.0, 2.5, 2.269, 2.0, 1.5),
     n_sweeps=1000,
-    measurement_interval=10,
+    measurement_interval=20,   # 50 samples (and stored configurations) per T
+    compute_correlation=True,  # needed by plot_correlation below
 )
 results = Simulation(config).run()
 save_hdf5(results, "results.h5")
@@ -46,7 +46,17 @@ plot_susceptibility("results.h5").savefig("susceptibility.png")
 Pass a list of file paths to overlay results with auto-generated legends:
 
 ```python
-plot_energy(["j2_0.0.h5", "j2_0.3.h5", "j2_0.5.h5"])
+for j2 in (0.0, 0.3, 0.5):
+    run = Simulation(
+        SimulationConfig(
+            lattice=LatticeConfig(size=16, j1=1.0, j2=j2),
+            temperatures=(3.0, 2.5, 2.0),
+            n_sweeps=500,
+        )
+    ).run()
+    save_hdf5(run, f"j2_{j2}.h5")
+
+plot_energy(["j2_0.0.h5", "j2_0.3.h5", "j2_0.5.h5"]).savefig("compare.png")
 ```
 
 Each curve is labeled with the coupling parameters extracted from the HDF5 metadata.
@@ -81,11 +91,11 @@ from mcising import export_lattices
 
 # Tree mode: folders per temperature
 export_lattices("results.h5", "lattices.zip")
-# → square_32x32_J1=1.0_metropolis/T=2.2690/config_001.png
+# → square_16x16_J1=1.0_metropolis/T=2.2690/config_001.png
 
 # Flat mode: all PNGs in one folder
 export_lattices("results.h5", "lattices.zip", flat=True)
-# → square_32x32_J1=1.0_metropolis_T=2.2690_config_001.png
+# → square_16x16_J1=1.0_metropolis_T=2.2690_config_001.png
 
 # Export only specific temperatures
 export_lattices("results.h5", "lattices.zip", temperatures=[2.269, 1.5])

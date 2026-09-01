@@ -15,3 +15,9 @@
 ::: mcising.simulation.AdaptiveDiagnostics
     options:
       members_order: source
+
+---
+
+::: mcising.IsingSimulation
+    options:
+      members_order: source
