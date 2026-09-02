@@ -59,15 +59,26 @@ jobs:
       - name: Run tests
         # The coverage ratchet (fail_under) lives in pyproject.toml
         # [tool.coverage.report] — single source of truth.
-        run: uv run pytest -m "not slow" --cov=mcising --cov-report=term-missing
+        run: uv run pytest -m "not slow" --cov=mcising --cov-report=term-missing --cov-report=xml
+
+      # Upload one cell's coverage.xml to Codecov (the README badge). The
+      # ratchet above is the gate; a missing token or a Codecov outage must
+      # not fail CI, hence fail_ci_if_error: false.
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          fail_ci_if_error: false
 
       - name: Lint (ruff)
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        run: uv run ruff check python/ tests/ scripts/ benchmarks/
+        run: uv run ruff check python/ tests/ scripts/ benchmarks/ examples/
 
       - name: Type check (mypy)
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        run: uv run mypy python/mcising/ scripts/ benchmarks/
+        run: uv run mypy python/mcising/ scripts/ benchmarks/ examples/
 
       # MYPYPATH guards against the vacuous pass: without stub
       # resolution stubtest prints Success while analyzing nothing.

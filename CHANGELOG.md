@@ -7,7 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-02
+
 ### Added
+
+- A statement of need at the top of the README and the documentation
+  home page: who mcising is for (frustrated magnetism, critical phenomena,
+  machine-learning-for-physics datasets), the gap it fills, and the
+  research it was developed for.
+- `docs/advanced/related-work.md`: a feature-by-feature comparison with
+  peapods, ALPS/ALPSCore, IsingModels.jl and SpinMC.jl, every cell checked
+  against the project's own documentation and cited.
+- `examples/`: three runnable, committed reproductions of known physics,
+  each with a figure under `docs/assets/figures/` — `onsager_reproduction.py`
+  (energy and magnetization of the square lattice against Onsager's and
+  Yang's exact curves, with the exact correlation length to tell
+  finite-size rounding from disagreement), `tc_binder_crossing.py` (Tc from
+  Binder-cumulant crossings of three sizes with bootstrap errors) and
+  `stripe_phase_diagram.py` (the J1-J2 phase diagram: ferromagnetic and
+  stripe order parameters over the (J2, T) plane). `tests/test_examples.py`
+  runs each with `--quick` in the canonical suite and at full budget in the
+  slow suite; `examples/` is linted and type-checked in CI.
+- README badges (CI, slow physics suite, docs, coverage, PyPI, Python
+  versions, downloads, license), a documentation link under the title, an
+  Examples section and a "How to cite" section pointing at `CITATION.cff`.
+  CI uploads coverage to Codecov from one cell.
+
+### Changed
+
+- The frustrated-magnetism tutorial now shows frustration: a negative J2
+  (J1 = 1, J2 = -0.6) cooled into the stripe phase, the stripe order
+  parameter computed from stored configurations, the ferromagnet/stripe
+  energetics with the J2 = -J1/2 boundary, the phase-diagram figure, and
+  literature on the nature of the transition. Its J2 > 0 examples (which
+  reinforce J1 rather than compete with it) are replaced.
+- The README's peapods paragraph no longer claims features peapods lacks
+  that it has (parallel tempering, further-neighbour couplings via per-bond
+  arrays); it states the difference in scope and links to the comparison.
 
 - Every code fence in the documentation executes in CI. `tests/test_docs_snippets.py`
   runs the Python fences of every page in order (one namespace per page, a
