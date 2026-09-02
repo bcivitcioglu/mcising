@@ -27,7 +27,7 @@ jobs:
           # the image also ships CPython 3.14, which pyo3 0.23 cannot build.
           args: --release --out dist -i python3.10 -i python3.11 -i python3.12 -i python3.13
           manylinux: auto
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-linux-${{ matrix.target }}
           path: dist
@@ -55,7 +55,7 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-macos-${{ matrix.platform.target }}-${{ matrix.python-version }}
           path: dist
@@ -74,7 +74,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           args: --release --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-windows-x86_64-${{ matrix.python-version }}
           path: dist
@@ -88,7 +88,7 @@ jobs:
         with:
           command: sdist
           args: --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-sdist
           path: dist
