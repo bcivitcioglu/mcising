@@ -27,8 +27,8 @@ uv run pytest tests/test_docs_snippets.py -m ""
 uv run pytest -m slow
 
 # Linting
-uv run ruff check python/ tests/ scripts/ benchmarks/
-uv run mypy python/mcising/ scripts/ benchmarks/
+uv run ruff check python/ tests/ scripts/ benchmarks/ examples/
+uv run mypy python/mcising/ scripts/ benchmarks/ examples/
 ```
 
 ## Project structure
@@ -58,6 +58,21 @@ mcising/
 **Python:** strict mypy, ruff linting, type stubs for Rust bindings.
 
 **Rust:** `#[deny(clippy::all)]`, zero `unsafe`, no `.unwrap()` in library code, proper `Result` handling.
+
+## Examples and figures
+
+The scripts in `examples/` are the runnable research case: each reproduces a
+known result and writes one figure. `tests/test_examples.py` runs every
+script with `--quick` in the canonical suite and at its full budget in the
+slow suite (every pull request), so an example that stops working fails
+CI. The committed figures under `docs/assets/figures/` are the full-budget
+output; regenerate them after a change that alters what they show:
+
+```bash
+python examples/onsager_reproduction.py --out docs/assets/figures
+python examples/tc_binder_crossing.py --out docs/assets/figures
+python examples/stripe_phase_diagram.py --out docs/assets/figures
+```
 
 ## Building docs locally
 

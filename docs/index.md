@@ -9,12 +9,29 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/bcivitcioglu/mcising/actions/workflows/ci.yml"><img src="https://github.com/bcivitcioglu/mcising/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/bcivitcioglu/mcising/actions/workflows/slow.yml"><img src="https://github.com/bcivitcioglu/mcising/actions/workflows/slow.yml/badge.svg" alt="Slow physics suite"></a>
+  <a href="https://github.com/bcivitcioglu/mcising/actions/workflows/docs.yml"><img src="https://github.com/bcivitcioglu/mcising/actions/workflows/docs.yml/badge.svg" alt="Docs"></a>
+  <a href="https://codecov.io/gh/bcivitcioglu/mcising"><img src="https://codecov.io/gh/bcivitcioglu/mcising/branch/master/graph/badge.svg" alt="Coverage"></a>
   <a href="https://pypi.org/project/mcising/"><img src="https://img.shields.io/pypi/v/mcising" alt="PyPI"></a>
+  <a href="https://pypi.org/project/mcising/"><img src="https://img.shields.io/pypi/pyversions/mcising" alt="Python versions"></a>
   <a href="https://pepy.tech/project/mcising"><img src="https://static.pepy.tech/badge/mcising" alt="Downloads"></a>
   <a href="https://github.com/bcivitcioglu/mcising/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
 </p>
 
 ---
+
+## Why mcising
+
+**Who it is for.** Researchers in computational and statistical physics who need classical Ising Monte Carlo they can trust and cite: studies of frustrated magnetism (competing J1-J2-J3 couplings on square, triangular, honeycomb and cubic lattices), critical phenomena and finite-size scaling, and machine-learning-for-physics work that needs large, labelled, reproducible sets of spin configurations.
+
+**The gap it fills.** Textbook Ising codes are easy to write and hard to get right: the sign of a coupling, the neighbour table of a non-square lattice, the error bar on a specific heat. mcising packages the parts that go wrong as tested, pip-installable infrastructure — a Rust core checked against exact enumeration of small systems and against exact results (Onsager's solution, the critical temperatures of four lattices) on large ones; blocking and jackknife errors on every observable, with integrated autocorrelation times and adaptive thermalization; three execution modes including parallel tempering; and HDF5 output that records the configuration, seed, version and commit needed to reproduce a run. Antiferromagnetic and competing couplings, the case most reduced examples get wrong, go through the same tests as the ferromagnet.
+
+**Research context.** mcising was developed alongside and used in a study of phase determination in the frustrated J1-J2 Ising model with deep learning (Çivitcioğlu, Römer & Honecker, [Phys. Rev. E 111, 024131 (2025)](https://doi.org/10.1103/PhysRevE.111.024131), [arXiv:2403.09786](https://arxiv.org/abs/2403.09786)) and its follow-up on minimal training sets ([arXiv:2504.19795](https://arxiv.org/abs/2504.19795)). The [frustration tutorial](tutorial/frustrated-magnetism.md) reproduces the stripe phase of that model, and the [examples](https://github.com/bcivitcioglu/mcising/tree/master/examples) reproduce Onsager's exact solution and a Binder-cumulant determination of Tc:
+
+![Phase diagram of the J1-J2 Ising model on the square lattice: ferromagnetic and stripe order parameters over the (J2, T) plane, with the specific-heat peak line](assets/figures/stripe_phase_diagram.png)
+
+How mcising compares with peapods, ALPS and the Julia spin-model packages, feature by feature, is on the [related work](advanced/related-work.md) page.
 
 ## Install
 
@@ -124,6 +141,22 @@ mcising export results.h5 lattices.zip
 ```
 
 Full CLI reference: **[CLI Guide](guide/cli.md)**
+
+## Citing
+
+If mcising contributes to published work, please cite it. The repository's [`CITATION.cff`](https://github.com/bcivitcioglu/mcising/blob/master/CITATION.cff) carries the current version and is what GitHub's "Cite this repository" button renders; a Zenodo DOI is attached at v1.0.0.
+
+```bibtex
+@software{mcising,
+  author  = {{\c{C}}ivitcio{\u{g}}lu, Burak},
+  title   = {mcising: high-performance {Ising} model {Monte Carlo} simulation with a {Rust} core},
+  url     = {https://github.com/bcivitcioglu/mcising},
+  license = {MIT},
+  note    = {Version as installed; see \texttt{mcising.\_\_version\_\_}},
+}
+```
+
+If the J1-J2 functionality supported your research, consider also citing the study it was developed for: Çivitcioğlu, Römer & Honecker, *Phase determination with and without deep learning*, Phys. Rev. E 111, 024131 (2025).
 
 ## Next steps
 

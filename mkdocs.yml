@@ -59,6 +59,7 @@ nav:
   - Advanced:
     - Performance: advanced/performance.md
     - Physics Background: advanced/physics.md
+    - Related Work: advanced/related-work.md
     - Contributing: advanced/contributing.md
     - Stability & Versioning: advanced/stability.md
     - Project History: advanced/history.md
