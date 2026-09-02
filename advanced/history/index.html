@@ -1,0 +1,2108 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="High-performance Ising model Monte Carlo simulation with a Rust core.">
+      
+      
+        <meta name="author" content="Burak Civitcioglu">
+      
+      
+        <link rel="canonical" href="https://bcivitcioglu.github.io/mcising/advanced/history/">
+      
+      
+        <link rel="prev" href="../stability/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logomark.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Project History - mcising</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#project-history-the-v013-v021-transformation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="mcising" class="md-header__button md-logo" aria-label="mcising" data-md-component="logo">
+      
+  <img src="../../assets/logomark.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            mcising
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Project History
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/bcivitcioglu/mcising" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    bcivitcioglu/mcising
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorial/first-simulation/" class="md-tabs__link">
+          
+  
+  
+  Tutorial
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/configuration/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/simulation/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../performance/" class="md-tabs__link">
+          
+  
+  
+  Advanced
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="mcising" class="md-nav__button md-logo" aria-label="mcising" data-md-component="logo">
+      
+  <img src="../../assets/logomark.svg" alt="logo">
+
+    </a>
+    mcising
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/bcivitcioglu/mcising" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    bcivitcioglu/mcising
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorial
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/first-simulation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your First Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/lattice-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lattice Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/frustrated-magnetism/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Frustrated Magnetism
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/cluster-algorithms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/parallel-execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parallel Execution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/adaptive-mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adaptive Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/saving-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Saving Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/plotting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plotting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/simulation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/statistics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Statistics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    I/O
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/plotting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plotting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../physics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics Background
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../related-work/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Related Work
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../stability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stability & Versioning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project History
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project History
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-quality-standards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Quality Standards
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code Quality Standards">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rust
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyo3-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PyO3 Boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agile-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agile Phases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agile Phases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-rust-core-square-lattice-metropolis-weeks-1-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Rust Core + Square Lattice + Metropolis (Weeks 1-3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-modern-tooling-cicd-weeks-4-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Modern Tooling + CI/CD (Weeks 4-5)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-adaptive-measurement-cluster-algorithms-weeks-6-8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Adaptive Measurement + Cluster Algorithms (Weeks 6-8)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-additional-lattice-types-weeks-9-11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Additional Lattice Types (Weeks 9-11)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-advanced-algorithms-weeks-12-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Advanced Algorithms (Weeks 12-14)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-6-documentation-joss-paper-weeks-15-18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6: Documentation + JOSS Paper (Weeks 15-18)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-design-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Design Decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification Plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-quality-standards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Quality Standards
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code Quality Standards">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rust
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyo3-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PyO3 Boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agile-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agile Phases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agile Phases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-rust-core-square-lattice-metropolis-weeks-1-3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Rust Core + Square Lattice + Metropolis (Weeks 1-3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-modern-tooling-cicd-weeks-4-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Modern Tooling + CI/CD (Weeks 4-5)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-adaptive-measurement-cluster-algorithms-weeks-6-8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Adaptive Measurement + Cluster Algorithms (Weeks 6-8)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-additional-lattice-types-weeks-9-11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Additional Lattice Types (Weeks 9-11)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-advanced-algorithms-weeks-12-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Advanced Algorithms (Weeks 12-14)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-6-documentation-joss-paper-weeks-15-18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6: Documentation + JOSS Paper (Weeks 15-18)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-design-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Design Decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification Plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="project-history-the-v013-v021-transformation-plan">Project history: the v0.13 → v0.21 transformation plan<a class="headerlink" href="#project-history-the-v013-v021-transformation-plan" title="Permanent link">&para;</a></h1>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This is the original development roadmap that guided mcising's transformation
+from a pure-Python prototype (v0.13, 2024) to the Rust-core library it is today.
+It is preserved here as a historical record; some claims and plans reflect the
+state of the project in early 2026 and are superseded by the current documentation.</p>
+</div>
+<h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">&para;</a></h2>
+<p><strong>mcising</strong> is a Python library (v0.13) for 2D Ising model Monte Carlo simulation with J1-J2 interactions. It has ~585 lines of pure Python, 5 basic tests, no CI/CD, and hasn't been updated since July 2024. The goal is to transform it into a high-performance, feature-rich, JOSS-publishable library.</p>
+<p><strong>Why this matters:</strong> No general-purpose classical MC Ising model Python library has been published in JOSS. mcising already has unique differentiators (J1-J2 frustrated magnetism, correlation functions, cool-down thermalization) that no competitor offers. With a Rust performance core and modern Python tooling, it can become the definitive tool in this space.</p>
+<p><strong>Key competitor:</strong> peapods (Rust/PyO3, 4 algorithms, N-dimensional) but lacks J1-J2, correlation functions, and structured data export.</p>
+<hr />
+<h2 id="code-quality-standards">Code Quality Standards<a class="headerlink" href="#code-quality-standards" title="Permanent link">&para;</a></h2>
+<h3 id="python">Python<a class="headerlink" href="#python" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Strict mypy</strong> (<code>strict = true</code>) - all functions annotated, no <code>Any</code> escapes</li>
+<li><strong>Type stubs</strong> (<code>_core.pyi</code>) for the Rust module so mypy can check calls across the boundary</li>
+<li><strong>Frozen dataclasses</strong> (<code>frozen=True</code>) for all config objects - immutable, hashable, safe</li>
+<li><strong>Custom exception hierarchy</strong>: <code>MCIsingError</code> base, <code>ConfigurationError</code>, <code>SimulationError</code></li>
+<li><strong>No magic numbers</strong> - physics constants centralized in <code>constants.py</code></li>
+<li><strong>Enums</strong> for all categorical choices (<code>LatticeType</code>, <code>Algorithm</code>)</li>
+<li><strong>Module-level <code>__all__</code></strong> in every file</li>
+<li><strong>Strict dependency DAG</strong>: <code>config &lt;- _core &lt;- simulation &lt;- io/plotting/cli</code> (no circular imports)</li>
+<li><strong>Validate early</strong> at the Python boundary, not deep in Rust</li>
+</ul>
+<h3 id="rust">Rust<a class="headerlink" href="#rust" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Zero <code>unsafe</code></strong> - PyO3 handles FFI, no manual unsafe blocks</li>
+<li><strong>No <code>.unwrap()</code> in library code</strong> - proper <code>Result</code>/<code>Option</code>, convert to <code>PyErr</code> at boundary</li>
+<li><strong><code>#[deny(clippy::all)]</code> + <code>#[warn(clippy::pedantic)]</code></strong> at crate level</li>
+<li><strong>Precomputed neighbor tables</strong> for all lattice types - trades O(N) memory for maximum inner-loop speed</li>
+<li><strong>Static dispatch</strong> (generics/monomorphization) for the hot path - specialized code per lattice+algorithm combo</li>
+<li><strong>Dynamic dispatch</strong> only at the PyO3 boundary (enum-based) to select lattice/algorithm at runtime</li>
+<li><strong>No heap allocation</strong> in the inner Metropolis loop</li>
+<li><strong><code>Xoshiro256StarStar</code></strong> RNG - fast, deterministic, reproducible. Owned per simulation instance (no global state)</li>
+<li><strong>All physics quantities as <code>f64</code></strong>, spins as <code>i8</code></li>
+</ul>
+<h3 id="pyo3-boundary">PyO3 Boundary<a class="headerlink" href="#pyo3-boundary" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Thick and intentional</strong>: Rust side does all physics. Python side does config, orchestration, I/O, plotting.</li>
+<li>Only <code>simulation.rs</code> imports <code>pyo3</code> - internal Rust code is pure Rust with no Python awareness</li>
+<li>Data crosses via NumPy arrays (zero-copy where possible) and scalar primitives</li>
+<li>Same seed + same parameters = identical results, always</li>
+</ul>
+<hr />
+<h2 id="architecture-overview">Architecture Overview<a class="headerlink" href="#architecture-overview" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>mcising/
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── rust/src/              # Rust core via PyO3 (compiled to mcising._core)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│   ├── lib.rs             # PyO3 module registration
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   ├── lattice/           # Lattice trait + implementations (square, then more)
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   ├── algorithm/         # MC algorithm trait + implementations
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   ├── observables/       # Energy, magnetization, correlation
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   ├── rng.rs             # Xoshiro256** RNG
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   └── simulation.rs      # IsingSimulation pyclass
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>├── python/mcising/        # Python package (high-level API)
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│   ├── __init__.py        # Public exports
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   ├── _core.pyi          # Type stubs for Rust bindings
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   ├── simulation.py      # High-level Simulation class
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   ├── config.py          # Dataclass configs (LatticeConfig, SimulationConfig)
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   ├── observables.py     # Post-processing (heat capacity, susceptibility)
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│   ├── io.py              # HDF5/JSON output
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>│   ├── plotting.py        # Matplotlib visualization
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│   └── cli.py             # Typer CLI with Rich output
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>├── tests/                 # pytest test suite
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>├── paper/                 # JOSS paper (paper.md, paper.bib)
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>├── docs/                  # MkDocs documentation
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>├── Cargo.toml             # Rust crate config
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>└── pyproject.toml         # Python project config (maturin build)
+</code></pre></div>
+<hr />
+<h2 id="agile-phases">Agile Phases<a class="headerlink" href="#agile-phases" title="Permanent link">&para;</a></h2>
+<h3 id="phase-1-rust-core-square-lattice-metropolis-weeks-1-3">Phase 1: Rust Core + Square Lattice + Metropolis (Weeks 1-3)<a class="headerlink" href="#phase-1-rust-core-square-lattice-metropolis-weeks-1-3" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Replace the Python hot path with Rust. Get a working maturin build that produces identical physics results.</p>
+<p><strong>Sprint 1.1 - Project Scaffolding (Week 1):</strong></p>
+<p>Step 1: <strong>uv project initialization</strong> (do this first to manage all deps)
+- Move existing source to <code>_legacy/</code> (preserves as physics reference)
+- Remove old build artifacts: <code>setup.py</code>, <code>requirements.txt</code>, <code>mcising.egg-info/</code>, <code>dist/</code>, <code>__pycache__/</code>
+- Create <code>.gitignore</code> (target/, <em>.so, </em>.pyd, <strong>pycache</strong>, .venv/, etc.)
+- Rename <code>LICENCE</code> -&gt; <code>LICENSE</code>
+- Run <code>uv init</code> to create initial <code>pyproject.toml</code>
+- Configure <code>pyproject.toml</code> with project metadata, dependencies, and dependency groups:
+  - Runtime: numpy, matplotlib, h5py, rich, typer
+  - Dev: pytest, pytest-cov, ruff, mypy, maturin
+- <strong>Checkpoint:</strong> <code>uv sync</code> succeeds, <code>uv run python --version</code> works, lockfile created</p>
+<p>Step 2: <strong>Rust toolchain verification</strong>
+- Verify Rust is installed: <code>rustc --version &amp;&amp; cargo --version</code>
+- If not installed, install via rustup
+- <strong>Checkpoint:</strong> <code>rustc --version</code> prints a version &gt;= 1.70</p>
+<p>Step 3: <strong>Maturin + PyO3 setup</strong>
+- Add maturin as dev dep: <code>uv add --dev maturin</code>
+- Update <code>pyproject.toml</code> build-system to use maturin
+- Create <code>Cargo.toml</code> with PyO3, numpy, rand, rand_xoshiro dependencies
+- Create minimal <code>rust/src/lib.rs</code> with PyO3 "hello world" module (exports a simple function)
+- Create <code>python/mcising/__init__.py</code> importing from <code>_core</code>
+- <strong>Checkpoint:</strong> <code>uv run maturin develop</code> builds without errors
+- <strong>Checkpoint:</strong> <code>uv run python -c "from mcising._core import hello; print(hello())"</code> works</p>
+<p><strong>Sprint 1.2 - Rust Core (Week 2):</strong>
+- Implement <code>Lattice</code> trait in <code>rust/src/lattice/mod.rs</code> (num_sites, nearest_neighbors, next_nearest_neighbors, distance_squared)
+- Implement <code>SquareLattice</code> in <code>rust/src/lattice/square.rs</code> with periodic boundary conditions
+- <strong>Checkpoint:</strong> <code>cargo test</code> passes Rust unit tests for neighbor computation on known small lattice
+- Implement <code>McAlgorithm</code> trait in <code>rust/src/algorithm/mod.rs</code>
+- Implement <code>Metropolis</code> in <code>rust/src/algorithm/metropolis.rs</code>
+  - Key optimization: compute <code>dE = 2 * spin * local_field</code> directly instead of computing energy before and after flip
+- <strong>Checkpoint:</strong> <code>cargo test</code> passes Rust unit tests for Metropolis (energy decreases at T=0, acceptance works)
+- Implement <code>IsingSimulation</code> pyclass in <code>rust/src/simulation.rs</code>:
+  - <code>new(lattice_size, j1, j2, h, seed)</code> - constructor
+  - <code>sweep(n_sweeps, beta)</code> - Metropolis sweeps
+  - <code>energy()</code> / <code>magnetization()</code> - observables
+  - <code>get_spins()</code> -&gt; PyArray2<i8> / <code>set_spins()</code>
+  - <code>correlation_function()</code> -&gt; (PyArray1<f64>, PyArray1<f64>)
+- Fix existing energy bug: v0.13 double-counts the magnetic field term in <code>energy()</code> (line 144 of isinglattice.py)
+- <strong>Checkpoint:</strong> <code>uv run maturin develop &amp;&amp; uv run python -c "from mcising._core import IsingSimulation; sim = IsingSimulation(10, 1.0, 0.0, 0.0, 42); print(sim.energy())"</code> works</p>
+<p><strong>Sprint 1.3 - Python Wrapper + Verification (Week 3):</strong>
+- Implement <code>python/mcising/config.py</code> - <code>LatticeConfig</code>, <code>SimulationConfig</code> dataclasses with enums
+- <strong>Checkpoint:</strong> <code>uv run python -c "from mcising.config import SimulationConfig; print(SimulationConfig())"</code> works
+- Implement <code>python/mcising/simulation.py</code> - <code>Simulation</code> class wrapping <code>_RustSim</code>, <code>SimulationResults</code> dataclass
+- <strong>Checkpoint:</strong> <code>uv run python -c "from mcising import Simulation, SimulationConfig; s = Simulation(SimulationConfig()); r = s.sweep(2.269, 100); print(r)"</code> works
+- Implement <code>python/mcising/io.py</code> - HDF5 output via h5py
+- <strong>Checkpoint:</strong> Simulation results can be saved to and loaded from HDF5
+- Port and expand tests to pytest (~20 tests):
+  - Lattice initialization, neighbors, flip
+  - Metropolis: energy decreases at low T, acceptance rate
+  - Known analytical: all-up energy, magnetization = 1.0
+  - Physics smoke test: &lt;|m|&gt; transition across T_c ~ 2.269 on 32x32 lattice
+- <strong>Checkpoint:</strong> <code>uv run pytest</code> passes all ~20 tests</p>
+<hr />
+<h3 id="phase-2-modern-tooling-cicd-weeks-4-5">Phase 2: Modern Tooling + CI/CD (Weeks 4-5)<a class="headerlink" href="#phase-2-modern-tooling-cicd-weeks-4-5" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Production-grade infrastructure.</p>
+<p><strong>Sprint 2.1 - CLI + Rich Output (Week 4):</strong>
+- Implement <code>python/mcising/cli.py</code> with Typer:
+  - <code>mcising run</code> - full simulation with Rich progress bars
+  - <code>mcising benchmark</code> - performance benchmarks
+  - <code>mcising info</code> - version, build info, available algorithms
+- <strong>Checkpoint:</strong> <code>uv run mcising info</code> prints version and available algorithms
+- <strong>Checkpoint:</strong> <code>uv run mcising run -L 10 --seed 42</code> runs simulation with Rich progress and saves HDF5 output
+- Implement <code>python/mcising/plotting.py</code> - <code>plot_lattice()</code>, <code>plot_observables()</code>, <code>plot_correlation()</code>
+- <strong>Checkpoint:</strong> Plotting functions produce matplotlib figures without errors</p>
+<p><strong>Sprint 2.2 - CI/CD + Code Quality (Week 5):</strong>
+- <code>.github/workflows/ci.yml</code> - pytest + ruff + mypy + cargo test across Python 3.10-3.13, Linux/macOS/Windows
+- <code>.github/workflows/release.yml</code> - maturin wheel builds + PyPI publish on tag
+- <code>.pre-commit-config.yaml</code> - ruff, mypy, rustfmt, clippy
+- <code>python/mcising/_core.pyi</code> - type stubs for Rust module
+- <code>CONTRIBUTING.md</code>, <code>CODE_OF_CONDUCT.md</code>, issue templates
+- <strong>Checkpoint:</strong> <code>uv run ruff check python/ tests/</code> passes with no errors
+- <strong>Checkpoint:</strong> <code>uv run mypy python/mcising/</code> passes
+- <strong>Checkpoint:</strong> Push to GitHub -&gt; CI workflow runs and passes on all platforms</p>
+<hr />
+<h3 id="phase-3-adaptive-measurement-cluster-algorithms-weeks-6-8">Phase 3: Adaptive Measurement + Cluster Algorithms (Weeks 6-8)<a class="headerlink" href="#phase-3-adaptive-measurement-cluster-algorithms-weeks-6-8" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Eliminate wasted sweeps via adaptive thermalization/measurement, then eliminate critical slowing down via cluster algorithms.</p>
+<p><strong>Sprint 3.1 - Rust: Autocorrelation &amp; Adaptive Analysis (Week 6):</strong>
+- New <code>rust/src/autocorrelation.rs</code> — pure Rust, no PyO3 awareness:
+  - <strong>MSER thermalization detection</strong> (<code>detect_thermalization</code>): find truncation point d minimizing variance/(N-d) over the energy time series. O(N), no tuning parameters.
+  - <strong>Sokal automatic windowing</strong> (<code>integrated_autocorrelation_time</code>): compute <code>tau_int = 0.5 + sum C(t)</code> with self-consistent cutoff <code>t &gt;= c * tau_int(t)</code>, c=6.0 default.
+  - <strong>Combined analysis</strong> (<code>analyze_thermalization</code>): run MSER on full series, then Sokal on stationary tail (series[d:]). Returns truncation point, tau_int, and recommended measurement interval.
+- New PyO3 methods on <code>IsingSimulation</code> in <code>rust/src/simulation.rs</code>:
+  - <code>thermalize_with_diagnostics(temp_schedule: Vec&lt;f64&gt;) -&gt; PyArray1&lt;f64&gt;</code> — runs cool-down sweeps, records energy after each sweep, returns the energy time series
+  - <code>extend_thermalization(n_sweeps: usize, beta: f64) -&gt; PyArray1&lt;f64&gt;</code> — additional sweeps at fixed T, returns energy series
+  - <code>analyze_thermalization_series(series: PyArray1&lt;f64&gt;, c_window: f64) -&gt; dict</code> — static method wrapping MSER + Sokal
+  - <code>production_sweeps(n_measurements, interval, beta, store_configs) -&gt; (energies, mags, configs)</code> — batched measurement collection in a single Rust call (also benefits fixed mode)
+- <strong>Checkpoint:</strong> <code>cargo test</code> passes for known analytical cases (white noise tau~0.5, AR(1) with known tau, step function for MSER)</p>
+<p><strong>Sprint 3.2 - Python: Adaptive Integration (Week 7):</strong>
+- <code>python/mcising/config.py</code>: Add <code>AdaptiveConfig</code> frozen dataclass:
+  - <code>enabled: bool = False</code> (opt-in; fixed mode stays default for beginners)
+  - <code>min_thermalization_sweeps</code>, <code>max_thermalization_sweeps</code>, <code>c_window</code>, <code>min_independent_samples</code>, <code>max_total_sweeps</code>, <code>tau_multiplier</code>
+- <code>python/mcising/simulation.py</code>:
+  - <code>_thermalize_adaptive()</code>: calls <code>thermalize_with_diagnostics</code>, checks MSER, extends via <code>extend_thermalization</code> if not stationary
+  - <code>_collect_at_temperature_adaptive()</code>: uses tau_int from thermalization analysis to set measurement_interval = <code>max(1, round(tau_multiplier * tau_int))</code>
+  - <code>AdaptiveDiagnostics</code> dataclass: tau_int, truncation_point, interval_used, sweeps_used per temperature
+  - Dispatch in <code>run()</code>: adaptive vs fixed based on <code>config.adaptive.enabled</code>
+- Update <code>_core.pyi</code> type stubs, <code>io.py</code> (HDF5 adaptive diagnostics), <code>cli.py</code> (<code>--adaptive</code>, <code>--min-samples</code>, <code>--max-sweeps</code>)
+- <strong>Checkpoint:</strong> <code>uv run pytest</code> — adaptive mode on 16x16 produces independent samples; fixed mode unchanged
+- <strong>Checkpoint:</strong> <code>uv run mcising run --adaptive -L 32 --seed 42</code> runs with Rich progress and reports tau_int per temperature</p>
+<p><strong>Sprint 3.3 - Cluster Algorithms (Week 8):</strong>
+- <strong>Wolff cluster algorithm</strong> (<code>rust/src/algorithm/wolff.rs</code>):
+  - BFS-based cluster growth, bond probability p = 1 - exp(-2<em>beta</em>J)
+  - Constraint: works only for J2=0, h=0 (bond probability derivation assumes nearest-neighbor-only Hamiltonian)
+- <strong>Constraint enforcement</strong> (validate early at Python boundary):
+  - In <code>simulation.py</code>, raise <code>ConfigurationError</code> if algorithm is <code>wolff</code> or <code>swendsen_wang</code> and (<code>j2 != 0.0</code> or <code>h != 0.0</code>)
+  - Clear error message: "Cluster algorithms require J2=0 and h=0. Use algorithm='metropolis' for J1-J2 or external field simulations."
+  - Rust-side safety assert as a secondary guard (panic if invariant violated — should never be reached)
+- <strong>Checkpoint:</strong> <code>cargo test</code> passes Wolff-specific Rust tests (cluster sizes, energy conservation)
+- <strong>Checkpoint:</strong> <code>uv run pytest tests/test_wolff.py</code> passes (statistics agree with Metropolis)
+- <strong>Checkpoint:</strong> Wolff with J2!=0 raises <code>ConfigurationError</code> at Python level
+- <strong>Swendsen-Wang</strong> (<code>rust/src/algorithm/swendsen_wang.rs</code>):
+  - Union-Find with path compression, flip each cluster with p=1/2
+  - Same constraint enforcement as Wolff (J2=0, h=0)
+- <strong>Checkpoint:</strong> <code>cargo test</code> passes SW Rust tests
+- <strong>Checkpoint:</strong> <code>uv run pytest tests/test_swendsen_wang.py</code> passes
+- <strong>Benchmark autocorrelation times</strong> using the adaptive infrastructure:
+  - Metropolis at T_c on 32x32, 64x64: expect tau ~ L^2.17
+  - Wolff at T_c on same lattices: expect tau ~ L^0.25
+  - Include benchmark results in documentation
+- <strong>Checkpoint:</strong> <code>uv run mcising run --algorithm wolff -L 32 --seed 42</code> works
+- Add <code>--algorithm wolff|swendsen_wang|metropolis</code> to CLI</p>
+<hr />
+<h3 id="phase-4-additional-lattice-types-weeks-9-11">Phase 4: Additional Lattice Types (Weeks 9-11)<a class="headerlink" href="#phase-4-additional-lattice-types-weeks-9-11" title="Permanent link">&para;</a></h3>
+<p><strong>Goal:</strong> Strengthen the frustrated magnetism story.</p>
+<ul>
+<li><strong>Triangular</strong> (coordination 6, T_c = 4/ln(3) ~ 3.641)</li>
+<li><strong>Checkpoint:</strong> <code>cargo test</code> passes triangular neighbor tests; physics test confirms T_c</li>
+<li><strong>Honeycomb</strong> (coordination 3, T_c ~ 1.519)</li>
+<li><strong>Checkpoint:</strong> <code>cargo test</code> passes honeycomb neighbor tests; physics test confirms T_c</li>
+<li><strong>Kagome</strong> (coordination 4, no finite-T transition for AFM)</li>
+<li><strong>3D Cubic</strong> (coordination 6, T_c ~ 4.5115)</li>
+<li><strong>1D Chain</strong> (coordination 2, T_c = 0 - pedagogical)</li>
+<li><strong>J3 coupling</strong> — third-nearest-neighbor interaction support (J1-J2-J3, J1-J3, J2-J3 combinations)</li>
+<li>Extend <code>Lattice</code> trait with <code>third_nearest_neighbors()</code></li>
+<li>Add <code>j3</code> parameter to <code>LatticeConfig</code>, <code>SimulationConfig</code>, <code>IsingSimulation</code></li>
+<li>Add J3 term to Metropolis local field computation</li>
+<li><strong>Checkpoint:</strong> J1=0, J2=0, J3=1 simulation produces correct ground state energy</li>
+<li>Refactor <code>IsingSimulation::new()</code> to accept lattice_type + shape</li>
+<li><strong>Checkpoint:</strong> <code>uv run mcising run --lattice triangular -L 32</code> works for each new lattice type</li>
+<li><strong>Checkpoint:</strong> <code>uv run pytest tests/test_physics_validation.py</code> passes for all lattices</li>
+</ul>
+<hr />
+<h3 id="phase-5-advanced-algorithms-weeks-12-14">Phase 5: Advanced Algorithms (Weeks 12-14)<a class="headerlink" href="#phase-5-advanced-algorithms-weeks-12-14" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Wang-Landau</strong> - flat-histogram sampling of density of states g(E)</li>
+<li><strong>Checkpoint:</strong> Wang-Landau g(E) reproduces canonical averages from Metropolis within statistical error</li>
+<li><strong>Parallel Tempering</strong> - multi-replica swaps, Rayon parallelism</li>
+<li><strong>Checkpoint:</strong> Parallel tempering improves sampling efficiency on frustrated J1-J2 system</li>
+<li>Full benchmark suite across all algorithms and lattice types</li>
+<li><strong>Checkpoint:</strong> <code>uv run pytest</code> passes all tests across all algorithms and lattices</li>
+</ul>
+<hr />
+<h3 id="phase-6-documentation-joss-paper-weeks-15-18">Phase 6: Documentation + JOSS Paper (Weeks 15-18)<a class="headerlink" href="#phase-6-documentation-joss-paper-weeks-15-18" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>MkDocs Material</strong> documentation site on GitHub Pages</li>
+<li>API reference via mkdocstrings (NumPy docstring style)</li>
+<li>Tutorials: phase transitions, J1-J2 model, correlation length</li>
+<li>Example scripts in <code>examples/</code></li>
+<li><strong>paper.md</strong> (750-1750 words) with required JOSS 2026 sections:</li>
+<li>Summary, Statement of Need, State of the Field, Software Design, Research Impact, AI Usage Disclosure</li>
+<li><strong>paper.bib</strong> with Metropolis (1953), Wolff (1989), Swendsen-Wang (1987), Wang-Landau (2001), Onsager (1944)</li>
+<li><strong>Checkpoint:</strong> <code>mkdocs serve</code> shows complete docs site locally</li>
+<li><strong>Checkpoint:</strong> JOSS paper compiles via <code>openjournals/inara</code> Docker image</li>
+<li><strong>Checkpoint:</strong> Full pre-submission checklist passes (see Verification Plan below)</li>
+</ul>
+<hr />
+<h2 id="key-design-decisions">Key Design Decisions<a class="headerlink" href="#key-design-decisions" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Choice</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Performance backend</td>
+<td>Rust via PyO3/maturin</td>
+<td>Maximum performance, comparable to peapods</td>
+</tr>
+<tr>
+<td>Python API</td>
+<td>Clean break (v1.0), class-based</td>
+<td>Old API was function-oriented with 6 commits and limited users</td>
+</tr>
+<tr>
+<td>Data output</td>
+<td>HDF5 primary (h5py)</td>
+<td>Standard in computational physics, self-describing, efficient</td>
+</tr>
+<tr>
+<td>Crash safety</td>
+<td>Incremental HDF5 writes</td>
+<td>Each temperature is flushed to disk immediately after measurement; completed data survives crashes</td>
+</tr>
+<tr>
+<td>RNG</td>
+<td>Xoshiro256** (rand_xoshiro)</td>
+<td>Fast, high-quality, reproducible</td>
+</tr>
+<tr>
+<td>Spin representation</td>
+<td>i8 (+1/-1) flat Vec</td>
+<td>Cache-friendly, minimal memory</td>
+</tr>
+<tr>
+<td>CLI</td>
+<td>Typer + Rich</td>
+<td>Modern, type-safe, beautiful output</td>
+</tr>
+<tr>
+<td>Packaging</td>
+<td>uv + maturin + pyproject.toml</td>
+<td>Modern Python standard</td>
+</tr>
+<tr>
+<td>Docs</td>
+<td>MkDocs Material</td>
+<td>Beautiful, widely used, auto-deploy</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="verification-plan">Verification Plan<a class="headerlink" href="#verification-plan" title="Permanent link">&para;</a></h2>
+<p>After each phase, verify:</p>
+<ol>
+<li><strong>Phase 1:</strong> <code>maturin develop &amp;&amp; pytest</code> passes. Run 32x32 Metropolis simulation - energy/magnetization match known analytical results at T_c. Benchmark vs old pure Python: expect 50-100x speedup.</li>
+<li><strong>Phase 2:</strong> <code>mcising run -L 16 --seed 42</code> produces HDF5 output with Rich progress. CI passes on all platforms.</li>
+<li><strong>Phase 3:</strong> Run Wolff at T_c on 64x64 lattice - autocorrelation time should be dramatically shorter than Metropolis.</li>
+<li><strong>Phase 4:</strong> Each lattice produces correct T_c within statistical error.</li>
+<li><strong>Phase 5:</strong> Wang-Landau g(E) reproduces canonical averages. Parallel tempering improves sampling of frustrated systems.</li>
+<li><strong>Phase 6:</strong> <code>mkdocs serve</code> shows complete docs. <code>openjournals/inara</code> compiles paper.pdf successfully.</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/bcivitcioglu/mcising" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://pypi.org/project/mcising/" target="_blank" rel="noopener" title="pypi.org" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
