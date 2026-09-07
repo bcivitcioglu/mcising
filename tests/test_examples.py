@@ -67,3 +67,16 @@ def test_example_full_budget_writes_figure(script: Path, tmp_path: Path) -> None
     """The documented budget completes within the five-minute bound."""
     result = _run_example(script, tmp_path)
     _assert_figure_written(script, tmp_path, result)
+
+
+PAPER_FIGURES = sorted((REPO_ROOT / "paper" / "figures").glob("*.png"))
+
+
+@pytest.mark.parametrize("paper_figure", PAPER_FIGURES, ids=lambda p: p.name)
+def test_paper_figure_is_a_copy_of_the_docs_figure(paper_figure: Path) -> None:
+    """Every figure the JOSS paper embeds is a byte copy of the committed
+    example output under ``docs/assets/figures/``, so rerunning an example
+    cannot leave the paper with a stale figure."""
+    docs_copy = REPO_ROOT / "docs" / "assets" / "figures" / paper_figure.name
+    assert docs_copy.is_file(), f"{paper_figure.name} has no docs/assets/figures/ twin"
+    assert paper_figure.read_bytes() == docs_copy.read_bytes()

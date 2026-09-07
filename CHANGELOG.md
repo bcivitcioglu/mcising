@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `paper/paper.md` and `paper/paper.bib`: a draft of the JOSS paper with all
+  six required sections (summary, statement of need, state of the field,
+  software design, research impact, AI usage disclosure), every update
+  algorithm cited to its original paper, and the two example figures under
+  `paper/figures/` (byte copies of `docs/assets/figures/`, checked by a test).
+- `.github/workflows/draft-pdf.yml`: builds `paper.pdf` with the
+  openjournals draft action on every change under `paper/` and uploads it as
+  a workflow artifact.
+
 ## [0.30.0] - 2026-09-02
 
 ### Added
