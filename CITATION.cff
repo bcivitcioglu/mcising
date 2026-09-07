@@ -6,12 +6,13 @@ authors:
   - family-names: "Çivitcioğlu"
     given-names: "Burak"
     orcid: "https://orcid.org/0000-0001-8433-657X"
+    affiliation: "aivancity School of AI & Data for Business & Society"
     email: "bcivitcioglu@gmail.com"
 repository-code: "https://github.com/bcivitcioglu/mcising"
 url: "https://bcivitcioglu.github.io/mcising/"
 license: MIT
-version: 0.30.0
-date-released: '2026-09-02'
+version: 1.0.0
+date-released: '2026-09-07'
 keywords:
   - "Ising model"
   - "Monte Carlo"

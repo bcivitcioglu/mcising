@@ -7,16 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-07
+
+The first stable release. From this version on the API is frozen within a
+major version, as described on the documentation's Stability & Versioning
+page; the breaking changes that prepared it were batched into 0.26.0 (see
+"Breaking changes in 1.0" under that release). Version 1.0.0 is archived on
+Zenodo and is the version submitted to the Journal of Open Source Software.
+
 ### Added
 
-- `paper/paper.md` and `paper/paper.bib`: a draft of the JOSS paper with all
-  six required sections (summary, statement of need, state of the field,
-  software design, research impact, AI usage disclosure), every update
+- `paper/paper.md` and `paper/paper.bib`: the JOSS paper with the sections
+  JOSS requires (summary, statement of need, state of the field, software
+  design, research impact statement, AI usage disclosure), every update
   algorithm cited to its original paper, and the two example figures under
   `paper/figures/` (byte copies of `docs/assets/figures/`, checked by a test).
 - `.github/workflows/draft-pdf.yml`: builds `paper.pdf` with the
   openjournals draft action on every change under `paper/` and uploads it as
   a workflow artifact.
+- `.zenodo.json`: archive metadata (title, description, author with ORCID and
+  affiliation, keywords, license, related identifiers) so the Zenodo record
+  created from the GitHub release carries the right citation data.
+
+### Changed
+
+- Trove classifier `Development Status :: 5 - Production/Stable`.
+- `CITATION.cff` carries the author's affiliation.
 
 ## [0.30.0] - 2026-09-02
 

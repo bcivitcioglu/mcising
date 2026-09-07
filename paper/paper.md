@@ -1,5 +1,5 @@
 ---
-title: 'mcising: tested Ising Monte Carlo for frustrated magnets with a Rust core'
+title: 'mcising: Monte Carlo simulation of frustrated Ising models with exact-result validation'
 tags:
   - Python
   - Rust
