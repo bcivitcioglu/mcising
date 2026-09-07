@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- README, documentation home page and `CITATION.cff` carry the Zenodo DOIs of
+  the 1.0.0 archive (version DOI 10.5281/zenodo.22650286, concept DOI
+  10.5281/zenodo.22650285) and a DOI badge.
+
 ## [1.0.0] - 2026-09-07
 
 The first stable release. From this version on the API is frozen within a
