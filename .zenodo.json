@@ -1,0 +1,39 @@
+{
+  "upload_type": "software",
+  "title": "mcising: high-performance Ising model Monte Carlo simulation with a Rust core",
+  "description": "<p>mcising is a Python library with a Rust core for classical Ising Monte Carlo on square, triangular, honeycomb, simple-cubic and chain lattices, with first-, second- and third-neighbour couplings of either sign and an external field. It provides Metropolis, Wolff and Swendsen-Wang updates, three execution modes including parallel tempering, adaptive thermalization, blocking and jackknife error estimates for every observable, and HDF5 output that records the configuration, seed, package version and commit of a run. The core is validated against exact enumeration of small systems and against exact results (Onsager's solution, the critical temperatures of four lattices) on large ones.</p>",
+  "creators": [
+    {
+      "name": "Çivitcioğlu, Burak",
+      "affiliation": "aivancity School of AI & Data for Business & Society",
+      "orcid": "0000-0001-8433-657X"
+    }
+  ],
+  "keywords": [
+    "Ising model",
+    "Monte Carlo",
+    "statistical mechanics",
+    "frustrated magnetism",
+    "physics",
+    "simulation"
+  ],
+  "license": "MIT",
+  "access_right": "open",
+  "related_identifiers": [
+    {
+      "identifier": "https://bcivitcioglu.github.io/mcising/",
+      "relation": "isDocumentedBy",
+      "resource_type": "publication-softwaredocumentation"
+    },
+    {
+      "identifier": "https://pypi.org/project/mcising/",
+      "relation": "isIdenticalTo",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "10.1103/PhysRevE.111.024131",
+      "relation": "isSupplementTo",
+      "resource_type": "publication-article"
+    }
+  ]
+}

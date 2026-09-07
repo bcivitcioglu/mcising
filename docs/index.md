@@ -17,6 +17,7 @@
   <a href="https://pypi.org/project/mcising/"><img src="https://img.shields.io/pypi/pyversions/mcising" alt="Python versions"></a>
   <a href="https://pepy.tech/project/mcising"><img src="https://static.pepy.tech/badge/mcising" alt="Downloads"></a>
   <a href="https://github.com/bcivitcioglu/mcising/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://doi.org/10.5281/zenodo.22650285"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.22650285.svg" alt="DOI"></a>
 </p>
 
 ---
@@ -144,15 +145,17 @@ Full CLI reference: **[CLI Guide](guide/cli.md)**
 
 ## Citing
 
-If mcising contributes to published work, please cite it. The repository's [`CITATION.cff`](https://github.com/bcivitcioglu/mcising/blob/master/CITATION.cff) carries the current version and is what GitHub's "Cite this repository" button renders; a Zenodo DOI is attached at v1.0.0.
+If mcising contributes to published work, please cite it. The repository's [`CITATION.cff`](https://github.com/bcivitcioglu/mcising/blob/master/CITATION.cff) carries the current version and is what GitHub's "Cite this repository" button renders. Every release is archived on Zenodo: the concept DOI [10.5281/zenodo.22650285](https://doi.org/10.5281/zenodo.22650285) always resolves to the latest version, and each version has its own DOI (1.0.0: [10.5281/zenodo.22650286](https://doi.org/10.5281/zenodo.22650286)). Cite the version you used.
 
 ```bibtex
 @software{mcising,
   author  = {{\c{C}}ivitcio{\u{g}}lu, Burak},
   title   = {mcising: high-performance {Ising} model {Monte Carlo} simulation with a {Rust} core},
+  version = {1.0.0},
+  doi     = {10.5281/zenodo.22650286},
   url     = {https://github.com/bcivitcioglu/mcising},
   license = {MIT},
-  note    = {Version as installed; see \texttt{mcising.\_\_version\_\_}},
+  note    = {Replace version and doi with those of the release you used},
 }
 ```
 

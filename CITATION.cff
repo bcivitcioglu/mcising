@@ -6,12 +6,21 @@ authors:
   - family-names: "Çivitcioğlu"
     given-names: "Burak"
     orcid: "https://orcid.org/0000-0001-8433-657X"
+    affiliation: "aivancity School of AI & Data for Business & Society"
     email: "bcivitcioglu@gmail.com"
+doi: 10.5281/zenodo.22650286
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.22650285
+    description: "Concept DOI: resolves to the latest archived version"
+  - type: doi
+    value: 10.5281/zenodo.22650286
+    description: "Version DOI for 1.0.0"
 repository-code: "https://github.com/bcivitcioglu/mcising"
 url: "https://bcivitcioglu.github.io/mcising/"
 license: MIT
-version: 0.30.0
-date-released: '2026-09-02'
+version: 1.0.0
+date-released: '2026-09-07'
 keywords:
   - "Ising model"
   - "Monte Carlo"
@@ -19,4 +28,3 @@ keywords:
   - "frustrated magnetism"
   - "physics"
   - "simulation"
-# A Zenodo DOI is added at v1.0.0 (see the release checklist).

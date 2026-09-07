@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "mcising"
-version = "0.30.0"
+version = "1.0.0"
 description = "High-performance Ising model Monte Carlo simulation with Rust core"
 readme = "README.md"
 license = "MIT"
@@ -21,7 +21,7 @@ keywords = [
     "frustrated-magnetism",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
