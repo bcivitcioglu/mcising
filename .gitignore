@@ -47,3 +47,8 @@ site/
 
 # Pre-Rust implementation kept on disk for reference, not in the repo
 _legacy/
+
+# JOSS draft build outputs (openjournals/inara); the sources under paper/ are committed
+paper/paper.pdf
+paper/jats/
+paper/*.crossref.xml
