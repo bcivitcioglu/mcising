@@ -15,7 +15,7 @@ authors:
 affiliations:
   - name: "aivancity School of AI & Data for Business & Society, Villejuif, France"
     index: 1
-date: 7 September 2026
+date: 8 September 2026
 bibliography: paper.bib
 ---
 
@@ -175,8 +175,9 @@ build workflow, and provisional prose under each heading. In September 2026, Mus
 (`muse-spark-1.3-contributor-free`, via OpenCode) was used for review only; Muse Spark 1.3 made no code edits. Every AI-assisted commit
 carries `Assisted-by: Claude Code` in the public git history; all earlier
 history, including the original hand-written prototype and the first PyPI releases, was written without AI assistance. The
-author specified and reviewed each change, ran and read every physics gate, and made
-every release decision. The text of this paper was written by the author, who
+author made the core design decisions, specified, reviewed and validated each
+change, ran and read every physics gate, and made every release decision. The
+text of this paper was written by the author, who
 reworked the provisional prose section by section. The numerical content, figures and table come from the
 committed scripts and results files in the repository.
 
