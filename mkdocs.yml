@@ -8,17 +8,17 @@ repo_name: bcivitcioglu/mcising
 theme:
   name: material
   logo: assets/logomark.svg
-  favicon: assets/logomark.svg
+  favicon: assets/favicon.png
   palette:
     - scheme: default
-      primary: indigo
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: slate
-      primary: indigo
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -103,6 +103,9 @@ markdown_extensions:
 extra_javascript:
   - javascripts/mathjax.js
   - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+extra_css:
+  - assets/extra.css
 
 extra:
   social:

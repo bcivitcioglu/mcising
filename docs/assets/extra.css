@@ -1,0 +1,14 @@
+:root {
+  /* mcising identity: ground and the "hot" gold from the spin palette */
+  --md-primary-fg-color: #0E1216;
+  --md-primary-fg-color--light: #2A323A;
+  --md-primary-fg-color--dark: #000000;
+  --md-accent-fg-color: #E4622A;
+  --md-accent-fg-color--transparent: rgba(228, 98, 42, 0.1);
+}
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #0E1216;
+  --md-accent-fg-color: #F2B632;
+  --md-accent-fg-color--transparent: rgba(242, 182, 50, 0.1);
+}
+.md-header__button.md-logo img { height: 1.4rem; width: 1.4rem; }

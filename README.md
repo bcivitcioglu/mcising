@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="mcising logo" width="300">
+  <img src="https://raw.githubusercontent.com/bcivitcioglu/mcising/master/assets/logomark.svg" alt="mcising" width="112" height="112">
 </p>
 
 <h1 align="center">mcising</h1>
