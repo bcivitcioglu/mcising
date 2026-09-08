@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- New visual identity: the mark is a domain wall, two ordered Ising phases
+  meeting on a lattice staircase, in the two spin colours. It replaces the
+  lattice-with-speed-lines logo and the "MC" favicon, which did not read at
+  favicon sizes. `assets/logomark.svg` is the mark, `assets/logo.svg` and
+  `assets/logo-dark.svg` are lockups with the wordmark converted to outlines
+  (IBM Plex Mono SemiBold), and the documentation site gets a PNG favicon so
+  Safari shows one, plus a header palette taken from the mark.
 - README, documentation home page and `CITATION.cff` carry the Zenodo DOIs of
   the 1.0.0 archive (version DOI 10.5281/zenodo.22650286, concept DOI
   10.5281/zenodo.22650285) and a DOI badge.

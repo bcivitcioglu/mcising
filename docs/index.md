@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="mcising" width="300">
+  <img src="assets/logomark.svg" alt="mcising" width="112" height="112">
 </p>
 
 <h1 align="center">mcising</h1>
