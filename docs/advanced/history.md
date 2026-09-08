@@ -5,6 +5,8 @@
     from a pure-Python prototype (v0.13, 2024) to the Rust-core library it is today.
     It is preserved here as a historical record; some claims and plans reflect the
     state of the project in early 2026 and are superseded by the current documentation.
+    Not everything in it was built: see [What happened next](#what-happened-next) at
+    the end of the page.
 
 ## Context
 
@@ -297,3 +299,27 @@ After each phase, verify:
 4. **Phase 4:** Each lattice produces correct T_c within statistical error.
 5. **Phase 5:** Wang-Landau g(E) reproduces canonical averages. Parallel tempering improves sampling of frustrated systems.
 6. **Phase 6:** `mkdocs serve` shows complete docs. `openjournals/inara` compiles paper.pdf successfully.
+
+---
+
+## What happened next
+
+The plan above was delivered through v0.21.0 (April 2026) with one exception:
+**Wang-Landau sampling (Phase 5) was never implemented** and remains on the
+post-1.0 list, as does the flat-histogram checkpoint in the verification plan.
+Parallel tempering was built as planned.
+
+Between August and September 2026 the library went through a second,
+correctness-focused programme before its 1.0.0 release: an exact-enumeration
+oracle for small systems and a statistical test harness; fixes to the
+antiferromagnetic Metropolis branch, the triangular and honeycomb neighbour
+tables, the execution-mode plumbing and the provenance metadata; blocking and
+jackknife error estimates on every observable with adaptive thermalization;
+validation against Onsager's solution and the critical temperatures of four
+lattices; benchmarks regenerated from a committed script; documentation whose
+every code block executes in CI; and the paper for the Journal of Open Source
+Software. The [changelog](https://github.com/bcivitcioglu/mcising/blob/master/CHANGELOG.md)
+records each step. Version 1.0.0 was released and archived on Zenodo on
+7 September 2026 and the paper was submitted the same week; the
+[related work](related-work.md) page replaces the competitor claims made in the
+context section above.

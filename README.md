@@ -279,7 +279,7 @@ mcising/
 
 If mcising contributes to published work, please cite it. The repository's [`CITATION.cff`](CITATION.cff) carries the current version and is what GitHub's "Cite this repository" button renders. Every release is archived on Zenodo: the concept DOI [10.5281/zenodo.22650285](https://doi.org/10.5281/zenodo.22650285) always resolves to the latest version, and each version has its own DOI (1.0.0: [10.5281/zenodo.22650286](https://doi.org/10.5281/zenodo.22650286)). Cite the version you used.
 
-A paper describing mcising is being prepared for the Journal of Open Source Software; the draft and its bibliography live under [`paper/`](paper/).
+A paper describing mcising was submitted to the Journal of Open Source Software in September 2026; its source and bibliography live under [`paper/`](paper/).
 
 ```bibtex
 @software{mcising,
