@@ -60,6 +60,8 @@ def save_hdf5(results: SimulationResults, path: str | Path) -> None:
         │   ├── configurations  (n_samples x L x L, int8)
         │   ├── energy          (n_samples, float64)
         │   ├── magnetization   (n_samples, float64)
+        │   ├── staggered_magnetization (n_samples x 2^n_axes, float64;
+        │   │                    bitmask columns over the lattice axes)
         │   ├── correlation_function  (n_distances, float64) [optional]
         │   ├── correlation_distances (n_distances, float64) [optional]
         │   ├── correlation_length    (n_samples // correlation_interval, float64)
@@ -276,6 +278,10 @@ def checkpoint_run(
                 results.energy[temp] = resumed_results.energy[temp]
             if temp in resumed_results.magnetization:
                 results.magnetization[temp] = resumed_results.magnetization[temp]
+            if temp in resumed_results.staggered_magnetization:
+                results.staggered_magnetization[temp] = (
+                    resumed_results.staggered_magnetization[temp]
+                )
             if temp in resumed_results.configurations:
                 results.configurations[temp] = resumed_results.configurations[temp]
             if (
@@ -357,6 +363,7 @@ def load_hdf5(path: str | Path) -> SimulationResults:
         temperatures: list[float] = []
         energy: dict[float, np.ndarray[Any, Any]] = {}
         magnetization: dict[float, np.ndarray[Any, Any]] = {}
+        staggered_magnetization: dict[float, np.ndarray[Any, Any]] = {}
         configurations: dict[float, np.ndarray[Any, Any]] = {}
         correlation_function: dict[
             float, tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]
@@ -379,6 +386,9 @@ def load_hdf5(path: str | Path) -> SimulationResults:
                 energy[temp] = np.array(grp["energy"])
             if "magnetization" in grp:
                 magnetization[temp] = np.array(grp["magnetization"])
+            # Additive dataset (no schema bump): absent from older files.
+            if "staggered_magnetization" in grp:
+                staggered_magnetization[temp] = np.array(grp["staggered_magnetization"])
             if "configurations" in grp:
                 configurations[temp] = np.array(grp["configurations"])
             if "correlation_distances" in grp and "correlation_function" in grp:
@@ -407,6 +417,7 @@ def load_hdf5(path: str | Path) -> SimulationResults:
             temperatures=temperatures,
             energy=energy,
             magnetization=magnetization,
+            staggered_magnetization=staggered_magnetization,
             configurations=configurations,
             correlation_function=correlation_function if correlation_function else None,
             correlation_length=correlation_length if correlation_length else None,
@@ -806,6 +817,10 @@ def _write_temperature_group(f: Any, temp: float, results: SimulationResults) ->
         grp.create_dataset("energy", data=results.energy[temp])
     if temp in results.magnetization:
         grp.create_dataset("magnetization", data=results.magnetization[temp])
+    if temp in results.staggered_magnetization:
+        grp.create_dataset(
+            "staggered_magnetization", data=results.staggered_magnetization[temp]
+        )
     if temp in results.configurations:
         grp.create_dataset(
             "configurations",

@@ -302,6 +302,13 @@ class TestResumeIndependent:
         np.testing.assert_array_equal(
             resumed.magnetization[1.0], full.magnetization[1.0]
         )
+        # The completed temperatures come back from the file, staggered
+        # magnetizations included.
+        for temp in (3.0, 2.0, 1.0):
+            np.testing.assert_array_equal(
+                resumed.staggered_magnetization[temp],
+                full.staggered_magnetization[temp],
+            )
 
 
 class TestResumeParallelTempering:

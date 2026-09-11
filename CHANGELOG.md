@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Staggered magnetizations as a built-in observable. Every run records
+  `results.staggered_magnetization[T]`, an array with one row per
+  measurement and `2 ** n_axes` columns: column `k` is a bitmask over the
+  lattice axes and holds `(1/N) Σ_i (-1)^(Σ_{a in k} n_a(i)) s_i`, so
+  column 0 is the uniform magnetization and the others are the stripe
+  (square, triangular), layered (cubic) and Néel (every lattice; the
+  honeycomb's sublattice index is its third axis) order parameters. Until
+  now these phases, in which the uniform magnetization vanishes, could
+  only be identified from stored configurations. Also exposed as
+  `IsingSimulation.staggered_magnetization()`,
+  `Simulation.staggered_magnetization`, and `LatticeConfig.shape` (the
+  axes the columns are indexed over). Saved as the per-temperature HDF5
+  dataset `staggered_magnetization` (additive, tolerant read, no schema
+  bump — older files load with the field empty). The golden fixture
+  (`tests/data/golden_runs.json`) is rewritten at record schema 2 to
+  carry the new arrays and the parallel-tempering diagnostics; every
+  pre-existing value in it is unchanged bit for bit (random-number
+  consumption and the recorded arithmetic are untouched), which is why
+  no statistical re-validation accompanies the rewrite. The stripe
+  phase-diagram example reads the recorded observable instead of storing
+  configurations; its numbers are unchanged.
 - Replica-exchange diagnostics for parallel tempering. Every run in
   `ExecutionMode.PARALLEL_TEMPERING` now records `results.pt_diagnostics`
   (`PTDiagnostics`): swap attempts and acceptances per adjacent pair of

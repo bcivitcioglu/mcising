@@ -152,6 +152,30 @@ class LatticeConfig:
         msg = f"unhandled lattice type: {self.lattice_type!r}"
         raise ConfigurationError(msg)
 
+    @property
+    def shape(self) -> tuple[int, ...]:
+        """Array shape of one spin configuration for this geometry.
+
+        ``(L, L)`` for the square and triangular lattices, ``(L, L, 2)``
+        for the honeycomb (two sites per cell), ``(L, L, L)`` for the
+        cubic lattice and ``(L,)`` for the chain — the shape
+        ``IsingSimulation.get_spins()`` returns, kept in lockstep with the
+        Rust constructors by a parity test (``tests/test_simulation.py``).
+        Its length is the number of axes the staggered magnetization
+        components are indexed over (``2 ** len(shape)`` components).
+        """
+        length = self.size
+        if self.lattice_type in (LatticeType.SQUARE, LatticeType.TRIANGULAR):
+            return (length, length)
+        if self.lattice_type is LatticeType.HONEYCOMB:
+            return (length, length, 2)
+        if self.lattice_type is LatticeType.CUBIC:
+            return (length, length, length)
+        if self.lattice_type is LatticeType.CHAIN:
+            return (length,)
+        msg = f"unhandled lattice type: {self.lattice_type!r}"
+        raise ConfigurationError(msg)
+
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> LatticeConfig:
         """Build a LatticeConfig from a mapping.

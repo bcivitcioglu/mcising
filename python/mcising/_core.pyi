@@ -131,6 +131,20 @@ class IsingSimulation:
     def magnetization(self) -> float:
         """Signed magnetization per site, ``Σ s_i / num_sites``."""
 
+    def staggered_magnetization(self) -> NDArray[np.float64]:
+        """Staggered magnetizations per site, ``2 ** n_axes`` components.
+
+        ``n_axes`` is the length of the lattice shape (``get_spins().ndim``:
+        1 for the chain, 2 for the square and triangular lattices, 3 for
+        the honeycomb and cubic lattices). Component ``k`` is a bitmask
+        over the axes: ``(1/N) Σ_i (-1)^(Σ_{a in k} n_a(i)) s_i`` with
+        ``n_a(i)`` the coordinate of site ``i`` along axis ``a``; component
+        0 is :meth:`magnetization`, the others the stripe, layered and
+        Néel order parameters (square: 1 and 2 alternate along rows and
+        columns, 3 is Néel; honeycomb: 4 alternates between the
+        sublattices).
+        """
+
     def get_spins(self) -> NDArray[np.int8]:
         """Copy of the spin configuration as an ``int8`` array in the lattice's shape.
 
@@ -249,6 +263,8 @@ class IsingSimulation:
         dict[str, Any]
             The per-temperature dict the parallel runners return:
             ``temperature``, ``energies``, ``magnetizations``,
+            ``staggered_magnetizations`` (shape ``(n_measurements,
+            2 ** n_axes)``, see :meth:`staggered_magnetization`),
             ``n_cluster_flips``, plus ``configurations`` when
             ``store_configs`` and ``correlation_distances`` /
             ``correlation_function`` / ``correlation_length`` when
@@ -272,7 +288,8 @@ class IsingSimulation:
     def __repr__(self) -> str: ...
 
 # Both runners produce one dict per temperature with keys "temperature",
-# "energies", "magnetizations", "n_cluster_flips", plus "configurations"
+# "energies", "magnetizations", "staggered_magnetizations" (2-D, one row
+# per measurement), "n_cluster_flips", plus "configurations"
 # when store_configs, and "correlation_distances" /
 # "correlation_function" / "correlation_length" when compute_correlation
 # (evaluated at every correlation_interval-th measurement). The
@@ -310,7 +327,8 @@ def run_parallel_tempering(
     tuple[list[dict[str, Any]], dict[str, Any]]
         First, one dict per temperature in ascending temperature order,
         with ``temperature``, ``energies``, ``magnetizations``,
-        ``n_cluster_flips``, plus ``configurations`` when
+        ``staggered_magnetizations``, ``n_cluster_flips``, plus
+        ``configurations`` when
         ``store_configs`` and the ``correlation_*`` arrays when
         ``compute_correlation``. Second, the ladder diagnostics:
         ``temperatures`` (ascending), ``swap_attempted`` and

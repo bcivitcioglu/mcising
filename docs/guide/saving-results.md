@@ -49,6 +49,7 @@ results.h5
 ├── T=2.269/
 │   ├── energy           (n_samples,)
 │   ├── magnetization    (n_samples,)
+│   ├── staggered_magnetization (n_samples, 2 ** n_axes) — see below
 │   ├── configurations   (n_samples, *lattice shape) — see below
 │   └── statistics/      (derived estimates as attributes: n_samples,
 │                         tau_int, and value + *_error pairs for energy,
@@ -62,7 +63,12 @@ results.h5
 `(L, L)` for the square and triangular lattices, `(L, L, 2)` for the
 honeycomb (two sites per cell), `(L, L, L)` for the cubic lattice and
 `(L,)` for the chain — the same array `IsingSimulation.get_spins()`
-returns.
+returns. `staggered_magnetization` has one column per combination of
+those axes (column `k` is a bitmask over them, column 0 the uniform
+magnetization); `LatticeConfig.shape` gives the axes, and the
+[physics page](../advanced/physics.md#staggered-magnetization) the
+table of which column is which order parameter. Files written before
+this dataset existed load with the field empty.
 
 The `statistics` subgroup (schema 3) exists for external tools —
 `h5dump`, pandas, a referee's notebook — so a saved file quotes its

@@ -54,6 +54,10 @@ def _fill_results_entry(
     """
     results.energy[temp] = np.asarray(entry["energies"])
     results.magnetization[temp] = np.asarray(entry["magnetizations"])
+    if "staggered_magnetizations" in entry:
+        results.staggered_magnetization[temp] = np.asarray(
+            entry["staggered_magnetizations"]
+        )
     if "n_cluster_flips" in entry:
         results.n_cluster_flips[temp] = int(entry["n_cluster_flips"])
     if "configurations" in entry:
@@ -214,6 +218,18 @@ class SimulationResults:
         Energy per site measurements at each temperature.
     magnetization : dict[float, NDArray[np.float64]]
         Magnetization per site measurements at each temperature.
+    staggered_magnetization : dict[float, NDArray[np.float64]]
+        Staggered magnetizations per site at each temperature, shape
+        ``(n_samples, 2 ** n_axes)`` with ``n_axes = len(config.lattice.shape)``.
+        Column ``k`` is a bitmask over the lattice axes: ``m_k = (1/N)
+        Σ_i (-1)^(Σ_{a in k} n_a(i)) s_i`` with ``n_a(i)`` the coordinate
+        of site ``i`` along axis ``a``. Column 0 is the uniform
+        magnetization. Square: columns 1 and 2 alternate from row to row
+        and from column to column (the two stripe orientations), column 3
+        is the Néel order parameter; cubic: columns 1, 2, 4 are the three
+        layered components and 7 is Néel; honeycomb: column 4 alternates
+        between the sublattices (Néel); chain: column 1 is Néel. Empty
+        for files written before this field existed.
     configurations : dict[float, NDArray[np.int8]]
         Spin configurations at each temperature, shape ``(n_samples,
         *lattice_shape)``: ``(L, L)`` for the square and triangular
@@ -246,6 +262,9 @@ class SimulationResults:
     temperatures: list[float] = field(default_factory=list)
     energy: dict[float, NDArray[np.float64]] = field(default_factory=dict)
     magnetization: dict[float, NDArray[np.float64]] = field(default_factory=dict)
+    staggered_magnetization: dict[float, NDArray[np.float64]] = field(
+        default_factory=dict
+    )
     configurations: dict[float, NDArray[np.int8]] = field(default_factory=dict)
     correlation_function: (
         dict[float, tuple[NDArray[np.float64], NDArray[np.float64]]] | None
@@ -996,6 +1015,16 @@ class Simulation:
     def magnetization(self) -> float:
         """Current magnetization per site."""
         return float(self._core.magnetization())
+
+    @property
+    def staggered_magnetization(self) -> NDArray[np.float64]:
+        """Current staggered magnetizations per site.
+
+        ``2 ** len(config.lattice.shape)`` components indexed by a bitmask
+        over the lattice axes; see ``SimulationResults.staggered_magnetization``
+        for the convention.
+        """
+        return np.asarray(self._core.staggered_magnetization(), dtype=np.float64)
 
     def _thermalize(self, from_temp: float, to_temp: float, n_steps: int) -> None:
         """Anneal from from_temp to to_temp in one Rust call.
