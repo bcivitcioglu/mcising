@@ -90,6 +90,11 @@ def stripe_order_parameter(configurations: NDArray[np.int8]) -> FloatArray:
     m_s = max(|<(-1)^x s>|, |<(-1)^y s>|): the staggered magnetization along
     whichever axis the stripes run. Both orientations are degenerate ground
     states, so the maximum makes the order parameter orientation-blind.
+
+    The NumPy reference definition; the scan below reads the same two
+    components from ``results.staggered_magnetization`` (columns 1 and 2),
+    which mcising records at every measurement without storing the
+    configurations.
     """
     n, rows, cols = configurations.shape
     sign_rows = (-1.0) ** np.arange(rows)
@@ -118,7 +123,6 @@ def run(
         n_sweeps=n_sweeps,
         n_thermalization=n_thermalization,
         measurement_interval=10,
-        store_configs=True,
         seed=seed,
     )
     return Simulation(config).run(show_progress=False)
@@ -153,9 +157,9 @@ def scan(
         specific_heat = np.zeros(len(temperatures))
         for row, t in enumerate(temperatures):
             magnetization[row, column] = np.abs(results.magnetization[t]).mean()
-            stripe[row, column] = stripe_order_parameter(
-                results.configurations[t]
-            ).mean()
+            # Columns 1 and 2: alternation along the rows and the columns.
+            staggered = np.abs(results.staggered_magnetization[t][:, 1:3])
+            stripe[row, column] = staggered.max(axis=1).mean()
             specific_heat[row] = results.specific_heat(t)
         cv_peak[column] = temperatures[int(np.argmax(specific_heat))]
         print(

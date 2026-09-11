@@ -29,6 +29,9 @@ pub(crate) struct TempResult {
     pub(crate) temperature: f64,
     pub(crate) energies: Vec<f64>,
     pub(crate) magnetizations: Vec<f64>,
+    /// Staggered magnetizations, flat: `2^n_axes` components per
+    /// measurement (see `observables::staggered_magnetization`).
+    pub(crate) staggered: Vec<f64>,
     pub(crate) configs: Option<Vec<i8>>,
     pub(crate) correlation: Option<CorrelationRecord>,
     pub(crate) shape: Vec<usize>,
@@ -55,10 +58,12 @@ impl TempResult {
     ) -> Self {
         debug_assert!(correlation_interval >= 1, "validated at the boundary");
         let correlation_interval = correlation_interval.max(1);
+        let n_components = 1usize << shape.len();
         Self {
             temperature,
             energies: Vec::with_capacity(n_measurements),
             magnetizations: Vec::with_capacity(n_measurements),
+            staggered: Vec::with_capacity(n_measurements * n_components),
             configs: store_configs.then(|| Vec::with_capacity(n_measurements * num_sites)),
             correlation: compute_correlation.then(|| CorrelationRecord {
                 distances: Vec::new(),
@@ -71,8 +76,9 @@ impl TempResult {
         }
     }
 
-    /// Record one measurement: energy, magnetization, and (when enabled)
-    /// a configuration snapshot and, at the cadence, correlation data.
+    /// Record one measurement: energy, magnetization, the staggered
+    /// magnetizations, and (when enabled) a configuration snapshot and, at
+    /// the cadence, correlation data.
     ///
     /// The correlation observables are pure functions of `spins` — they draw
     /// no RNG, so enabling them never perturbs the sampling streams. The
@@ -82,6 +88,8 @@ impl TempResult {
         self.energies.push(energy);
         self.magnetizations
             .push(observables::magnetization_per_site(spins));
+        self.staggered
+            .extend(observables::staggered_magnetization(spins, lattice));
         if let Some(ref mut c) = self.configs {
             c.extend_from_slice(spins);
         }
@@ -99,9 +107,11 @@ impl TempResult {
 
     /// Convert to the Python dict every run path returns.
     ///
-    /// Keys: `temperature`, `energies`, `magnetizations`, `n_cluster_flips`,
-    /// plus `configurations` when stored and `correlation_distances` /
-    /// `correlation_function` / `correlation_length` when computed. Array
+    /// Keys: `temperature`, `energies`, `magnetizations`,
+    /// `staggered_magnetizations` (shape `(n_measurements, 2^n_axes)`),
+    /// `n_cluster_flips`, plus `configurations` when stored and
+    /// `correlation_distances` / `correlation_function` /
+    /// `correlation_length` when computed. Array
     /// shapes are derived from the actual number of collected measurements,
     /// never from a precomputed count — a cadence bug upstream can therefore
     /// shorten arrays but can no longer cause a reshape panic.
@@ -111,6 +121,10 @@ impl TempResult {
         dict.set_item("temperature", self.temperature)?;
         dict.set_item("energies", self.energies.into_pyarray(py))?;
         dict.set_item("magnetizations", self.magnetizations.into_pyarray(py))?;
+        let n_components = 1usize << self.shape.len();
+        let staggered = numpy::PyArray1::from_vec(py, self.staggered)
+            .reshape([n_measurements, n_components])?;
+        dict.set_item("staggered_magnetizations", staggered)?;
         dict.set_item("n_cluster_flips", self.cluster_flips)?;
 
         if let Some(configs) = self.configs {
@@ -169,6 +183,13 @@ mod tests {
         assert_eq!(r.energies, vec![0.0, -1.0, -2.0, -3.0, -4.0]);
         assert_eq!(r.magnetizations.len(), 5);
         assert!((r.magnetizations[1] - 14.0 / 16.0).abs() < 1e-15);
+        // Four components per measurement on the square; component 0 is
+        // the magnetization bit for bit; the first record is all up.
+        assert_eq!(r.staggered.len(), 5 * 4);
+        assert_eq!(&r.staggered[0..4], &[1.0, 0.0, 0.0, 0.0]);
+        for (i, &m) in r.magnetizations.iter().enumerate() {
+            assert_eq!(r.staggered[4 * i].to_bits(), m.to_bits(), "measurement {i}");
+        }
         assert!(r.configs.is_none());
         assert!(r.correlation.is_none());
         assert_eq!(r.cluster_flips, 0);
@@ -235,6 +256,7 @@ mod tests {
         let sparse = record(true, true, 2);
         assert_eq!(every.energies, sparse.energies);
         assert_eq!(every.magnetizations, sparse.magnetizations);
+        assert_eq!(every.staggered, sparse.staggered);
         assert_eq!(every.configs, sparse.configs);
     }
 }

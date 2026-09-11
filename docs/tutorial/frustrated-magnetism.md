@@ -42,21 +42,11 @@ $$
 m_s = \max\left( \left|\frac{1}{N}\sum_i (-1)^{x_i} s_i\right|,\; \left|\frac{1}{N}\sum_i (-1)^{y_i} s_i\right| \right),
 $$
 
-which is not a built-in observable — but the stored configurations make it a few lines of NumPy. Cool the lattice through the transition at $J_2 = -0.6$ and watch $\langle |m| \rangle$ stay near zero while $m_s$ saturates:
+which mcising records at every measurement: `results.staggered_magnetization[T]` holds the staggered magnetizations along every combination of lattice axes (see [Staggered magnetization](../advanced/physics.md#staggered-magnetization)); on the square lattice columns 1 and 2 are the two sums above. Cool the lattice through the transition at $J_2 = -0.6$ and watch $\langle |m| \rangle$ stay near zero while $m_s$ saturates:
 
 ```python
 import numpy as np
 from mcising import Simulation, SimulationConfig, LatticeConfig
-
-
-def stripe_order(configurations: np.ndarray) -> np.ndarray:
-    """Per-snapshot stripe order parameter of (n, L, L) configurations."""
-    n, rows, cols = configurations.shape
-    spins = configurations.astype(float)
-    along_rows = np.abs((spins * (-1.0) ** np.arange(rows)[None, :, None]).mean(axis=(1, 2)))
-    along_cols = np.abs((spins * (-1.0) ** np.arange(cols)[None, None, :]).mean(axis=(1, 2)))
-    return np.maximum(along_rows, along_cols)
-
 
 config = SimulationConfig(
     lattice=LatticeConfig(size=16, j1=1.0, j2=-0.6),
@@ -69,9 +59,15 @@ results = Simulation(config).run(show_progress=False)
 
 for T in results.temperatures:
     m = np.abs(results.magnetization[T]).mean()
-    m_s = stripe_order(results.configurations[T]).mean()
+    staggered = results.staggered_magnetization[T]  # shape (n_samples, 4)
+    m_s = np.abs(staggered[:, 1:3]).max(axis=1).mean()
     print(f"T={T:.1f}: <|m|>={m:.3f}  <m_s>={m_s:.3f}")
 ```
+
+The same numbers follow from stored configurations with a few lines of
+NumPy (`(-1) ** row` and `(-1) ** column` masks), which is how
+`examples/stripe_phase_diagram.py` defines its reference; the recorded
+observable makes `store_configs=True` unnecessary for phase identification.
 
 !!! warning "Metropolis only, and cool down — don't quench"
     Wolff and Swendsen-Wang are only correct for a single ferromagnetic coupling; `SimulationConfig` refuses them when $J_2 \neq 0$, so frustrated runs use Metropolis. Give it a descending temperature ladder (the default cool-down mode carries the final state of each temperature into the next). A single low temperature from a random start is a quench that freezes into domain walls, and near $J_2 = -J_1/2$, where the two ground states are almost degenerate, Metropolis equilibrates slowly at low $T$ — that is the regime for [parallel tempering](parallel-execution.md).

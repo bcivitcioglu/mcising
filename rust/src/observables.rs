@@ -261,6 +261,84 @@ pub fn magnetization_per_site(spins: &[i8]) -> f64 {
     sum as f64 / spins.len() as f64
 }
 
+/// Staggered magnetizations per site along every combination of lattice
+/// axes.
+///
+/// With `n = shape().len()` axes (the honeycomb's sublattice index counts
+/// as an axis, so it has three) and `n_a(i)` the row-major coordinate of
+/// site `i` along axis `a`, component `k` — a bitmask over the axes,
+/// `0 <= k < 2^n` — is
+///
+/// `m_k = (1/N) Σ_i (−1)^{Σ_{a ∈ k} n_a(i)} s_i`
+///
+/// Component 0 is the uniform magnetization, bit-identical to
+/// [`magnetization_per_site`]. Square: `m_1` alternates from row to row
+/// and `m_2` from column to column (the two stripe orientations), `m_3`
+/// is the Néel order parameter. Cubic: `m_1`, `m_2`, `m_4` are the three
+/// layered (plane-alternating) components, `m_7` is Néel. Honeycomb:
+/// `m_4` alternates between the two sublattices (Néel). Chain: `m_1` is
+/// Néel. An odd extent makes `(−1)^{n_a}` non-periodic across that
+/// boundary (still well defined, but no longer a Fourier component), and
+/// on the triangular lattice these are the M-point stripe components,
+/// not the three-sublattice order.
+///
+/// Every site falls into one of `2^n` parity classes, so the site sum is
+/// a single bucketed pass followed by a `2^n × 2^n` sign transform; the
+/// division happens once per component. The pass walks the row-major
+/// array one line of the last axis at a time: the leading coordinates fix
+/// the class of the whole line up to its lowest bit, which the even/odd
+/// positions along the line supply.
+pub fn staggered_magnetization<L: Lattice>(spins: &[i8], lattice: &L) -> Vec<f64> {
+    let shape = lattice.shape();
+    let n_axes = shape.len();
+    let n_components = 1usize << n_axes;
+    let mut buckets = vec![0i64; n_components];
+    let last_axis = n_axes - 1;
+    let line = shape[last_axis];
+    let last_bit = 1usize << last_axis;
+    let mut leading = vec![0usize; last_axis];
+    for row in spins.chunks_exact(line) {
+        let base = leading
+            .iter()
+            .enumerate()
+            .fold(0usize, |acc, (axis, &c)| acc | ((c & 1) << axis));
+        let (mut even, mut odd) = (0i64, 0i64);
+        for pair in row.chunks(2) {
+            even += i64::from(pair[0]);
+            if let Some(&second) = pair.get(1) {
+                odd += i64::from(second);
+            }
+        }
+        buckets[base] += even;
+        buckets[base | last_bit] += odd;
+        // Row-major odometer over the leading axes.
+        for axis in (0..last_axis).rev() {
+            leading[axis] += 1;
+            if leading[axis] < shape[axis] {
+                break;
+            }
+            leading[axis] = 0;
+        }
+    }
+    let n = spins.len() as f64;
+    (0..n_components)
+        .map(|k| {
+            let total: i64 = buckets
+                .iter()
+                .enumerate()
+                .map(|(class, &b)| {
+                    if (class & k).count_ones() % 2 == 0 {
+                        b
+                    } else {
+                        -b
+                    }
+                })
+                .sum();
+            total as f64 / n
+        })
+        .collect()
+}
+
 /// Connected spin-spin correlations binned by exact squared distance.
 ///
 /// One entry per unique squared distance, ascending; `d_sq[0] == 0` is
@@ -651,6 +729,152 @@ mod tests {
             }
         }
         assert!((magnetization_per_site(&spins)).abs() < 1e-10);
+    }
+
+    // ── Staggered magnetization ──────────────────────────────────────
+
+    /// `spins[i] = (-1)^{Σ_{a ∈ mask} n_a(i)}`: the pure pattern of one component.
+    fn parity_pattern<L: Lattice>(lattice: &L, mask: usize) -> Vec<i8> {
+        (0..lattice.num_sites())
+            .map(|i| {
+                let coords = lattice.flat_to_multi(i);
+                let parity: usize = coords
+                    .iter()
+                    .enumerate()
+                    .filter(|&(axis, _)| mask & (1 << axis) != 0)
+                    .map(|(_, &c)| c)
+                    .sum();
+                if parity.is_multiple_of(2) {
+                    1
+                } else {
+                    -1
+                }
+            })
+            .collect()
+    }
+
+    /// Every pure pattern must light up exactly its own component.
+    fn assert_pure_patterns<L: Lattice>(lattice: &L, label: &str) {
+        let n_components = 1 << lattice.shape().len();
+        for mask in 0..n_components {
+            let spins = parity_pattern(lattice, mask);
+            let m = staggered_magnetization(&spins, lattice);
+            assert_eq!(m.len(), n_components, "{label}");
+            for (k, &value) in m.iter().enumerate() {
+                let expected = if k == mask { 1.0 } else { 0.0 };
+                assert!(
+                    (value - expected).abs() < 1e-12,
+                    "{label} mask={mask}: m_{k} = {value}, expected {expected}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_staggered_pure_patterns_square() {
+        let lattice = SquareLattice::new(4).unwrap();
+        assert_pure_patterns(&lattice, "square");
+        // Named components: rows (bit 0), columns (bit 1), Néel (both).
+        let rows: Vec<i8> = (0..16)
+            .map(|i| if (i / 4) % 2 == 0 { 1 } else { -1 })
+            .collect();
+        assert_eq!(
+            staggered_magnetization(&rows, &lattice),
+            vec![0.0, 1.0, 0.0, 0.0]
+        );
+        let cols: Vec<i8> = (0..16)
+            .map(|i| if (i % 4) % 2 == 0 { 1 } else { -1 })
+            .collect();
+        assert_eq!(
+            staggered_magnetization(&cols, &lattice),
+            vec![0.0, 0.0, 1.0, 0.0]
+        );
+        let neel: Vec<i8> = (0..16)
+            .map(|i| if (i / 4 + i % 4) % 2 == 0 { 1 } else { -1 })
+            .collect();
+        assert_eq!(
+            staggered_magnetization(&neel, &lattice),
+            vec![0.0, 0.0, 0.0, 1.0]
+        );
+        assert_eq!(
+            staggered_magnetization(&[1i8; 16], &lattice),
+            vec![1.0, 0.0, 0.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn test_staggered_pure_patterns_every_lattice() {
+        assert_pure_patterns(&TriangularLattice::new(6).unwrap(), "triangular");
+        assert_pure_patterns(&HoneycombLattice::new(4).unwrap(), "honeycomb");
+        assert_pure_patterns(&CubicLattice::new(4).unwrap(), "cubic");
+        assert_pure_patterns(&ChainLattice::new(16).unwrap(), "chain");
+        // Honeycomb: bit 2 is the sublattice index, so m_4 is Néel.
+        let honey = HoneycombLattice::new(4).unwrap();
+        let neel: Vec<i8> = (0..honey.num_sites())
+            .map(|i| if i % 2 == 0 { 1 } else { -1 })
+            .collect();
+        let m = staggered_magnetization(&neel, &honey);
+        assert_eq!(m.len(), 8);
+        assert!((m[4] - 1.0).abs() < 1e-12 && m[0].abs() < 1e-12, "{m:?}");
+        // Chain: m_1 is Néel.
+        let chain = ChainLattice::new(16).unwrap();
+        let alt: Vec<i8> = (0..16).map(|i| if i % 2 == 0 { 1 } else { -1 }).collect();
+        assert_eq!(staggered_magnetization(&alt, &chain), vec![0.0, 1.0]);
+    }
+
+    #[test]
+    fn test_staggered_odd_extent_is_well_defined() {
+        let lattice = SquareLattice::new(5).unwrap();
+        let m = staggered_magnetization(&[1i8; 25], &lattice);
+        assert_eq!(m.len(), 4);
+        assert!((m[0] - 1.0).abs() < 1e-12);
+        // Rows alternate: 3 rows of +1 and 2 rows of -1 → (15 - 10) / 25.
+        let rows: Vec<i8> = (0..25)
+            .map(|i| if (i / 5) % 2 == 0 { 1 } else { -1 })
+            .collect();
+        let m = staggered_magnetization(&rows, &lattice);
+        assert!((m[1] - 1.0).abs() < 1e-12, "{m:?}");
+        assert!((m[0] - 0.2).abs() < 1e-12, "{m:?}");
+    }
+
+    /// Bucketed evaluation == naive per-site evaluation (row-major
+    /// decoding), and component 0 == `magnetization_per_site` bit for bit.
+    fn assert_staggered_matches_naive<L: Lattice>(lattice: &L, label: &str) {
+        let n_axes = lattice.shape().len();
+        for seed in 0..4u64 {
+            let spins = random_spins(lattice.num_sites(), seed);
+            let fast = staggered_magnetization(&spins, lattice);
+            assert_eq!(
+                fast[0].to_bits(),
+                magnetization_per_site(&spins).to_bits(),
+                "{label} seed={seed}: component 0"
+            );
+            assert_eq!(fast.len(), 1usize << n_axes, "{label}");
+            for (k, &value) in fast.iter().enumerate() {
+                let pattern = parity_pattern(lattice, k);
+                let total: i64 = spins
+                    .iter()
+                    .zip(&pattern)
+                    .map(|(&s, &p)| i64::from(s) * i64::from(p))
+                    .sum();
+                let naive = total as f64 / lattice.num_sites() as f64;
+                assert_eq!(
+                    value.to_bits(),
+                    naive.to_bits(),
+                    "{label} seed={seed} k={k}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_staggered_matches_naive_every_lattice() {
+        assert_staggered_matches_naive(&SquareLattice::new(6).unwrap(), "square");
+        assert_staggered_matches_naive(&TriangularLattice::new(6).unwrap(), "triangular");
+        assert_staggered_matches_naive(&HoneycombLattice::new(4).unwrap(), "honeycomb");
+        assert_staggered_matches_naive(&CubicLattice::new(4).unwrap(), "cubic");
+        assert_staggered_matches_naive(&ChainLattice::new(16).unwrap(), "chain");
+        assert_staggered_matches_naive(&SquareLattice::new(5).unwrap(), "square odd");
     }
 
     #[test]

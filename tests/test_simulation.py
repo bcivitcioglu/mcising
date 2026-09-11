@@ -219,6 +219,19 @@ class TestNumSites:
         assert LatticeConfig(lattice_type, size).num_sites == sim.num_sites
 
     @pytest.mark.parametrize("lattice_type", list(LatticeType))
+    @pytest.mark.parametrize("size", [4, 6])
+    def test_shape_matches_rust_core(
+        self, lattice_type: LatticeType, size: int
+    ) -> None:
+        # Same licence for the shape: it is what get_spins() returns.
+        sim = IsingSimulation(
+            size, 1.0, 0.0, 0.0, 0.0, 0, "metropolis", lattice_type.value
+        )
+        shape = LatticeConfig(lattice_type, size).shape
+        assert shape == sim.get_spins().shape
+        assert int(np.prod(shape)) == sim.num_sites
+
+    @pytest.mark.parametrize("lattice_type", list(LatticeType))
     def test_simulation_property_three_way_parity(
         self, lattice_type: LatticeType
     ) -> None:

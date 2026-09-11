@@ -53,7 +53,9 @@ from mcising.config import ExecutionMode
 REPO_ROOT: Final = Path(__file__).resolve().parents[1]
 FIXTURE_PATH: Final = REPO_ROOT / "tests" / "data" / "golden_runs.json"
 #: Bump when the *record layout* changes (not when values change).
-SCHEMA_VERSION: Final = 1
+#: 2: ``staggered_magnetizations`` per temperature and ``pt_diagnostics``
+#: per parallel-tempering case (additive; every schema-1 value unchanged).
+SCHEMA_VERSION: Final = 2
 
 
 @dataclass(frozen=True)
@@ -245,6 +247,9 @@ def run_case(case: GoldenCase) -> dict[str, Any]:
             "temperature": float(temp),
             "energies": _floats(results.energy[temp]),
             "magnetizations": _floats(results.magnetization[temp]),
+            "staggered_magnetizations": [
+                _floats(row) for row in results.staggered_magnetization[temp]
+            ],
             "n_cluster_flips": int(results.n_cluster_flips[temp]),
         }
         if temp in results.configurations:
@@ -274,6 +279,12 @@ def run_case(case: GoldenCase) -> dict[str, Any]:
         "temperatures": [float(t) for t in results.temperatures],
         "per_temperature": entries,
     }
+    if results.pt_diagnostics is not None:
+        # Tuples in the dataclass, lists in the JSON record.
+        record["pt_diagnostics"] = {
+            key: list(value)
+            for key, value in dataclasses.asdict(results.pt_diagnostics).items()
+        }
     if config.mode == ExecutionMode.COOLDOWN:
         # The parallel runners advance their own replicas; only the cooldown
         # paths leave the Simulation's core in the final state.

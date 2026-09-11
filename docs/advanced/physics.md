@@ -121,6 +121,43 @@ uv run python scripts/tc_campaign.py --write-docs   # full budget, ~5 min on 10 
 uv run python scripts/tc_campaign.py --quick        # the CI slow-suite budget
 ```
 
+## Staggered magnetization
+
+The uniform magnetization vanishes identically in every phase that breaks
+the lattice's translation symmetry — the stripe phase of the square
+$J_1$–$J_2$ model, the layered phase of the cubic one, the Néel phase of
+any antiferromagnet. Every run therefore also records the staggered
+magnetizations, one per combination of lattice axes. With $n$ axes (the
+length of the configuration array's shape: 1 for the chain, 2 for the
+square and triangular lattices, 3 for the cubic lattice *and* for the
+honeycomb, whose third axis is the sublattice index) and $n_a(i)$ the
+coordinate of site $i$ along axis $a$, component $k$ — a bitmask over the
+axes, $0 \le k < 2^n$ — is
+
+$$
+m_k = \frac{1}{N} \sum_i (-1)^{\sum_{a \in k} n_a(i)}\, s_i .
+$$
+
+Component 0 is the uniform magnetization. The others are the order
+parameters of the commensurate ordered phases:
+
+| Lattice | Component | Pattern | Order |
+|---|---|---|---|
+| chain | 1 | alternates site to site | Néel |
+| square, triangular | 1 | alternates from row to row | stripe |
+| square, triangular | 2 | alternates from column to column | stripe |
+| square, triangular | 3 | alternates in both directions | Néel (square) |
+| honeycomb | 4 | alternates between the two sublattices | Néel |
+| cubic | 1, 2, 4 | alternates plane to plane along one axis | layered |
+| cubic | 7 | alternates in all three directions | Néel |
+
+`results.staggered_magnetization[T]` holds one row per measurement with
+$2^n$ columns; `LatticeConfig.shape` gives the axes. Two caveats: an odd
+extent makes $(-1)^{n_a}$ non-periodic across that boundary (the quantity
+is still well defined, but no longer a Fourier component of the lattice),
+and on the triangular lattice these are the M-point stripe components,
+not the three-sublattice order of the antiferromagnet.
+
 ## Monte Carlo algorithms
 
 ### Metropolis

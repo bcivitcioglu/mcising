@@ -304,6 +304,16 @@ impl IsingSimulation {
         observables::magnetization_per_site(&self.spins)
     }
 
+    /// Staggered magnetizations per site: `2^n_axes` components, one per
+    /// combination of lattice axes (component `k` is a bitmask over the
+    /// axes; see `observables::staggered_magnetization`).
+    fn staggered_magnetization<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        with_lattice!(&self.lattice, lat => {
+            observables::staggered_magnetization(&self.spins, lat)
+        })
+        .into_pyarray(py)
+    }
+
     /// Return the spin configuration as a NumPy array with lattice shape.
     fn get_spins(&self, py: Python<'_>) -> PyResult<PyObject> {
         let flat = numpy::PyArray1::from_vec(py, self.spins.clone());
@@ -905,6 +915,7 @@ mod production_tests {
 
             let mut energies = Vec::new();
             let mut mags = Vec::new();
+            let mut staggered = Vec::new();
             let mut configs = Vec::new();
             let mut lengths = Vec::new();
             let mut flips = 0;
@@ -912,6 +923,9 @@ mod production_tests {
                 flips += manual.sweep_internal(3, beta).cluster_flips;
                 energies.push(manual.compute_energy());
                 mags.push(observables::magnetization_per_site(&manual.spins));
+                with_lattice!(&manual.lattice, lat => {
+                    staggered.extend(observables::staggered_magnetization(&manual.spins, lat));
+                });
                 configs.extend_from_slice(&manual.spins);
                 if m % 2 == 0 {
                     with_lattice!(&manual.lattice, lat => {
@@ -924,6 +938,12 @@ mod production_tests {
             let label = format!("{algorithm}/{lattice_type}");
             assert_eq!(bits(&result.energies), bits(&energies), "{label}");
             assert_eq!(bits(&result.magnetizations), bits(&mags), "{label}");
+            assert_eq!(bits(&result.staggered), bits(&staggered), "{label}");
+            assert_eq!(
+                result.staggered.len(),
+                6 << manual.shape.len(),
+                "{label}: 2^n_axes components per measurement"
+            );
             assert_eq!(
                 result.configs.as_deref(),
                 Some(configs.as_slice()),
@@ -948,6 +968,7 @@ mod production_tests {
         let result = sim.production_internal(4, 2, 0.5, 2.0, false, false, 1);
         assert_eq!(result.energies.len(), 4);
         assert_eq!(result.magnetizations.len(), 4);
+        assert_eq!(result.staggered.len(), 4 * 4);
         assert!(result.configs.is_none());
         assert!(result.correlation.is_none());
         assert_eq!(result.cluster_flips, 0);

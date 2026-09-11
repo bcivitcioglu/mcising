@@ -119,6 +119,35 @@ class TestNClusterFlips:
         assert loaded.n_cluster_flips  # non-empty
 
 
+class TestStaggeredMagnetizationRoundTrip:
+    """The per-temperature ``staggered_magnetization`` dataset (additive)."""
+
+    def test_roundtrip_is_exact(self, sim_results, tmp_path: Path) -> None:
+        path = tmp_path / "staggered.h5"
+        save_hdf5(sim_results, path)
+        loaded = load_hdf5(path)
+        for temp in sim_results.temperatures:
+            np.testing.assert_array_equal(
+                loaded.staggered_magnetization[temp],
+                sim_results.staggered_magnetization[temp],
+            )
+            assert loaded.staggered_magnetization[temp].shape == (2, 4)
+
+    def test_file_without_dataset_loads_without_key(
+        self, sim_results, tmp_path: Path
+    ) -> None:
+        # A file written by mcising 1.0.0 has no such dataset.
+        path = tmp_path / "old.h5"
+        save_hdf5(sim_results, path)
+        with h5py.File(path, "r+") as f:
+            for name in f:
+                if name.startswith("T="):
+                    del f[name]["staggered_magnetization"]
+        loaded = load_hdf5(path)
+        assert loaded.staggered_magnetization == {}
+        assert len(loaded.energy) == 2
+
+
 class TestPTDiagnosticsRoundTrip:
     """The ladder-level ``parallel_tempering`` group (additive, no bump)."""
 
