@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="mcising">
+  <!-- mcising mark: two ordered Ising phases meeting on a lattice domain wall -->
+  <defs><clipPath id="rr"><rect width="64" height="64" rx="13"/></clipPath></defs>
+  <g clip-path="url(#rr)">
+    <rect width="64" height="64" fill="#2E7CB8"/>
+    <path d="M0 0H30V14H38V28H26V42H36V64H0Z" fill="#E4622A"/>
+  </g>
+</svg>
