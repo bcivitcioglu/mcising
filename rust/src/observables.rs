@@ -27,28 +27,66 @@ pub fn energy_per_site<L: Lattice>(
     j3: f64,
     h: f64,
 ) -> f64 {
-    let n = lattice.num_sites();
     if dyadic_exact(lattice, j1, j2, j3, h) {
         let sums = shell_sums(spins, lattice, j1 != 0.0, j2 != 0.0, j3 != 0.0);
-        // `0.0 - x` (not `-x`) keeps a zero shell at +0.0, as the serial
-        // accumulator does; every product and difference below is exact.
-        let interaction = 0.0 - j1 * sums.nn as f64 - j2 * sums.nnn as f64 - j3 * sums.tnn as f64;
-        let field = 0.0 - h * sums.magnetization as f64;
-        return (interaction / 2.0 + field) / n as f64;
+        return energy_from_shells(&sums, j1, j2, j3, h, lattice.num_sites());
     }
     energy_per_site_sparse(spins, lattice, j1, j2, j3, h)
 }
 
+/// Energy per site from integer shell sums: the fast path of
+/// [`energy_per_site`], exposed so a caller that tracks the shell sums
+/// incrementally (the parallel-tempering swap criterion) evaluates the
+/// same expression — bit-identical to `energy_per_site` whenever
+/// [`dyadic_exact`] holds, and within an ulp-level rounding of it
+/// otherwise.
+pub(crate) fn energy_from_shells(
+    sums: &ShellSums,
+    j1: f64,
+    j2: f64,
+    j3: f64,
+    h: f64,
+    num_sites: usize,
+) -> f64 {
+    // `0.0 - x` (not `-x`) keeps a zero shell at +0.0, as the serial
+    // accumulator does; for dyadic couplings every product and difference
+    // below is exact.
+    let interaction = 0.0 - j1 * sums.nn as f64 - j2 * sums.nnn as f64 - j3 * sums.tnn as f64;
+    let field = 0.0 - h * sums.magnetization as f64;
+    (interaction / 2.0 + field) / num_sites as f64
+}
+
 /// Ordered-pair spin products per shell, plus the total magnetization.
-struct ShellSums {
-    nn: i64,
-    nnn: i64,
-    tnn: i64,
-    magnetization: i64,
+///
+/// Each bond is counted twice (once from each end), so flipping a spin `s`
+/// whose shell sum is `S` changes that shell by exactly `-4·s·S` and the
+/// magnetization by `-2·s`; the sweep algorithms accumulate these deltas
+/// into `SweepResult::delta` and `AddAssign` applies them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ShellSums {
+    pub nn: i64,
+    pub nnn: i64,
+    pub tnn: i64,
+    pub magnetization: i64,
+}
+
+impl std::ops::AddAssign for ShellSums {
+    fn add_assign(&mut self, rhs: Self) {
+        self.nn += rhs.nn;
+        self.nnn += rhs.nnn;
+        self.tnn += rhs.tnn;
+        self.magnetization += rhs.magnetization;
+    }
 }
 
 /// Single integer pass over the requested shells (`|sum| <= z * N`).
-fn shell_sums<L: Lattice>(spins: &[i8], lattice: &L, nn: bool, nnn: bool, tnn: bool) -> ShellSums {
+pub(crate) fn shell_sums<L: Lattice>(
+    spins: &[i8],
+    lattice: &L,
+    nn: bool,
+    nnn: bool,
+    tnn: bool,
+) -> ShellSums {
     let mut sums = ShellSums {
         nn: 0,
         nnn: 0,
@@ -408,6 +446,61 @@ mod tests {
     #[test]
     fn test_energy_fast_path_bit_identical_chain() {
         assert_fast_path_bit_identical(&ChainLattice::new(16).unwrap(), "chain");
+    }
+
+    fn assert_energy_from_shells_bit_identical<L: Lattice>(lattice: &L, label: &str) {
+        for seed in 0..4u64 {
+            let spins = random_spins(lattice.num_sites(), seed);
+            for &(j1, j2, j3, h) in &COUPLING_SETS {
+                if !dyadic_exact(lattice, j1, j2, j3, h) {
+                    continue;
+                }
+                let sums = shell_sums(&spins, lattice, true, true, true);
+                let tracked = energy_from_shells(&sums, j1, j2, j3, h, lattice.num_sites());
+                let direct = energy_per_site(&spins, lattice, j1, j2, j3, h);
+                assert_eq!(
+                    tracked.to_bits(),
+                    direct.to_bits(),
+                    "{label} seed={seed} J=({j1},{j2},{j3},{h}): {tracked:e} vs {direct:e}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_energy_from_shells_bit_identical_all_lattices() {
+        // All shells summed regardless of which couplings are zero: a zero
+        // coupling must ignore its shell exactly (`0.0 * S == 0.0`).
+        assert_energy_from_shells_bit_identical(&SquareLattice::new(6).unwrap(), "square");
+        assert_energy_from_shells_bit_identical(&TriangularLattice::new(6).unwrap(), "triangular");
+        assert_energy_from_shells_bit_identical(&HoneycombLattice::new(4).unwrap(), "honeycomb");
+        assert_energy_from_shells_bit_identical(&CubicLattice::new(4).unwrap(), "cubic");
+        assert_energy_from_shells_bit_identical(&ChainLattice::new(16).unwrap(), "chain");
+    }
+
+    #[test]
+    fn test_shell_sums_add_assign() {
+        let mut a = ShellSums {
+            nn: 1,
+            nnn: 2,
+            tnn: 3,
+            magnetization: 4,
+        };
+        a += ShellSums {
+            nn: -5,
+            nnn: 6,
+            tnn: -7,
+            magnetization: 8,
+        };
+        assert_eq!(
+            a,
+            ShellSums {
+                nn: -4,
+                nnn: 8,
+                tnn: -4,
+                magnetization: 12
+            }
+        );
     }
 
     #[test]

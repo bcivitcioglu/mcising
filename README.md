@@ -176,6 +176,8 @@ config = SimulationConfig(
     n_sweeps=1000,
     mode=ExecutionMode.PARALLEL_TEMPERING,
 )
+results = Simulation(config).run()
+results.pt_diagnostics.swap_acceptance  # did the ladder mix? (+ round_trips)
 ```
 
 ### Adaptive Mode

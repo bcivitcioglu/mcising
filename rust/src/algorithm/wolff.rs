@@ -1,5 +1,6 @@
 use super::{McAlgorithm, SweepResult};
 use crate::lattice::Lattice;
+use crate::observables::ShellSums;
 use rand::Rng;
 
 /// Wolff single-cluster algorithm.
@@ -25,6 +26,11 @@ use rand::Rng;
 /// `accepted` in `SweepResult` is the cluster size; `attempted` equals
 /// it (rejection-free — every site added to the cluster is flipped);
 /// `cluster_flips` is 1.
+///
+/// `SweepResult::delta` is reported only when [`Wolff::set_track_delta`]
+/// has enabled it: the boundary pass it needs costs a noticeable fraction
+/// of a cluster build, and only a caller that carries the shell sums
+/// forward (the parallel-tempering ladder) has a use for it.
 pub struct Wolff {
     /// Reusable visited flags (one per site).
     visited: Vec<bool>,
@@ -32,6 +38,8 @@ pub struct Wolff {
     stack: Vec<usize>,
     /// Sites in the current cluster (for efficient clearing of visited).
     cluster: Vec<usize>,
+    /// Whether to evaluate the cluster boundary for `SweepResult::delta`.
+    track_delta: bool,
 }
 
 impl Wolff {
@@ -42,7 +50,15 @@ impl Wolff {
             visited: vec![false; num_sites],
             stack: Vec::with_capacity(num_sites),
             cluster: Vec::with_capacity(num_sites),
+            track_delta: false,
         }
+    }
+
+    /// Enable or disable reporting the exact shell-sum change of every
+    /// cluster flip in `SweepResult::delta` (off by default; the sampling
+    /// itself — RNG stream included — is unaffected either way).
+    pub fn set_track_delta(&mut self, on: bool) {
+        self.track_delta = on;
     }
 }
 
@@ -86,6 +102,28 @@ impl McAlgorithm for Wolff {
 
         let cluster_size = self.cluster.len();
 
+        // Boundary sum before the flip (the flip loop clears `visited`):
+        // every bond from a cluster site to a non-cluster neighbour changes
+        // sign, and each such bond is seen twice in the ordered-pair shell
+        // sum, so the nearest-neighbour shell changes by -4·s·Σ_boundary.
+        // Interior bonds are untouched (both ends flip). No RNG is drawn.
+        let delta = self.track_delta.then(|| {
+            let mut boundary: i64 = 0;
+            for &site in &self.cluster {
+                for &nbr in lattice.nearest_neighbors(site) {
+                    if !self.visited[nbr] {
+                        boundary += i64::from(spins[nbr]);
+                    }
+                }
+            }
+            ShellSums {
+                nn: -4 * i64::from(cluster_spin) * boundary,
+                nnn: 0,
+                tnn: 0,
+                magnetization: -2 * i64::from(cluster_spin) * cluster_size as i64,
+            }
+        });
+
         // Flip all cluster spins and clear visited flags
         for &site in &self.cluster {
             spins[site] = -spins[site];
@@ -96,6 +134,7 @@ impl McAlgorithm for Wolff {
             accepted: cluster_size,
             attempted: cluster_size,
             cluster_flips: 1,
+            delta,
         }
     }
 
@@ -154,6 +193,64 @@ mod tests {
             assert_eq!(result.attempted, result.accepted, "Wolff is rejection-free");
             assert_eq!(result.cluster_flips, 1, "One cluster per sweep");
         }
+    }
+
+    fn assert_delta_matches_shell_sums<L: Lattice>(lattice: &L, label: &str) {
+        use crate::observables::shell_sums;
+        let n = lattice.num_sites();
+        let mut rng = create_rng(42);
+        let mut spins: Vec<i8> = (0..n)
+            .map(|_| if rng.gen::<bool>() { 1 } else { -1 })
+            .collect();
+        let mut wolff = Wolff::new(n);
+        wolff.set_track_delta(true);
+        for step in 0..20 {
+            let before = shell_sums(&spins, lattice, true, false, false);
+            let result = wolff.sweep(&mut spins, lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng);
+            let after = shell_sums(&spins, lattice, true, false, false);
+            let delta = result.delta.expect("Wolff tracks its delta");
+            assert_eq!(after.nn, before.nn + delta.nn, "{label} step {step}: nn");
+            assert_eq!(
+                after.magnetization,
+                before.magnetization + delta.magnetization,
+                "{label} step {step}: magnetization"
+            );
+            assert_eq!((delta.nnn, delta.tnn), (0, 0), "{label}: unread shells");
+        }
+    }
+
+    #[test]
+    fn test_wolff_delta_is_off_by_default_and_stream_independent() {
+        // Tracking changes the report, never the sampling.
+        let lattice = SquareLattice::new(8).unwrap();
+        let n = lattice.num_sites();
+        let mut rng = create_rng(5);
+        let spins0: Vec<i8> = (0..n)
+            .map(|_| if rng.gen::<bool>() { 1 } else { -1 })
+            .collect();
+        let (mut spins_a, mut spins_b) = (spins0.clone(), spins0);
+        let (mut rng_a, mut rng_b) = (create_rng(9), create_rng(9));
+        let (mut plain, mut tracked) = (Wolff::new(n), Wolff::new(n));
+        tracked.set_track_delta(true);
+        for _ in 0..10 {
+            let a = plain.sweep(&mut spins_a, &lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng_a);
+            let b = tracked.sweep(&mut spins_b, &lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng_b);
+            assert!(a.delta.is_none());
+            assert!(b.delta.is_some());
+            assert_eq!(a.accepted, b.accepted);
+            assert_eq!(spins_a, spins_b);
+        }
+    }
+
+    #[test]
+    fn test_wolff_delta_matches_shell_sums() {
+        use crate::lattice::chain::ChainLattice;
+        use crate::lattice::honeycomb::HoneycombLattice;
+        use crate::lattice::triangular::TriangularLattice;
+        assert_delta_matches_shell_sums(&SquareLattice::new(8).unwrap(), "square");
+        assert_delta_matches_shell_sums(&ChainLattice::new(32).unwrap(), "chain");
+        assert_delta_matches_shell_sums(&TriangularLattice::new(8).unwrap(), "triangular");
+        assert_delta_matches_shell_sums(&HoneycombLattice::new(6).unwrap(), "honeycomb");
     }
 
     #[test]

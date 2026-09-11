@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 import mcising
-from mcising.config import LatticeConfig, SimulationConfig
+from mcising.config import ExecutionMode, LatticeConfig, SimulationConfig
 from mcising.io import save_hdf5
 from mcising.simulation import Simulation
 from typer.testing import CliRunner
@@ -128,6 +128,29 @@ class TestInfo:
 
 
 class TestSummaryJson:
+    def test_summary_json_has_pt_diagnostics(self, tmp_path: Path) -> None:
+        config = SimulationConfig(
+            lattice=LatticeConfig(size=4),
+            temperatures=(3.0, 2.0),
+            n_sweeps=20,
+            measurement_interval=10,
+            mode=ExecutionMode.PARALLEL_TEMPERING,
+        )
+        results = Simulation(config).run(show_progress=False)
+        path = tmp_path / "pt.h5"
+        save_hdf5(results, path)
+
+        result = runner.invoke(app, ["summary", str(path), "--json"])
+        assert result.exit_code == 0
+        record = json.loads(result.stdout)["parallel_tempering"]
+        assert record["swap_attempted"] == [10]  # 20 rounds, pairs on even rounds
+        assert record["temperatures"] == [2.0, 3.0]
+
+        # The plain summary prints the exchange line.
+        result = runner.invoke(app, ["summary", str(path)])
+        assert result.exit_code == 0
+        assert "Replica exchange" in result.stdout
+
     def test_summary_json_has_provenance(self, tmp_path: Path) -> None:
         config = SimulationConfig(
             lattice=LatticeConfig(size=4),

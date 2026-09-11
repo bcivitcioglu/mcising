@@ -122,6 +122,10 @@ impl McAlgorithm for SwendsenWang {
             accepted: total_flipped,
             attempted: n,
             cluster_flips: flipped_clusters,
+            // Recovering the shell change would need a pass over every bond
+            // — the same cost as re-summing the lattice, so the caller does
+            // that instead.
+            delta: None,
         }
     }
 
@@ -214,6 +218,10 @@ mod tests {
             let result = sw.sweep(&mut spins, &lattice, 1.0, 0.0, 0.0, 0.0, 0.5, &mut rng);
             assert!(result.accepted <= n, "Cannot flip more than N spins");
             assert_eq!(result.attempted, n);
+            assert!(
+                result.delta.is_none(),
+                "Swendsen-Wang does not track deltas"
+            );
         }
     }
 

@@ -271,11 +271,13 @@ class IsingSimulation:
 
     def __repr__(self) -> str: ...
 
-# Both runners return one dict per temperature with keys "temperature",
+# Both runners produce one dict per temperature with keys "temperature",
 # "energies", "magnetizations", "n_cluster_flips", plus "configurations"
 # when store_configs, and "correlation_distances" /
 # "correlation_function" / "correlation_length" when compute_correlation
-# (evaluated at every correlation_interval-th measurement).
+# (evaluated at every correlation_interval-th measurement). The
+# parallel-tempering runner pairs that list with a ladder-level
+# diagnostics dict.
 def run_parallel_tempering(
     lattice_size: int,
     j1: float,
@@ -293,7 +295,7 @@ def run_parallel_tempering(
     store_configs: bool = False,
     compute_correlation: bool = False,
     correlation_interval: int = 1,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Parallel-tempering runner behind ``ExecutionMode.PARALLEL_TEMPERING`` (internal).
 
     One replica per temperature, seeded ``base_seed + index``, advanced
@@ -305,14 +307,20 @@ def run_parallel_tempering(
 
     Returns
     -------
-    list[dict[str, Any]]
-        One dict per temperature, in the order given, with ``temperature``,
-        ``energies``, ``magnetizations``, ``n_cluster_flips``, plus
-        ``configurations`` when ``store_configs`` and the
-        ``correlation_*`` arrays when ``compute_correlation``. Raises
-        ``ValueError`` for an unknown algorithm or lattice, an empty or
-        non-positive temperature list, a zero interval, or a
-        ``swap_interval`` that does not divide ``measurement_interval``.
+    tuple[list[dict[str, Any]], dict[str, Any]]
+        First, one dict per temperature in ascending temperature order,
+        with ``temperature``, ``energies``, ``magnetizations``,
+        ``n_cluster_flips``, plus ``configurations`` when
+        ``store_configs`` and the ``correlation_*`` arrays when
+        ``compute_correlation``. Second, the ladder diagnostics:
+        ``temperatures`` (ascending), ``swap_attempted`` and
+        ``swap_accepted`` (one entry per adjacent pair, pair ``i``
+        coupling rungs ``i`` and ``i + 1``) and ``round_trips`` (one
+        entry per replica, coldest → hottest → coldest excursions
+        completed during production). Raises ``ValueError`` for an
+        unknown algorithm or lattice, an empty or non-positive
+        temperature list, a zero interval, or a ``swap_interval`` that
+        does not divide ``measurement_interval``.
     """
 
 def run_independent_temperatures(

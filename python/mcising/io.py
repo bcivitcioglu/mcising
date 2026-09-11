@@ -15,7 +15,12 @@ import numpy as np
 from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit, package_version
 from mcising.config import ExecutionMode, SimulationConfig
 from mcising.exceptions import ConfigurationError
-from mcising.simulation import AdaptiveDiagnostics, Simulation, SimulationResults
+from mcising.simulation import (
+    AdaptiveDiagnostics,
+    PTDiagnostics,
+    Simulation,
+    SimulationResults,
+)
 from mcising.statistics import ObservableStatistics
 
 __all__: Final[list[str]] = [
@@ -46,6 +51,11 @@ def save_hdf5(results: SimulationResults, path: str | Path) -> None:
         │   ├── algorithm       (attribute) [when a config is recorded]
         │   ├── git_commit      (attribute) [when built from a git checkout]
         │   └── elapsed_seconds (attribute) [when known]
+        ├── parallel_tempering/  [parallel-tempering runs only]
+        │   ├── temperatures    (n_temps, float64; the ladder, ascending)
+        │   ├── swap_attempted  (n_temps - 1, int64; per adjacent pair)
+        │   ├── swap_accepted   (n_temps - 1, int64)
+        │   └── round_trips     (n_temps, int64; per replica)
         ├── T=2.269/
         │   ├── configurations  (n_samples x L x L, int8)
         │   ├── energy          (n_samples, float64)
@@ -75,6 +85,7 @@ def save_hdf5(results: SimulationResults, path: str | Path) -> None:
 
     with h5py.File(path, "w") as f:
         _write_metadata(f, results)
+        _write_pt_diagnostics(f, results)
         for temp in results.temperatures:
             _write_temperature_group(f, temp, results)
 
@@ -95,6 +106,7 @@ def init_checkpoint_file(path: str | Path, results: SimulationResults) -> None:
 
     with h5py.File(path, "w") as f:
         _write_metadata(f, results)
+        _write_pt_diagnostics(f, results)
 
 
 def save_temperature_group(
@@ -284,6 +296,8 @@ def checkpoint_run(
                 results.correlation_length[temp] = resumed_results.correlation_length[
                     temp
                 ]
+        if results.pt_diagnostics is None:
+            results.pt_diagnostics = resumed_results.pt_diagnostics
         # Re-sort temperatures descending
         results.temperatures.sort(reverse=True)
 
@@ -332,6 +346,7 @@ def load_hdf5(path: str | Path) -> SimulationResults:
         metadata: dict[str, object] = {}
         if "metadata" in f:
             metadata = _read_metadata(f["metadata"], path)
+        pt_diagnostics = _read_pt_diagnostics(f)
 
         # Discover temperature groups
         temp_groups = [
@@ -397,6 +412,7 @@ def load_hdf5(path: str | Path) -> SimulationResults:
             correlation_length=correlation_length if correlation_length else None,
             n_cluster_flips=n_cluster_flips,
             adaptive_diagnostics=adaptive_diagnostics if adaptive_diagnostics else None,
+            pt_diagnostics=pt_diagnostics,
             metadata=metadata,
         )
 
@@ -428,6 +444,8 @@ def save_json_summary(results: SimulationResults, path: str | Path) -> None:
     if "elapsed_seconds" in results.metadata:
         summary["elapsed_seconds"] = results.metadata["elapsed_seconds"]
     summary["temperatures"] = results.temperatures
+    if results.pt_diagnostics is not None:
+        summary["parallel_tempering"] = _pt_diagnostics_summary(results.pt_diagnostics)
     summary["results"] = {}
 
     results_dict: dict[str, object] = {}
@@ -712,6 +730,59 @@ def _config_from_json(raw: str) -> SimulationConfig | None:
         return SimulationConfig.from_dict(data)
     except ConfigurationError:
         return None
+
+
+def _pt_diagnostics_summary(diag: PTDiagnostics) -> dict[str, object]:
+    """JSON-ready replica-exchange record (raw counts plus the rates).
+
+    ``swap_acceptance`` is only written when every pair was attempted at
+    least once: a NaN rate is omitted rather than written as null (P07).
+    """
+    record: dict[str, object] = {
+        "temperatures": list(diag.temperatures),
+        "swap_attempted": list(diag.swap_attempted),
+        "swap_accepted": list(diag.swap_accepted),
+        "round_trips": list(diag.round_trips),
+    }
+    rates = diag.swap_acceptance
+    if rates.size == 0 or bool(np.all(np.isfinite(rates))):
+        record["swap_acceptance"] = [float(r) for r in rates]
+    return record
+
+
+def _write_pt_diagnostics(f: Any, results: SimulationResults) -> None:
+    """Write the ladder-level ``parallel_tempering`` group, when present.
+
+    Additive (no schema bump): older readers ignore the group, and a file
+    without it loads with ``pt_diagnostics=None``.
+    """
+    diag = results.pt_diagnostics
+    if diag is None:
+        return
+    grp = f.create_group("parallel_tempering")
+    grp.create_dataset(
+        "temperatures", data=np.asarray(diag.temperatures, dtype=np.float64)
+    )
+    grp.create_dataset(
+        "swap_attempted", data=np.asarray(diag.swap_attempted, dtype=np.int64)
+    )
+    grp.create_dataset(
+        "swap_accepted", data=np.asarray(diag.swap_accepted, dtype=np.int64)
+    )
+    grp.create_dataset("round_trips", data=np.asarray(diag.round_trips, dtype=np.int64))
+
+
+def _read_pt_diagnostics(f: Any) -> PTDiagnostics | None:
+    """Read the ``parallel_tempering`` group; None when the file has none."""
+    if "parallel_tempering" not in f:
+        return None
+    grp = f["parallel_tempering"]
+    return PTDiagnostics(
+        temperatures=tuple(float(t) for t in np.asarray(grp["temperatures"])),
+        swap_attempted=tuple(int(x) for x in np.asarray(grp["swap_attempted"])),
+        swap_accepted=tuple(int(x) for x in np.asarray(grp["swap_accepted"])),
+        round_trips=tuple(int(x) for x in np.asarray(grp["round_trips"])),
+    )
 
 
 def _as_str(value: object) -> str:
