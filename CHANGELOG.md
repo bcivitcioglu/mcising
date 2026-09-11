@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-11
+
+Built for the first-order-transition campaign that runs parallel tempering
+at scale: the replica ladder now scales with the thread count, records
+whether it mixed, and every run carries the order parameters of the
+phases in which the uniform magnetization vanishes. Additive throughout —
+no API or file-format break.
+
 ### Added
 
 - Staggered magnetizations as a built-in observable. Every run records
