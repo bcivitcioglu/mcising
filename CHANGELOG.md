@@ -7,8 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Replica-exchange diagnostics for parallel tempering. Every run in
+  `ExecutionMode.PARALLEL_TEMPERING` now records `results.pt_diagnostics`
+  (`PTDiagnostics`): swap attempts and acceptances per adjacent pair of
+  the ladder, the derived `swap_acceptance` rates, and the number of
+  coldest → hottest → coldest round trips each replica completed. Before
+  this the swap statistics were computed and discarded, and replica
+  identity was not tracked, so a ladder that never crossed a barrier was
+  indistinguishable from one that mixed. Saved as the HDF5 group
+  `parallel_tempering` (additive, tolerant read, no schema bump — files
+  from 1.0.0 load with `pt_diagnostics=None`), written to the JSON summary
+  and to `mcising summary --json` under the same key, and printed by
+  `results.summary()` and the CLI table.
+
 ### Changed
 
+- Parallel tempering no longer re-sums every replica's energy after every
+  swap round. `SweepResult` carries the exact integer change of the
+  neighbour-shell sums caused by the sweep (accumulated per accepted
+  Metropolis flip; from the cluster boundary for Wolff, evaluated only
+  when the ladder asks for it so single-temperature Wolff runs pay
+  nothing; Swendsen-Wang reports none and is recounted inside the
+  parallel section), and the
+  ladder derives the swap energies from those sums at constant cost. The
+  old serial `O(N)` pass per replica per round throttled the parallel
+  sweeps to a single core at `swap_interval=1`. The per-flip accounting
+  is free on the two- and three-dimensional lattices and costs the
+  one-dimensional chain a few percent of single-thread Metropolis
+  throughput. The recorded measurement
+  series is unchanged bit for bit (the golden fixtures are untouched); for
+  couplings that are not exactly representable in binary (e.g. `J2=0.3`)
+  the swap criterion now sees the shell-sum evaluation instead of a serial
+  float chain, which can differ in the last bit and therefore change a
+  swap decision — physically equivalent, but such runs are not
+  bit-reproducible against 1.0.0. The private `_core.run_parallel_tempering`
+  returns a `(results, diagnostics)` pair.
 - New visual identity: the mark is a domain wall, two ordered Ising phases
   meeting on a lattice staircase, in the two spin colours. It replaces the
   lattice-with-speed-lines logo and the "MC" favicon, which did not read at

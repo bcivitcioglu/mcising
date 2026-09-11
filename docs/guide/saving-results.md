@@ -41,6 +41,11 @@ results.h5
 │   ├── algorithm
 │   ├── git_commit       (when built from a git checkout)
 │   └── elapsed_seconds
+├── parallel_tempering/  (parallel-tempering runs only)
+│   ├── temperatures     (n_temps,) — the ladder, ascending
+│   ├── swap_attempted   (n_temps - 1,) — per adjacent pair
+│   ├── swap_accepted    (n_temps - 1,)
+│   └── round_trips      (n_temps,) — per replica
 ├── T=2.269/
 │   ├── energy           (n_samples,)
 │   ├── magnetization    (n_samples,)
@@ -101,7 +106,10 @@ Each temperature entry carries the means with their standard errors
 with jackknife errors (`specific_heat`, `susceptibility`,
 `binder_cumulant` and their `*_error` twins), `tau_int`, and
 `n_samples`. Unquotable values are omitted — never written as null or
-NaN — so the output is always strict JSON.
+NaN — so the output is always strict JSON. A parallel-tempering run adds
+a top-level `parallel_tempering` object with the swap counts per
+adjacent pair, the acceptance rates, and the round trips per replica
+(see `results.pt_diagnostics`).
 
 Good for quick inspection, logging, or feeding into other tools.
 

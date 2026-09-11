@@ -4,6 +4,7 @@ pub mod wolff;
 
 use crate::error::MCIsingError;
 use crate::lattice::Lattice;
+use crate::observables::ShellSums;
 use rand::Rng;
 
 /// Result of a single Monte Carlo sweep, with honest work accounting.
@@ -19,11 +20,22 @@ use rand::Rng;
 /// `attempted` = total sites (every site receives a keep/flip decision),
 /// `cluster_flips` = clusters whose independent p=1/2 decision came up
 /// "flip".
+///
+/// `delta` is the exact integer change of the ordered-pair shell sums and
+/// the magnetization over the sweep (see `observables::ShellSums`), so a
+/// caller that knows the sums before the sweep knows them after it in
+/// O(1) — the parallel-tempering swap criterion relies on this instead of
+/// re-summing the lattice. Metropolis tracks every shell it reads (an
+/// unread shell has zero coupling and is reported as 0); Wolff tracks the
+/// nearest-neighbour shell from the cluster boundary when asked to
+/// (`Wolff::set_track_delta`). `None` means the change was not tracked
+/// (Swendsen-Wang always, Wolff by default) and the caller must recompute.
 #[derive(Debug, Clone, Copy)]
 pub struct SweepResult {
     pub accepted: usize,
     pub attempted: usize,
     pub cluster_flips: usize,
+    pub delta: Option<ShellSums>,
 }
 
 impl SweepResult {

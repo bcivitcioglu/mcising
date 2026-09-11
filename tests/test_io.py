@@ -119,6 +119,97 @@ class TestNClusterFlips:
         assert loaded.n_cluster_flips  # non-empty
 
 
+class TestPTDiagnosticsRoundTrip:
+    """The ladder-level ``parallel_tempering`` group (additive, no bump)."""
+
+    def _pt_results(self):
+        config = _small_config(
+            mode=ExecutionMode.PARALLEL_TEMPERING, n_sweeps=40, swap_interval=2
+        )
+        return Simulation(config).run(show_progress=False)
+
+    def test_roundtrip_preserves_diagnostics(self, tmp_path: Path) -> None:
+        results = self._pt_results()
+        assert results.pt_diagnostics is not None
+        path = tmp_path / "pt.h5"
+        save_hdf5(results, path)
+        with h5py.File(path, "r") as f:
+            grp = f["parallel_tempering"]
+            assert set(grp) == {
+                "temperatures",
+                "swap_attempted",
+                "swap_accepted",
+                "round_trips",
+            }
+        loaded = load_hdf5(path)
+        assert loaded.pt_diagnostics == results.pt_diagnostics
+
+    @pytest.mark.parametrize(
+        "mode", [ExecutionMode.COOLDOWN, ExecutionMode.INDEPENDENT]
+    )
+    def test_other_modes_write_no_group(
+        self, tmp_path: Path, mode: ExecutionMode
+    ) -> None:
+        results = Simulation(_small_config(mode=mode)).run(show_progress=False)
+        path = tmp_path / "other.h5"
+        save_hdf5(results, path)
+        with h5py.File(path, "r") as f:
+            assert "parallel_tempering" not in f
+        assert load_hdf5(path).pt_diagnostics is None
+
+    def test_file_without_group_loads_none(self, tmp_path: Path) -> None:
+        # A file written before the group existed (mcising 1.0.0).
+        path = tmp_path / "pt.h5"
+        save_hdf5(self._pt_results(), path)
+        with h5py.File(path, "r+") as f:
+            del f["parallel_tempering"]
+        loaded = load_hdf5(path)
+        assert loaded.pt_diagnostics is None
+        assert len(loaded.temperatures) == 2
+
+    def test_json_summary_carries_diagnostics(self, tmp_path: Path) -> None:
+        results = self._pt_results()
+        path = tmp_path / "summary.json"
+        save_json_summary(results, path)
+        record = json.loads(path.read_text())["parallel_tempering"]
+        assert results.pt_diagnostics is not None
+        assert record["swap_attempted"] == list(results.pt_diagnostics.swap_attempted)
+        assert record["swap_accepted"] == list(results.pt_diagnostics.swap_accepted)
+        assert record["round_trips"] == list(results.pt_diagnostics.round_trips)
+        assert record["temperatures"] == [2.0, 3.0]
+        assert record["swap_acceptance"] == [
+            float(r) for r in results.pt_diagnostics.swap_acceptance
+        ]
+
+    def test_json_summary_omits_undefined_acceptance(self, tmp_path: Path) -> None:
+        # No attempts at all (a NaN rate) is omitted rather than written
+        # as null; the raw counts are always present.
+        from mcising.simulation import PTDiagnostics, SimulationResults
+
+        results = SimulationResults(
+            temperatures=[2.0, 3.0],
+            pt_diagnostics=PTDiagnostics(
+                temperatures=(2.0, 3.0),
+                swap_attempted=(0,),
+                swap_accepted=(0,),
+                round_trips=(0, 0),
+            ),
+        )
+        path = tmp_path / "summary.json"
+        save_json_summary(results, path)
+        record = json.loads(path.read_text())["parallel_tempering"]
+        assert "swap_acceptance" not in record
+        assert record["swap_attempted"] == [0]
+
+    def test_loaded_summary_is_serializable(self, tmp_path: Path) -> None:
+        h5 = tmp_path / "pt.h5"
+        save_hdf5(self._pt_results(), h5)
+        loaded = load_hdf5(h5)
+        out = tmp_path / "summary.json"
+        save_json_summary(loaded, out)
+        assert "parallel_tempering" in json.loads(out.read_text())
+
+
 class TestJSON:
     def test_save_creates_file(self, sim_results, tmp_path: Path) -> None:
         path = tmp_path / "summary.json"

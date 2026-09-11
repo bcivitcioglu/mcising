@@ -151,13 +151,42 @@ Processes the entire lattice per sweep. Uses path compression for O(N * alpha(N)
 
 ### Parallel Tempering
 
-Run N replicas at different temperatures simultaneously. After each sweep round, attempt swaps between adjacent replicas:
+Run N replicas at different temperatures simultaneously. Every
+`swap_interval` sweeps, attempt swaps between adjacent replicas
+(alternating between the even and the odd pairs of the ladder):
 
 $$
 P(\text{swap}) = \min\left(1, e^{(\beta_i - \beta_j)(E_i - E_j)}\right)
 $$
 
 High-temperature replicas explore freely and pass configurations to low-temperature replicas via swaps.
+
+The energies entering the criterion are not re-summed over the lattice
+after every round: each sweep reports the exact integer change of the
+neighbour-shell sums it caused (every accepted Metropolis flip and every
+Wolff cluster knows its own boundary), so the ladder carries every
+replica's energy forward at constant cost and the parallel sweeps are
+never followed by a serial pass. The energies *recorded* at measurement
+points are still evaluated directly from the spins.
+
+#### Diagnostics
+
+Whether a ladder actually mixed cannot be read off the averages it
+returns: replicas trapped on one side of a free-energy barrier still give
+smooth, plausible numbers. Every parallel-tempering run therefore records
+`results.pt_diagnostics`:
+
+- **Swap acceptance** per adjacent pair, `swap_accepted / swap_attempted`.
+  A pair that almost never swaps splits the ladder in two; the usual
+  target is roughly 20–50 %, reached by spacing the temperatures so that
+  the energy histograms of neighbouring rungs overlap.
+- **Round trips** per replica: the number of completed coldest → hottest
+  → coldest excursions. This is the direct evidence that configurations
+  travel the whole ladder. A run whose total is zero has not
+  demonstrably crossed its temperature range, whatever its acceptance
+  rates say.
+
+Only production rounds are counted; thermalization never swaps.
 
 ## Correlation length
 

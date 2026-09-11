@@ -74,7 +74,11 @@ recorded) at the top level and the per-temperature rows under
 `results`. (Before 0.24.0 it printed a bare array of rows.) Since
 0.25.0 every row quotes standard errors (`E_err`, `Cv_err`, `chi_err`,
 `U4_err`, ...) plus `tau_int`; values too uncertain to estimate are
-omitted from JSON and left empty in CSV, never written as NaN.
+omitted from JSON and left empty in CSV, never written as NaN. For a
+parallel-tempering file the object also carries `parallel_tempering`
+(swap attempts, acceptances and rates per adjacent pair, round trips per
+replica), and the table view prints the same numbers on one line below
+the table.
 
 Example output — every observable carries its standard error in
 compact notation (`-1.9563(32)` means -1.9563 ± 0.0032):

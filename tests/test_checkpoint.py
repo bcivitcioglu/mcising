@@ -17,6 +17,7 @@ from mcising.io import (
     checkpoint_run,
     init_checkpoint_file,
     load_completed_temperatures,
+    load_hdf5,
     save_temperature_group,
 )
 from mcising.simulation import Simulation, SimulationResults
@@ -317,6 +318,21 @@ class TestResumeParallelTempering:
         assert set(resumed.temperatures) == {3.0, 2.0, 1.0}
         for temp in (3.0, 2.0, 1.0):
             np.testing.assert_array_equal(resumed.energy[temp], first.energy[temp])
+
+    def test_checkpoint_file_carries_diagnostics(self, tmp_path: Path) -> None:
+        config = _mode_config(ExecutionMode.PARALLEL_TEMPERING)
+        path = tmp_path / "ckpt.h5"
+        first = checkpoint_run(Simulation(config), path, show_progress=False)
+        assert first.pt_diagnostics is not None
+        with h5py.File(path, "r") as f:
+            assert "parallel_tempering" in f
+        assert load_hdf5(path).pt_diagnostics == first.pt_diagnostics
+
+        # Resuming a fully complete ladder returns the stored diagnostics.
+        resumed = checkpoint_run(
+            Simulation(config), path, show_progress=False, resume=True
+        )
+        assert resumed.pt_diagnostics == first.pt_diagnostics
 
     def test_partial_ladder_raises(self, tmp_path: Path) -> None:
         config = _mode_config(ExecutionMode.PARALLEL_TEMPERING)

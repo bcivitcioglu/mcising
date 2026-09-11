@@ -58,6 +58,40 @@ results = Simulation(config).run()
 
 Best for: frustrated systems, spin glasses, any system where Metropolis gets stuck in local minima.
 
+#### Reading the exchange diagnostics
+
+A parallel-tempering run records how the ladder mixed in
+`results.pt_diagnostics`: the swap acceptance of every adjacent pair and
+the number of round trips (coldest → hottest → coldest) each replica
+completed.
+
+```python
+from mcising import Simulation, SimulationConfig, LatticeConfig, ExecutionMode
+
+config = SimulationConfig(
+    lattice=LatticeConfig(size=8),
+    temperatures=(2.0, 2.2, 2.4, 2.6),
+    n_sweeps=100,
+    measurement_interval=10,
+    mode=ExecutionMode.PARALLEL_TEMPERING,
+)
+results = Simulation(config).run(show_progress=False)
+
+diag = results.pt_diagnostics
+print(diag.temperatures)        # the ladder, ascending
+print(diag.swap_acceptance)     # one rate per adjacent pair
+print(diag.round_trips)         # one count per replica
+print(diag.total_round_trips)
+```
+
+Aim for acceptance rates of roughly 20–50 % on every pair; a pair that
+almost never swaps cuts the ladder in two, and the fix is a denser
+temperature grid there. A total round-trip count of zero means no
+configuration travelled the whole ladder, so the low-temperature averages
+cannot be certified as equilibrated, however smooth they look. The
+counters are saved with the results (HDF5 group `parallel_tempering`,
+JSON key of the same name) and printed by `mcising summary`.
+
 ## When to use which
 
 | Mode | Parallelism | Sampling quality | Use case |

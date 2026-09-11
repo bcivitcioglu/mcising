@@ -12,7 +12,7 @@ use crate::autocorrelation;
 use crate::error::MCIsingError;
 use crate::lattice::{with_lattice, Lattice, LatticeKind};
 use crate::measurement::TempResult;
-use crate::observables;
+use crate::observables::{self, ShellSums};
 use crate::rng::create_rng;
 
 /// Core Ising model simulation engine.
@@ -223,18 +223,39 @@ impl IsingSimulation {
         })
     }
 
+    /// Ask the algorithm to report the exact shell-sum change of every
+    /// sweep in `SweepResult::delta` (see `Wolff::set_track_delta`).
+    /// Metropolis always reports it and Swendsen-Wang never does, so only
+    /// Wolff is affected; the sampling is unchanged either way.
+    pub(crate) fn set_track_shell_deltas(&mut self, on: bool) {
+        if let AlgorithmState::Wolff(wolff) = &mut self.algorithm {
+            wolff.set_track_delta(on);
+        }
+    }
+
     /// Perform sweeps (pure Rust, no PyO3). Used by parallel runner.
+    ///
+    /// The returned `delta` is the sum over all sweeps, or `None` as soon
+    /// as any sweep did not track it.
     pub fn sweep_internal(&mut self, n_sweeps: usize, beta: f64) -> SweepResult {
         let mut total = SweepResult {
             accepted: 0,
             attempted: 0,
             cluster_flips: 0,
+            delta: Some(ShellSums::default()),
         };
         for _ in 0..n_sweeps {
             let r = self.dispatch_sweep(beta);
             total.accepted += r.accepted;
             total.attempted += r.attempted;
             total.cluster_flips += r.cluster_flips;
+            total.delta = match (total.delta, r.delta) {
+                (Some(mut acc), Some(d)) => {
+                    acc += d;
+                    Some(acc)
+                }
+                _ => None,
+            };
         }
         total
     }
@@ -622,6 +643,31 @@ mod tests {
     fn square_sim(algorithm: &str) -> IsingSimulation {
         IsingSimulation::new_internal(4, 1.0, 0.0, 0.0, 0.0, 42, algorithm, "square")
             .expect("valid constructor arguments")
+    }
+
+    #[test]
+    fn test_sweep_internal_delta_tracking_per_algorithm() {
+        // Metropolis always reports the delta, Swendsen-Wang never does,
+        // Wolff only when asked; the sum over sweeps is `None` as soon as
+        // one sweep did not track it.
+        for (algorithm, default, tracked) in [
+            ("metropolis", true, true),
+            ("wolff", false, true),
+            ("swendsen_wang", false, false),
+        ] {
+            let mut sim = square_sim(algorithm);
+            assert_eq!(
+                sim.sweep_internal(3, 0.5).delta.is_some(),
+                default,
+                "{algorithm}"
+            );
+            sim.set_track_shell_deltas(true);
+            assert_eq!(
+                sim.sweep_internal(3, 0.5).delta.is_some(),
+                tracked,
+                "{algorithm}"
+            );
+        }
     }
 
     #[test]

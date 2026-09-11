@@ -385,3 +385,97 @@ class TestPTCorrelationInterval:
                 sparse.correlation_length[temp], dense.correlation_length[temp][4::5]
             )
             assert np.array_equal(sparse.energy[temp], dense.energy[temp])
+
+
+class TestPTDiagnostics:
+    """Replica-exchange statistics are recorded and exposed (M2)."""
+
+    def test_present_for_pt_only(self) -> None:
+        pt = Simulation(_small_pt_config()).run(show_progress=False)
+        assert pt.pt_diagnostics is not None
+        for mode in (ExecutionMode.COOLDOWN, ExecutionMode.INDEPENDENT):
+            other = Simulation(_small_pt_config(mode=mode)).run(show_progress=False)
+            assert other.pt_diagnostics is None
+
+    def test_shapes_counts_and_bounds(self) -> None:
+        # 100 sweeps at swap_interval 1 → 100 rounds; with 4 rungs the even
+        # rounds try pairs (0,1) and (2,3), the odd rounds pair (1,2).
+        config = _small_pt_config(temperatures=(3.0, 2.5, 2.0, 1.5), swap_interval=1)
+        diag = Simulation(config).run(show_progress=False).pt_diagnostics
+        assert diag is not None
+        assert diag.temperatures == (1.5, 2.0, 2.5, 3.0)
+        assert diag.swap_attempted == (50, 50, 50)
+        assert len(diag.swap_accepted) == 3
+        assert len(diag.round_trips) == 4
+        assert all(a <= n for a, n in zip(diag.swap_accepted, diag.swap_attempted))
+        rates = diag.swap_acceptance
+        assert rates.shape == (3,)
+        assert np.all((rates >= 0.0) & (rates <= 1.0))
+        assert diag.total_round_trips == sum(diag.round_trips)
+
+    def test_swap_interval_sets_attempt_count(self) -> None:
+        config = _small_pt_config(swap_interval=5)  # 100 sweeps → 20 rounds
+        diag = Simulation(config).run(show_progress=False).pt_diagnostics
+        assert diag is not None
+        assert diag.swap_attempted == (10,)
+
+    def test_equal_temperatures_always_swap(self) -> None:
+        # delta = 0 for identical betas and the criterion accepts delta >= 0.
+        config = _small_pt_config(temperatures=(2.5, 2.5), swap_interval=1)
+        diag = Simulation(config).run(show_progress=False).pt_diagnostics
+        assert diag is not None
+        assert diag.swap_accepted == diag.swap_attempted == (50,)
+        np.testing.assert_array_equal(diag.swap_acceptance, [1.0])
+
+    def test_far_apart_temperatures_rarely_swap(self) -> None:
+        # T=0.5 sits in the ground state, T=50 is fully disordered on 8×8:
+        # exchanging them costs ~2·N·(β_cold − β_hot) ≫ 1 in the exponent.
+        config = _small_pt_config(
+            lattice=LatticeConfig(size=8), temperatures=(0.5, 50.0), swap_interval=1
+        )
+        diag = Simulation(config).run(show_progress=False).pt_diagnostics
+        assert diag is not None
+        assert diag.swap_attempted == (50,)
+        assert diag.swap_acceptance[0] < 0.2
+        assert diag.round_trips == (0, 0)
+
+    def test_single_temperature_has_no_pairs(self) -> None:
+        config = _small_pt_config(temperatures=(2.5,))
+        diag = Simulation(config).run(show_progress=False).pt_diagnostics
+        assert diag is not None
+        assert diag.swap_attempted == ()
+        assert diag.swap_accepted == ()
+        assert diag.swap_acceptance.shape == (0,)
+        assert diag.round_trips == (0,)
+
+    def test_dense_ladder_completes_round_trips(self) -> None:
+        config = _small_pt_config(
+            lattice=LatticeConfig(size=8),
+            temperatures=(2.2, 2.3, 2.4, 2.5),
+            n_sweeps=2000,
+            measurement_interval=10,
+            swap_interval=1,
+        )
+        diag = Simulation(config).run(show_progress=False).pt_diagnostics
+        assert diag is not None
+        assert diag.total_round_trips > 0, diag
+
+    def test_same_seed_same_diagnostics(self) -> None:
+        a = Simulation(_small_pt_config()).run(show_progress=False).pt_diagnostics
+        b = Simulation(_small_pt_config()).run(show_progress=False).pt_diagnostics
+        assert a == b
+
+    def test_core_returns_results_and_diagnostics(self) -> None:
+        raw, diag = run_parallel_tempering(
+            *_PT_CORE_ARGS, [3.0, 2.0], 10, 50, 10, swap_interval=5
+        )
+        assert [entry["temperature"] for entry in raw] == [2.0, 3.0]
+        assert set(diag) == {
+            "temperatures",
+            "swap_attempted",
+            "swap_accepted",
+            "round_trips",
+        }
+        assert diag["temperatures"] == [2.0, 3.0]
+        assert diag["swap_attempted"] == [5]  # 10 rounds, pairs on even rounds only
+        assert len(diag["round_trips"]) == 2

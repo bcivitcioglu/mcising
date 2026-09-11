@@ -38,7 +38,12 @@ from mcising.constants import (
     TC_SQUARE_2D,
     TC_TRIANGULAR_2D,
 )
-from mcising.io import checkpoint_run, save_hdf5, save_json_summary
+from mcising.io import (
+    _pt_diagnostics_summary,
+    checkpoint_run,
+    save_hdf5,
+    save_json_summary,
+)
 from mcising.simulation import Simulation
 
 __all__: Final[list[str]] = ["app"]
@@ -609,6 +614,12 @@ def _print_results_summary(results: mcising.SimulationResults) -> None:
 
     elapsed = results.metadata.get("elapsed_seconds", 0)
     console.print(table)
+    if results.pt_diagnostics is not None:
+        rates = " ".join(f"{r:.2f}" for r in results.pt_diagnostics.swap_acceptance)
+        console.print(
+            f"Replica exchange: acceptance per pair [{rates}]; "
+            f"round trips {results.pt_diagnostics.total_round_trips}"
+        )
     console.print(f"\n[dim]Completed in {float(elapsed):.2f}s[/dim]")  # type: ignore[arg-type]
 
 
@@ -693,6 +704,10 @@ def summary(
             ):
                 if key in results.metadata:
                     payload[key] = results.metadata[key]
+            if results.pt_diagnostics is not None:
+                payload["parallel_tempering"] = _pt_diagnostics_summary(
+                    results.pt_diagnostics
+                )
             # NaN is invalid strict JSON; unknown values are omitted,
             # never written as null (P07 policy).
             payload["results"] = [

@@ -1,5 +1,6 @@
 use super::{McAlgorithm, SweepResult};
 use crate::lattice::Lattice;
+use crate::observables::ShellSums;
 use rand::Rng;
 
 /// Sweep strategy, selected once at construction based on which Hamiltonian
@@ -321,6 +322,7 @@ impl Metropolis {
         let coupling_sign: i32 = if j1 < 0.0 { -1 } else { 1 };
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sum: i32 = lattice
@@ -330,11 +332,15 @@ impl Metropolis {
                 .sum();
             let half_de = coupling_sign * spin * sum;
             if half_de <= 0 {
+                delta.nn -= 4 * i64::from(spin * sum);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             } else {
                 let tidx = (half_de as usize - 1) / 2;
                 if rng.gen::<f64>() < table[tidx] {
+                    delta.nn -= 4 * i64::from(spin * sum);
+                    delta.magnetization -= 2 * i64::from(spin);
                     spins[idx] = -spins[idx];
                     accepted += 1;
                 }
@@ -344,6 +350,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -364,6 +371,7 @@ impl Metropolis {
         let coupling_sign: i32 = if j2 < 0.0 { -1 } else { 1 };
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sum: i32 = lattice
@@ -373,11 +381,15 @@ impl Metropolis {
                 .sum();
             let half_de = coupling_sign * spin * sum;
             if half_de <= 0 {
+                delta.nnn -= 4 * i64::from(spin * sum);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             } else {
                 let tidx = (half_de as usize - 1) / 2;
                 if rng.gen::<f64>() < table[tidx] {
+                    delta.nnn -= 4 * i64::from(spin * sum);
+                    delta.magnetization -= 2 * i64::from(spin);
                     spins[idx] = -spins[idx];
                     accepted += 1;
                 }
@@ -387,6 +399,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -407,6 +420,7 @@ impl Metropolis {
         let coupling_sign: i32 = if j3 < 0.0 { -1 } else { 1 };
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sum: i32 = lattice
@@ -416,11 +430,15 @@ impl Metropolis {
                 .sum();
             let half_de = coupling_sign * spin * sum;
             if half_de <= 0 {
+                delta.tnn -= 4 * i64::from(spin * sum);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             } else {
                 let tidx = (half_de as usize - 1) / 2;
                 if rng.gen::<f64>() < table[tidx] {
+                    delta.tnn -= 4 * i64::from(spin * sum);
+                    delta.magnetization -= 2 * i64::from(spin);
                     spins[idx] = -spins[idx];
                     accepted += 1;
                 }
@@ -430,6 +448,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -447,9 +466,11 @@ impl Metropolis {
         let table = &self.table_field;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for spin in spins.iter_mut().take(n) {
             let spin_idx = ((i32::from(*spin) + 1) >> 1) as usize;
             if rng.gen::<f64>() < table[spin_idx] {
+                delta.magnetization -= 2 * i64::from(*spin);
                 *spin = -*spin;
                 accepted += 1;
             }
@@ -458,6 +479,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -478,6 +500,7 @@ impl Metropolis {
         let zp1 = z + 1;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sum: i32 = lattice
@@ -488,6 +511,8 @@ impl Metropolis {
             let spin_idx = ((spin + 1) >> 1) as usize;
             let sum_idx = i32::midpoint(sum, z as i32) as usize;
             if rng.gen::<f64>() < table[spin_idx * zp1 + sum_idx] {
+                delta.nn -= 4 * i64::from(spin * sum);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
@@ -496,6 +521,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -516,6 +542,7 @@ impl Metropolis {
         let zp1 = z + 1;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sum: i32 = lattice
@@ -526,6 +553,8 @@ impl Metropolis {
             let spin_idx = ((spin + 1) >> 1) as usize;
             let sum_idx = i32::midpoint(sum, z as i32) as usize;
             if rng.gen::<f64>() < table[spin_idx * zp1 + sum_idx] {
+                delta.nnn -= 4 * i64::from(spin * sum);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
@@ -534,6 +563,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -554,6 +584,7 @@ impl Metropolis {
         let zp1 = z + 1;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sum: i32 = lattice
@@ -564,6 +595,8 @@ impl Metropolis {
             let spin_idx = ((spin + 1) >> 1) as usize;
             let sum_idx = i32::midpoint(sum, z as i32) as usize;
             if rng.gen::<f64>() < table[spin_idx * zp1 + sum_idx] {
+                delta.tnn -= 4 * i64::from(spin * sum);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
@@ -572,6 +605,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -593,6 +627,7 @@ impl Metropolis {
         let max_idx = (za + 1) * zbp1 - 1;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sa: i32 = lattice
@@ -610,6 +645,9 @@ impl Metropolis {
             let base = ai * zbp1 + bi;
             let tidx = if spin > 0 { base } else { max_idx - base };
             if rng.gen::<f64>() < table[tidx] {
+                delta.nn -= 4 * i64::from(spin * sa);
+                delta.nnn -= 4 * i64::from(spin * sb);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
@@ -618,6 +656,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -639,6 +678,7 @@ impl Metropolis {
         let max_idx = (za + 1) * zbp1 - 1;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sa: i32 = lattice
@@ -656,6 +696,9 @@ impl Metropolis {
             let base = ai * zbp1 + bi;
             let tidx = if spin > 0 { base } else { max_idx - base };
             if rng.gen::<f64>() < table[tidx] {
+                delta.nn -= 4 * i64::from(spin * sa);
+                delta.tnn -= 4 * i64::from(spin * sb);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
@@ -664,6 +707,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -685,6 +729,7 @@ impl Metropolis {
         let max_idx = (za + 1) * zbp1 - 1;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sa: i32 = lattice
@@ -702,6 +747,9 @@ impl Metropolis {
             let base = ai * zbp1 + bi;
             let tidx = if spin > 0 { base } else { max_idx - base };
             if rng.gen::<f64>() < table[tidx] {
+                delta.nnn -= 4 * i64::from(spin * sa);
+                delta.tnn -= 4 * i64::from(spin * sb);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
@@ -710,6 +758,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -732,6 +781,7 @@ impl Metropolis {
         let block = (za + 1) * zbp1;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sa: i32 = lattice
@@ -748,6 +798,9 @@ impl Metropolis {
             let ai = i32::midpoint(sa, za as i32) as usize;
             let bi = i32::midpoint(sb, zb as i32) as usize;
             if rng.gen::<f64>() < table[si * block + ai * zbp1 + bi] {
+                delta.nn -= 4 * i64::from(spin * sa);
+                delta.nnn -= 4 * i64::from(spin * sb);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
@@ -756,6 +809,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -778,6 +832,7 @@ impl Metropolis {
         let block = (za + 1) * zbp1;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sa: i32 = lattice
@@ -794,6 +849,9 @@ impl Metropolis {
             let ai = i32::midpoint(sa, za as i32) as usize;
             let bi = i32::midpoint(sb, zb as i32) as usize;
             if rng.gen::<f64>() < table[si * block + ai * zbp1 + bi] {
+                delta.nn -= 4 * i64::from(spin * sa);
+                delta.tnn -= 4 * i64::from(spin * sb);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
@@ -802,6 +860,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -824,6 +883,7 @@ impl Metropolis {
         let block = (za + 1) * zbp1;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sa: i32 = lattice
@@ -840,6 +900,9 @@ impl Metropolis {
             let ai = i32::midpoint(sa, za as i32) as usize;
             let bi = i32::midpoint(sb, zb as i32) as usize;
             if rng.gen::<f64>() < table[si * block + ai * zbp1 + bi] {
+                delta.nnn -= 4 * i64::from(spin * sa);
+                delta.tnn -= 4 * i64::from(spin * sb);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
@@ -848,6 +911,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -869,6 +933,7 @@ impl Metropolis {
         let max_idx = zap1 * zbp1 * zcp1 - 1;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sa: i32 = lattice
@@ -892,6 +957,10 @@ impl Metropolis {
             let base = ai * zbp1 * zcp1 + bi * zcp1 + ci;
             let tidx = if spin > 0 { base } else { max_idx - base };
             if rng.gen::<f64>() < table[tidx] {
+                delta.nn -= 4 * i64::from(spin * sa);
+                delta.nnn -= 4 * i64::from(spin * sb);
+                delta.tnn -= 4 * i64::from(spin * sc);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
@@ -900,6 +969,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 
@@ -922,6 +992,7 @@ impl Metropolis {
         let block = zap1 * zbp1 * zcp1;
         let n = lattice.num_sites();
         let mut accepted = 0;
+        let mut delta = ShellSums::default();
         for idx in 0..n {
             let spin = i32::from(spins[idx]);
             let sa: i32 = lattice
@@ -944,6 +1015,10 @@ impl Metropolis {
             let bi = i32::midpoint(sb, self.z_nnn as i32) as usize;
             let ci = i32::midpoint(sc, self.z_tnn as i32) as usize;
             if rng.gen::<f64>() < table[si * block + ai * zbp1 * zcp1 + bi * zcp1 + ci] {
+                delta.nn -= 4 * i64::from(spin * sa);
+                delta.nnn -= 4 * i64::from(spin * sb);
+                delta.tnn -= 4 * i64::from(spin * sc);
+                delta.magnetization -= 2 * i64::from(spin);
                 spins[idx] = -spins[idx];
                 accepted += 1;
             }
@@ -952,6 +1027,7 @@ impl Metropolis {
             accepted,
             attempted: n,
             cluster_flips: 0,
+            delta: Some(delta),
         }
     }
 }
@@ -1342,6 +1418,98 @@ mod tests {
             rate < 0.35,
             "AFM acceptance at β=2 should be far below 1, got {rate}"
         );
+    }
+
+    // ── Shell-sum delta tracking (every strategy, every lattice) ─────
+
+    /// Ten sweeps at β=0.5 from random spins: the accumulated
+    /// `SweepResult::delta` must reproduce the change in the ordered-pair
+    /// shell sums exactly, for every shell whose coupling is nonzero
+    /// (unread shells are reported as zero and ignored by the energy), and
+    /// for the magnetization always.
+    fn assert_delta_tracks_shell_sums<L: Lattice>(
+        lattice: &L,
+        j1: f64,
+        j2: f64,
+        j3: f64,
+        h: f64,
+        z_nn: usize,
+        z_nnn: usize,
+        z_tnn: usize,
+    ) {
+        use crate::observables::shell_sums;
+        let mut rng = create_rng(7);
+        let mut spins: Vec<i8> = (0..lattice.num_sites())
+            .map(|_| if rng.gen::<bool>() { 1 } else { -1 })
+            .collect();
+        let before = shell_sums(&spins, lattice, true, true, true);
+        let mut metro = Metropolis::new(j1, j2, j3, h, z_nn, z_nnn, z_tnn);
+        let mut delta = ShellSums::default();
+        for _ in 0..10 {
+            let r = metro.sweep(&mut spins, lattice, j1, j2, j3, h, 0.5, &mut rng);
+            delta += r.delta.expect("Metropolis always tracks its deltas");
+        }
+        let after = shell_sums(&spins, lattice, true, true, true);
+        let label = format!("J=({j1},{j2},{j3},{h})");
+        if j1 != 0.0 {
+            assert_eq!(after.nn, before.nn + delta.nn, "{label}: nn");
+        }
+        if j2 != 0.0 {
+            assert_eq!(after.nnn, before.nnn + delta.nnn, "{label}: nnn");
+        }
+        if j3 != 0.0 {
+            assert_eq!(after.tnn, before.tnn + delta.tnn, "{label}: tnn");
+        }
+        assert_eq!(
+            after.magnetization,
+            before.magnetization + delta.magnetization,
+            "{label}: magnetization"
+        );
+    }
+
+    #[test]
+    fn test_deltas_track_shell_sums_for_every_strategy() {
+        let lattice = SquareLattice::new(6).unwrap();
+        let sets = [
+            (1.0, 0.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0, 0.0),
+            (0.0, 0.0, 1.0, 0.0),
+            (0.0, 0.0, 0.0, 0.5),
+            (1.0, 0.0, 0.0, 0.5),
+            (0.0, 1.0, 0.0, 0.5),
+            (0.0, 0.0, 1.0, 0.5),
+            (1.0, 0.5, 0.0, 0.0),
+            (1.0, 0.0, 0.5, 0.0),
+            (0.0, 1.0, 0.5, 0.0),
+            (1.0, 0.5, 0.0, 0.3),
+            (1.0, 0.0, 0.5, 0.3),
+            (0.0, 1.0, 0.5, 0.3),
+            (1.0, 0.5, 0.25, 0.0),
+            (1.0, 0.5, 0.25, 0.3),
+            (-1.0, 0.0, 0.0, 0.0),
+            (0.0, -1.0, 0.0, 0.0),
+            (0.0, 0.0, -1.0, 0.0),
+            (1.0, -0.3, 0.0, 0.1),
+        ];
+        for (j1, j2, j3, h) in sets {
+            assert_delta_tracks_shell_sums(&lattice, j1, j2, j3, h, 4, 4, 4);
+        }
+    }
+
+    #[test]
+    fn test_deltas_track_shell_sums_across_lattices() {
+        use crate::lattice::chain::ChainLattice;
+        use crate::lattice::cubic::CubicLattice;
+        use crate::lattice::honeycomb::HoneycombLattice;
+        use crate::lattice::triangular::TriangularLattice;
+        let tri = TriangularLattice::new(8).unwrap();
+        assert_delta_tracks_shell_sums(&tri, 1.0, -0.5, 0.0, 0.0, 6, 6, 6);
+        let chain = ChainLattice::new(50).unwrap();
+        assert_delta_tracks_shell_sums(&chain, 1.0, 0.5, 0.0, 0.2, 2, 2, 2);
+        let honey = HoneycombLattice::new(8).unwrap();
+        assert_delta_tracks_shell_sums(&honey, 1.0, 0.0, 0.5, 0.0, 3, 6, 3);
+        let cubic = CubicLattice::new(4).unwrap();
+        assert_delta_tracks_shell_sums(&cubic, 1.0, 0.5, 0.25, 0.1, 6, 12, 8);
     }
 
     // ── Single- vs multi-coupling path agreement ──────────────────────

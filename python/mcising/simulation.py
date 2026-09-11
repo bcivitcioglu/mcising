@@ -37,6 +37,7 @@ __all__: Final[list[str]] = [
     "Simulation",
     "SimulationResults",
     "AdaptiveDiagnostics",
+    "PTDiagnostics",
 ]
 
 
@@ -133,6 +134,60 @@ class AdaptiveDiagnostics:
     stationary_sweeps: int = 0
 
 
+@dataclass(frozen=True)
+class PTDiagnostics:
+    """Replica-exchange diagnostics of a parallel-tempering run.
+
+    Whether a temperature ladder actually mixed cannot be read off the
+    averages it returns: a ladder that never crosses a free-energy barrier
+    still produces smooth, plausible-looking numbers. These counters are
+    the evidence. Only production rounds are counted; thermalization never
+    swaps.
+
+    Attributes
+    ----------
+    temperatures : tuple[float, ...]
+        The ladder in ascending order; rung ``i`` is ``temperatures[i]``.
+    swap_attempted : tuple[int, ...]
+        Exchange attempts between rungs ``i`` and ``i + 1`` (one entry per
+        adjacent pair, ``len(temperatures) - 1`` in total).
+    swap_accepted : tuple[int, ...]
+        Accepted exchanges per adjacent pair.
+    round_trips : tuple[int, ...]
+        Completed coldest → hottest → coldest excursions of the replica
+        that started on each rung. A ladder whose total is zero has not
+        demonstrably mixed across its full temperature range.
+    """
+
+    temperatures: tuple[float, ...]
+    swap_attempted: tuple[int, ...]
+    swap_accepted: tuple[int, ...]
+    round_trips: tuple[int, ...]
+
+    @property
+    def swap_acceptance(self) -> NDArray[np.float64]:
+        """Acceptance rate per adjacent pair (NaN where nothing was attempted)."""
+        attempted = np.asarray(self.swap_attempted, dtype=np.float64)
+        accepted = np.asarray(self.swap_accepted, dtype=np.float64)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(attempted > 0, accepted / attempted, np.nan)
+
+    @property
+    def total_round_trips(self) -> int:
+        """Round trips summed over every replica."""
+        return int(sum(self.round_trips))
+
+    @classmethod
+    def _from_raw(cls, raw: dict[str, Any]) -> PTDiagnostics:
+        """Build from the dict the Rust runner returns."""
+        return cls(
+            temperatures=tuple(float(t) for t in raw["temperatures"]),
+            swap_attempted=tuple(int(x) for x in raw["swap_attempted"]),
+            swap_accepted=tuple(int(x) for x in raw["swap_accepted"]),
+            round_trips=tuple(int(x) for x in raw["round_trips"]),
+        )
+
+
 def _analyze_thermalization(
     series: NDArray[np.float64], config: AdaptiveConfig
 ) -> dict[str, Any]:
@@ -173,6 +228,13 @@ class SimulationResults:
         (thermalization excluded). 0 for Metropolis; for Wolff this is
         the number of cluster updates (one per sweep), the honest work
         record behind the ``n_sweeps`` accounting.
+    adaptive_diagnostics : dict[float, AdaptiveDiagnostics] | None
+        Per-temperature thermalization diagnostics of an adaptive cool-down
+        run, or None for every other run.
+    pt_diagnostics : PTDiagnostics | None
+        Replica-exchange statistics (swap acceptance per adjacent pair,
+        round trips per replica) of a parallel-tempering run, or None for
+        every other mode.
     metadata : dict[str, object]
         Provenance and timing: the ``SimulationConfig`` object under
         ``"config"``, plus ``version``, ``schema_version``, ``seed``,
@@ -191,6 +253,7 @@ class SimulationResults:
     correlation_length: dict[float, NDArray[np.float64]] | None = None
     n_cluster_flips: dict[float, int] = field(default_factory=dict)
     adaptive_diagnostics: dict[float, AdaptiveDiagnostics] | None = None
+    pt_diagnostics: PTDiagnostics | None = None
     metadata: dict[str, object] = field(default_factory=dict)
     _statistics_cache: dict[float, ObservableStatistics] = field(
         default_factory=dict, repr=False, compare=False
@@ -371,7 +434,14 @@ class SimulationResults:
                 str(stats.n_samples),
             )
 
-        Console().print(table)
+        console = Console()
+        console.print(table)
+        if self.pt_diagnostics is not None:
+            rates = " ".join(f"{r:.2f}" for r in self.pt_diagnostics.swap_acceptance)
+            console.print(
+                f"Replica exchange: acceptance per pair [{rates}]; "
+                f"round trips {self.pt_diagnostics.total_round_trips}"
+            )
 
     def to_dataframe(self) -> object:
         """Convert results to a pandas DataFrame.
@@ -736,7 +806,7 @@ class Simulation:
                 total=None,
             )
 
-            raw = _run_pt(
+            raw, raw_diagnostics = _run_pt(
                 lattice_size=self.config.lattice.size,
                 j1=self.config.lattice.j1,
                 j2=self.config.lattice.j2,
@@ -756,6 +826,7 @@ class Simulation:
             )
 
         _fill_results_from_raw(raw, results)
+        results.pt_diagnostics = PTDiagnostics._from_raw(raw_diagnostics)
 
         if on_temperature_complete is not None:
             for temp in sorted(temps):
