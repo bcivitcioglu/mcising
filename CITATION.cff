@@ -8,11 +8,14 @@ authors:
     orcid: "https://orcid.org/0000-0001-8433-657X"
     affiliation: "aivancity School of AI & Data for Business & Society"
     email: "bcivitcioglu@gmail.com"
-doi: 10.5281/zenodo.22650286
+doi: 10.5281/zenodo.22713625
 identifiers:
   - type: doi
     value: 10.5281/zenodo.22650285
     description: "Concept DOI: resolves to the latest archived version"
+  - type: doi
+    value: 10.5281/zenodo.22713625
+    description: "Version DOI for 1.1.0"
   - type: doi
     value: 10.5281/zenodo.22650286
     description: "Version DOI for 1.0.0"

@@ -145,14 +145,14 @@ Full CLI reference: **[CLI Guide](guide/cli.md)**
 
 ## Citing
 
-If mcising contributes to published work, please cite it. The repository's [`CITATION.cff`](https://github.com/bcivitcioglu/mcising/blob/master/CITATION.cff) carries the current version and is what GitHub's "Cite this repository" button renders. Every release is archived on Zenodo: the concept DOI [10.5281/zenodo.22650285](https://doi.org/10.5281/zenodo.22650285) always resolves to the latest version, and each version has its own DOI (1.0.0: [10.5281/zenodo.22650286](https://doi.org/10.5281/zenodo.22650286)). Cite the version you used.
+If mcising contributes to published work, please cite it. The repository's [`CITATION.cff`](https://github.com/bcivitcioglu/mcising/blob/master/CITATION.cff) carries the current version and is what GitHub's "Cite this repository" button renders. Every release is archived on Zenodo: the concept DOI [10.5281/zenodo.22650285](https://doi.org/10.5281/zenodo.22650285) always resolves to the latest version, and each version has its own DOI (1.1.0: [10.5281/zenodo.22713625](https://doi.org/10.5281/zenodo.22713625); 1.0.0: [10.5281/zenodo.22650286](https://doi.org/10.5281/zenodo.22650286)). Cite the version you used.
 
 ```bibtex
 @software{mcising,
   author  = {{\c{C}}ivitcio{\u{g}}lu, Burak},
   title   = {mcising: high-performance {Ising} model {Monte Carlo} simulation with a {Rust} core},
-  version = {1.0.0},
-  doi     = {10.5281/zenodo.22650286},
+  version = {1.1.0},
+  doi     = {10.5281/zenodo.22713625},
   url     = {https://github.com/bcivitcioglu/mcising},
   license = {MIT},
   note    = {Replace version and doi with those of the release you used},
