@@ -17,6 +17,12 @@ from mcising.cli import app  # isort: skip
 
 runner = CliRunner()
 
+#: Typer renders usage errors through rich, which colours the offending option
+#: name. On a CI runner that styling splits a flag into several escape
+#: sequences, so a test that looks for the flag in the output must ask for
+#: plain text first.
+PLAIN_ENV = {"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"}
+
 
 class TestRunOptionValidation:
     """P11: enum-typed options give exit-2 usage errors, not tracebacks."""
@@ -306,7 +312,9 @@ class TestWangLandauCommand:
 
     def test_bad_energy_window_exits_2(self) -> None:
         for value in ("1.0", "a:b", "0.5:-0.5"):
-            result = runner.invoke(app, ["wang-landau", "--energy-window", value])
+            result = runner.invoke(
+                app, ["wang-landau", "--energy-window", value], env=PLAIN_ENV
+            )
             assert result.exit_code == 2, value
             assert "energy-window" in result.output
 
