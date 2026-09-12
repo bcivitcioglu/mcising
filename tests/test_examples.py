@@ -49,6 +49,7 @@ def _assert_figure_written(
 def test_examples_are_present() -> None:
     names = {p.name for p in EXAMPLES}
     assert {
+        "cubic_first_order.py",
         "onsager_reproduction.py",
         "stripe_phase_diagram.py",
         "tc_binder_crossing.py",

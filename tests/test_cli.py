@@ -310,6 +310,34 @@ class TestWangLandauCommand:
         assert result.exit_code == 0, result.output
         assert "Tip: use -o" in result.output
 
+    def test_parallel_stage_options(self, tmp_path: Path) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "wang-landau",
+                "-L",
+                "4",
+                "--windows",
+                "2",
+                "--walkers-per-window",
+                "2",
+                "--exchange-interval",
+                "50",
+                "--check-interval",
+                "100",
+                "--log-f-final",
+                "1e-2",
+                "--production-sweeps",
+                "50",
+                "--json",
+                str(tmp_path / "rewl.json"),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "Parallel stage" in result.output
+        data = json.loads((tmp_path / "rewl.json").read_text())
+        assert data["wang_landau"]["n_windows"] == 2
+
     def test_bad_energy_window_exits_2(self) -> None:
         for value in ("1.0", "a:b", "0.5:-0.5"):
             result = runner.invoke(

@@ -73,6 +73,15 @@ pub(crate) struct WangLandauParams<'a> {
     pub(crate) schedule: WangLandauSchedule,
     pub(crate) drive_beta: f64,
     pub(crate) drive_max_sweeps: u64,
+    /// Overlapping energy windows of the replica-exchange stage (1 = the
+    /// serial walker).
+    pub(crate) n_windows: usize,
+    /// Walkers per window; their estimates are averaged at every check.
+    pub(crate) walkers_per_window: usize,
+    /// Fraction of a window's length shared with its neighbour.
+    pub(crate) window_overlap: f64,
+    /// Sweeps between replica-exchange attempts.
+    pub(crate) exchange_interval: u64,
     pub(crate) n_walkers: usize,
     pub(crate) production_sweeps: u64,
     pub(crate) production_thermalization: u64,
@@ -96,6 +105,15 @@ pub(crate) struct WlDiagnostics {
     pub(crate) attempted: u64,
     pub(crate) drive_in_sweeps: u64,
     pub(crate) visited_bins: usize,
+    pub(crate) n_windows: usize,
+    pub(crate) walkers_per_window: usize,
+    /// Inclusive bin range of every window.
+    pub(crate) window_bins: Vec<(usize, usize)>,
+    /// Replica-exchange attempts and acceptances per adjacent window pair.
+    pub(crate) exchange_attempted: Vec<u64>,
+    pub(crate) exchange_accepted: Vec<u64>,
+    /// Bin at which each window's estimate was joined to the previous one.
+    pub(crate) merge_bins: Vec<usize>,
 }
 
 impl WlDiagnostics {
@@ -120,6 +138,12 @@ impl WlDiagnostics {
         dict.set_item("attempted", self.attempted)?;
         dict.set_item("drive_in_sweeps", self.drive_in_sweeps)?;
         dict.set_item("visited_bins", self.visited_bins)?;
+        dict.set_item("n_windows", self.n_windows)?;
+        dict.set_item("walkers_per_window", self.walkers_per_window)?;
+        dict.set_item("window_bins", self.window_bins)?;
+        dict.set_item("exchange_attempted", self.exchange_attempted)?;
+        dict.set_item("exchange_accepted", self.exchange_accepted)?;
+        dict.set_item("merge_bins", self.merge_bins)?;
         Ok(dict)
     }
 }
@@ -274,7 +298,150 @@ fn validate(p: &WangLandauParams<'_>) -> Result<(), MCIsingError> {
     if !(p.drive_beta.is_finite() && p.drive_beta > 0.0) {
         return Err(MCIsingError::InvalidDriveBeta(p.drive_beta));
     }
+    if p.n_windows < 1 {
+        return Err(MCIsingError::InvalidInterval("n_windows", 0));
+    }
+    if p.walkers_per_window < 1 {
+        return Err(MCIsingError::InvalidInterval("walkers_per_window", 0));
+    }
+    if p.exchange_interval < 1 {
+        return Err(MCIsingError::InvalidInterval("exchange_interval", 0));
+    }
+    if !(p.window_overlap.is_finite() && (0.0..1.0).contains(&p.window_overlap)) {
+        return Err(MCIsingError::InvalidWindowOverlap(p.window_overlap));
+    }
+    let parallel = p.n_windows > 1 || p.walkers_per_window > 1;
+    if parallel
+        && !p
+            .schedule
+            .check_interval
+            .is_multiple_of(p.exchange_interval)
+    {
+        return Err(MCIsingError::IncompatibleCheckCadence(
+            p.schedule.check_interval,
+            p.exchange_interval,
+        ));
+    }
     Ok(())
+}
+
+/// What either first stage hands to production: the seed configurations,
+/// the global `ln g`, the histogram since the last reset, and the record.
+struct StageOutput {
+    seeds: Vec<WalkerState>,
+    log_g: Vec<f64>,
+    histogram: Vec<u64>,
+    diagnostics: WlDiagnostics,
+}
+
+/// The modification-factor schedule shared by the serial and the
+/// replica-exchange stage: flatness-driven halving of `ln f`, then the
+/// Belardinelli–Pereyra `1/t` law once `ln f` falls below `1/t` while the
+/// set of visited bins is stable.
+struct ScheduleState {
+    log_f: f64,
+    one_over_t: bool,
+    iteration_start: u64,
+    iteration_log_f: f64,
+    visited_at_last_check: usize,
+}
+
+/// Outcome of a flatness check.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    /// Nothing changed.
+    Continue,
+    /// The histograms were flat: `ln f` halved, histograms must be reset.
+    Flat,
+    /// The `1/t` schedule took over (no reset).
+    Switched,
+    /// `ln f` reached its final value.
+    Converged,
+}
+
+impl ScheduleState {
+    fn new(schedule: &WangLandauSchedule, visited: usize) -> Self {
+        Self {
+            log_f: schedule.log_f_initial,
+            one_over_t: false,
+            iteration_start: 0,
+            iteration_log_f: schedule.log_f_initial,
+            visited_at_last_check: visited,
+        }
+    }
+
+    /// In the `1/t` stage: refresh `ln f`; `true` once it is final.
+    fn tick(&mut self, t_inv: f64, schedule: &WangLandauSchedule) -> bool {
+        self.log_f = t_inv;
+        self.log_f < schedule.log_f_final
+    }
+
+    fn switch(&mut self, sweeps: u64, t_inv: f64, diagnostics: &mut WlDiagnostics) {
+        self.one_over_t = true;
+        diagnostics.one_over_t_switch_sweep = Some(sweeps);
+        self.log_f = t_inv;
+        self.iteration_start = sweeps;
+        self.iteration_log_f = self.log_f;
+    }
+
+    /// A flatness check at sweep `sweeps` (not in the `1/t` stage).
+    fn check(
+        &mut self,
+        sweeps: u64,
+        t_inv: f64,
+        flat: f64,
+        visited: usize,
+        schedule: &WangLandauSchedule,
+        diagnostics: &mut WlDiagnostics,
+    ) -> Verdict {
+        let visited_stable = visited == self.visited_at_last_check;
+        self.visited_at_last_check = visited;
+        if self.log_f <= t_inv && visited_stable {
+            diagnostics.close_iteration(
+                self.iteration_log_f,
+                sweeps - self.iteration_start,
+                flat,
+                visited,
+            );
+            self.switch(sweeps, t_inv, diagnostics);
+            return if self.log_f < schedule.log_f_final {
+                Verdict::Converged
+            } else {
+                Verdict::Switched
+            };
+        }
+        if flat >= schedule.flatness {
+            diagnostics.close_iteration(
+                self.iteration_log_f,
+                sweeps - self.iteration_start,
+                flat,
+                visited,
+            );
+            self.log_f *= 0.5;
+            self.iteration_start = sweeps;
+            self.iteration_log_f = self.log_f;
+            if self.log_f < schedule.log_f_final {
+                return Verdict::Converged;
+            }
+            if self.log_f <= t_inv && visited_stable {
+                self.switch(sweeps, t_inv, diagnostics);
+            }
+            return Verdict::Flat;
+        }
+        Verdict::Continue
+    }
+
+    /// Close the last record.
+    fn finish(self, sweeps: u64, flat: f64, visited: usize, diagnostics: &mut WlDiagnostics) {
+        diagnostics.close_iteration(
+            self.iteration_log_f,
+            sweeps - self.iteration_start,
+            flat,
+            visited,
+        );
+        diagnostics.total_sweeps = sweeps;
+        diagnostics.final_log_f = self.log_f;
+    }
 }
 
 /// The runner (pure Rust; the `#[pyfunction]` wrapper releases the GIL
@@ -348,38 +515,472 @@ fn run_with_lattice<L: Lattice>(
         use_nnn: active[1],
         use_tnn: active[2],
     };
-    let mut state = WalkerState::new(spins, rng, lattice, &binning, active);
-    let drive_in_sweeps = drive_in(&mut state, &ctx, lattice, p)?;
-    let mut estimate = match p.initial_log_g {
-        Some(initial) => WlEstimate::from_initial(window, initial, state.bin),
-        None => WlEstimate::new(window, state.bin),
+    let parallel = p.n_windows > 1 || p.walkers_per_window > 1;
+    let stage = if parallel {
+        run_parallel_stage(spins, rng, lattice, &binning, &ctx, window, active, p)?
+    } else {
+        let mut state = WalkerState::new(spins, rng, lattice, &binning, active);
+        let drive_in_sweeps = drive_in(&mut state, &ctx, lattice, p)?;
+        let mut estimate = match p.initial_log_g {
+            Some(initial) => WlEstimate::from_initial(window, initial, state.bin),
+            None => WlEstimate::new(window, state.bin),
+        };
+        let mut wl = run_wang_landau_stage(&mut state, &mut estimate, &ctx, lattice, &p.schedule);
+        wl.drive_in_sweeps = drive_in_sweeps;
+        wl.accepted = state.accepted;
+        wl.attempted = state.attempted;
+        wl.visited_bins = estimate.n_visited();
+        wl.n_windows = 1;
+        wl.walkers_per_window = 1;
+        wl.window_bins = vec![(window.lo, window.hi)];
+        let (log_g, wl_histogram) = estimate.into_global(binning.n_bins);
+        StageOutput {
+            seeds: vec![state],
+            log_g,
+            histogram: wl_histogram,
+            diagnostics: wl,
+        }
     };
-    let mut wl = run_wang_landau_stage(&mut state, &mut estimate, &ctx, lattice, &p.schedule);
-    wl.drive_in_sweeps = drive_in_sweeps;
-    wl.accepted = state.accepted;
-    wl.attempted = state.attempted;
-    wl.visited_bins = estimate.n_visited();
 
     let shape = lattice.shape().to_vec();
+    let frozen = &stage.log_g[window.lo..=window.hi];
     let (production, production_histogram, production_diagnostics) =
-        run_production(&state, &estimate, &ctx, lattice, p, &shape);
+        run_production(&stage.seeds, frozen, &ctx, lattice, p, &shape);
     // Infallible in practice: a fixed 4×u64 generator state (see
     // `IsingSimulation::get_rng_state`).
-    let final_rng_state =
-        serde_json::to_vec(&state.rng).expect("Xoshiro256StarStar serialization should not fail");
-    let (log_g, wl_histogram) = estimate.into_global(binning.n_bins);
+    let final_rng_state = serde_json::to_vec(&stage.seeds[0].rng)
+        .expect("Xoshiro256StarStar serialization should not fail");
+    let final_spins = stage
+        .seeds
+        .into_iter()
+        .next()
+        .map(|s| s.spins)
+        .unwrap_or_default();
     Ok(WangLandauResult {
         binning,
         window,
         energy_window: p.energy_window,
-        log_g,
-        wl_histogram,
+        log_g: stage.log_g,
+        wl_histogram: stage.histogram,
         production_histogram,
-        wl,
-        final_spins: state.spins,
+        wl: stage.diagnostics,
+        final_spins,
         final_rng_state,
         production,
         production_diagnostics,
+    })
+}
+
+/// Seed offset of the Wang-Landau walkers of the parallel stage (walker `i`
+/// draws from `base_seed + 1 + i`; production walkers start at
+/// `PRODUCTION_SEED_OFFSET`, the exchange generator uses `EXCHANGE_SEED_OFFSET`).
+const WL_WALKER_SEED_OFFSET: u64 = 1;
+const EXCHANGE_SEED_OFFSET: u64 = 2000;
+
+/// Overlapping windows of equal length covering `window`: consecutive
+/// windows start `(1 - overlap)` window lengths apart and the last one
+/// ends at the top of the range.
+///
+/// # Errors
+///
+/// `InvalidWindowSplit` when a window would hold fewer than two bins or
+/// adjacent windows would not share a bin.
+fn split_windows(
+    window: BinWindow,
+    n_windows: usize,
+    overlap: f64,
+) -> Result<Vec<BinWindow>, MCIsingError> {
+    if n_windows <= 1 {
+        return Ok(vec![window]);
+    }
+    let span = window.len() as f64;
+    let width = span / (1.0 + (n_windows as f64 - 1.0) * (1.0 - overlap));
+    let step = width * (1.0 - overlap);
+    let mut windows = Vec::with_capacity(n_windows);
+    for index in 0..n_windows {
+        let lo = (window.lo as f64 + index as f64 * step).round() as usize;
+        let hi = if index == n_windows - 1 {
+            window.hi
+        } else {
+            ((lo as f64 + width - 1.0).round() as usize).min(window.hi)
+        };
+        if hi < lo + 1 {
+            return Err(MCIsingError::InvalidWindowSplit(format!(
+                "{n_windows} windows over {} bins leave window {index} with fewer \
+                 than two bins; use fewer windows or a wider energy range",
+                window.len()
+            )));
+        }
+        windows.push(BinWindow { lo, hi });
+    }
+    for pair in windows.windows(2) {
+        if pair[1].lo > pair[0].hi {
+            return Err(MCIsingError::InvalidWindowSplit(format!(
+                "windows {:?} and {:?} do not overlap; raise window_overlap",
+                (pair[0].lo, pair[0].hi),
+                (pair[1].lo, pair[1].hi)
+            )));
+        }
+    }
+    Ok(windows)
+}
+
+/// One walker of the replica-exchange stage.
+struct RewlWalker {
+    state: WalkerState,
+    estimate: WlEstimate,
+    window: usize,
+}
+
+/// Join the per-window estimates into one global `ln g`: each window is
+/// shifted onto the previous one at the overlap bin where their slopes
+/// `d ln g / dE` agree best, and takes over from that bin on (Vogel, Li,
+/// Wüst & Landau, PRL 110, 210603 (2013)).
+fn merge_windows(pieces: &[(BinWindow, Vec<f64>)], n_bins: usize) -> (Vec<f64>, Vec<usize>) {
+    let mut global = vec![f64::NAN; n_bins];
+    let mut merge_bins = Vec::new();
+    let Some((first_window, first)) = pieces.first() else {
+        return (global, merge_bins);
+    };
+    global[first_window.lo..=first_window.hi].copy_from_slice(first);
+    let mut previous_hi = first_window.hi;
+    for (window, piece) in &pieces[1..] {
+        let local = |bin: usize| piece[bin - window.lo];
+        // Candidate join bins: overlap bins where both slopes exist.
+        let mut best: Option<(f64, usize)> = None;
+        for bin in window.lo..previous_hi.min(window.hi) {
+            let slope_prev = global[bin + 1] - global[bin];
+            let slope_new = local(bin + 1) - local(bin);
+            if !(slope_prev.is_finite() && slope_new.is_finite()) {
+                continue;
+            }
+            let mismatch = (slope_prev - slope_new).abs();
+            if best.is_none_or(|(m, _)| mismatch < m) {
+                best = Some((mismatch, bin));
+            }
+        }
+        let join = best.map(|(_, bin)| bin).or_else(|| {
+            // No common slope: join at the first overlap bin both know.
+            (window.lo..=previous_hi.min(window.hi))
+                .find(|&bin| global[bin].is_finite() && local(bin).is_finite())
+        });
+        let Some(join) = join else {
+            // Nothing in common: keep the piece as is (its offset is arbitrary).
+            let range = window.lo..=window.hi;
+            for (bin, slot) in global.iter_mut().enumerate() {
+                if range.contains(&bin) && slot.is_nan() {
+                    *slot = local(bin);
+                }
+            }
+            merge_bins.push(window.lo);
+            previous_hi = window.hi;
+            continue;
+        };
+        let shift = global[join] - local(join);
+        let range = join..=window.hi;
+        for (bin, slot) in global.iter_mut().enumerate() {
+            if !range.contains(&bin) {
+                continue;
+            }
+            let value = local(bin);
+            if value.is_finite() {
+                *slot = value + shift;
+            }
+        }
+        merge_bins.push(join);
+        previous_hi = window.hi;
+    }
+    (global, merge_bins)
+}
+
+/// Attempt one replica exchange between random walkers of each adjacent
+/// window pair of the current parity.
+fn attempt_exchanges(
+    walkers: &mut [RewlWalker],
+    windows: &[BinWindow],
+    round: u64,
+    rng: &mut rand_xoshiro::Xoshiro256StarStar,
+    attempted: &mut [u64],
+    accepted: &mut [u64],
+) {
+    use rand::Rng;
+    let per_window = walkers.len() / windows.len();
+    let offset = usize::from(!round.is_multiple_of(2));
+    for pair in (offset..windows.len().saturating_sub(1)).step_by(2) {
+        let a = pair * per_window + rng.gen_range(0..per_window);
+        let b = (pair + 1) * per_window + rng.gen_range(0..per_window);
+        attempted[pair] += 1;
+        let (bin_a, bin_b) = (walkers[a].state.bin, walkers[b].state.bin);
+        if !(windows[pair].contains(bin_b as i64) && windows[pair + 1].contains(bin_a as i64)) {
+            continue;
+        }
+        let (lo, hi) = walkers.split_at_mut(b);
+        let (walker_a, walker_b) = (&mut lo[a], &mut hi[0]);
+        let (Some(a_at_a), Some(a_at_b), Some(b_at_b), Some(b_at_a)) = (
+            walker_a.estimate.log_g_at(bin_a),
+            walker_a.estimate.log_g_at(bin_b),
+            walker_b.estimate.log_g_at(bin_b),
+            walker_b.estimate.log_g_at(bin_a),
+        ) else {
+            continue;
+        };
+        // P = min(1, g_a(E_a) g_b(E_b) / (g_a(E_b) g_b(E_a))).
+        let log_p = (a_at_a - a_at_b) + (b_at_b - b_at_a);
+        if log_p >= 0.0 || rng.gen::<f64>() < log_p.exp() {
+            walker_a.state.swap_configuration(&mut walker_b.state);
+            accepted[pair] += 1;
+        }
+    }
+}
+
+/// Average the estimates of the walkers of every window.
+fn average_windows(walkers: &mut [RewlWalker], n_windows: usize) {
+    let per_window = walkers.len() / n_windows;
+    for group in walkers.chunks_mut(per_window) {
+        let mut estimates: Vec<&mut WlEstimate> =
+            group.iter_mut().map(|w| &mut w.estimate).collect();
+        WlEstimate::average_with(&mut estimates);
+    }
+}
+
+/// Build the walkers of the replica-exchange stage: every window gets
+/// `walkers_per_window` copies of the seeded configuration with their own
+/// generators, each driven into its window. Returns the walkers and the
+/// summed drive-in sweeps.
+fn build_rewl_walkers<L: Lattice>(
+    template: &WalkerState,
+    windows: &[BinWindow],
+    contexts: &[WalkerContext<'_>],
+    lattice: &L,
+    p: &WangLandauParams<'_>,
+) -> Result<(Vec<RewlWalker>, u64), MCIsingError> {
+    let per_window = p.walkers_per_window;
+    let mut walkers: Vec<RewlWalker> = (0..windows.len() * per_window)
+        .map(|index| RewlWalker {
+            state: template.spawn(create_rng(
+                p.base_seed
+                    .wrapping_add(WL_WALKER_SEED_OFFSET)
+                    .wrapping_add(index as u64),
+            )),
+            // Placeholder until the walker is inside its window.
+            estimate: WlEstimate::new(windows[0], windows[0].lo),
+            window: index / per_window,
+        })
+        .collect();
+    let drive_in_sweeps: Vec<u64> = walkers
+        .par_iter_mut()
+        .map(|walker| drive_in(&mut walker.state, &contexts[walker.window], lattice, p))
+        .collect::<Result<_, _>>()?;
+    for walker in &mut walkers {
+        let window = windows[walker.window];
+        walker.estimate = match p.initial_log_g {
+            Some(initial) => WlEstimate::from_initial(window, initial, walker.state.bin),
+            None => WlEstimate::new(window, walker.state.bin),
+        };
+    }
+    Ok((walkers, drive_in_sweeps.iter().sum()))
+}
+
+fn total_visited(walkers: &[RewlWalker]) -> usize {
+    walkers.iter().map(|w| w.estimate.n_visited()).sum()
+}
+
+/// Flatness of every window's pooled histogram (the walkers of a window
+/// share one estimate after averaging, so their visits count together),
+/// minimised over windows.
+fn pooled_flatness(walkers: &[RewlWalker], n_windows: usize) -> f64 {
+    let per_window = walkers.len() / n_windows;
+    walkers
+        .chunks(per_window)
+        .map(|group| {
+            let first = &group[0].estimate;
+            let mut pooled = vec![0u64; first.histogram().len()];
+            for walker in group {
+                for (slot, &count) in pooled.iter_mut().zip(walker.estimate.histogram()) {
+                    *slot += count;
+                }
+            }
+            flatness_over_visited(&pooled, first.log_g())
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// Drive the replica-exchange walkers through the modification-factor
+/// schedule: parallel sweeps in `exchange_interval` chunks, an exchange
+/// round after each chunk, one shared `ln f` (a check passes when every
+/// window's pooled histogram is flat; the `1/t` clock is the slowest
+/// window's),
+/// and estimates averaged within each window at every check.
+fn run_rewl_schedule<L: Lattice>(
+    walkers: &mut [RewlWalker],
+    windows: &[BinWindow],
+    contexts: &[WalkerContext<'_>],
+    lattice: &L,
+    p: &WangLandauParams<'_>,
+    diagnostics: &mut WlDiagnostics,
+) {
+    let schedule = &p.schedule;
+    let per_window = p.walkers_per_window as f64;
+    let proposals_per_sweep = contexts[0].num_sites as f64;
+    let clock = windows
+        .iter()
+        .map(|w| w.len() as f64 / (per_window * proposals_per_sweep))
+        .fold(0.0_f64, f64::max);
+    let mut exchange_rng = create_rng(p.base_seed.wrapping_add(EXCHANGE_SEED_OFFSET));
+    let mut state = ScheduleState::new(schedule, total_visited(walkers));
+    let mut sweeps: u64 = 0;
+    let mut round: u64 = 0;
+    loop {
+        if schedule.max_sweeps.is_some_and(|max| sweeps >= max) {
+            break;
+        }
+        let chunk = match schedule.max_sweeps {
+            Some(max) => p.exchange_interval.min(max - sweeps),
+            None => p.exchange_interval,
+        };
+        let log_f = state.log_f;
+        walkers.par_iter_mut().for_each(|walker| {
+            let context = &contexts[walker.window];
+            for _ in 0..chunk {
+                wl_sweep(
+                    &mut walker.state,
+                    &mut walker.estimate,
+                    context,
+                    lattice,
+                    log_f,
+                );
+            }
+        });
+        sweeps += chunk;
+        attempt_exchanges(
+            walkers,
+            windows,
+            round,
+            &mut exchange_rng,
+            &mut diagnostics.exchange_attempted,
+            &mut diagnostics.exchange_accepted,
+        );
+        round += 1;
+        let t_inv = clock / sweeps as f64;
+        let at_check = sweeps.is_multiple_of(schedule.check_interval);
+        if state.one_over_t {
+            if at_check {
+                average_windows(walkers, windows.len());
+            }
+            if state.tick(t_inv, schedule) {
+                diagnostics.converged = true;
+                break;
+            }
+            continue;
+        }
+        if !at_check {
+            continue;
+        }
+        let verdict = state.check(
+            sweeps,
+            t_inv,
+            pooled_flatness(walkers, windows.len()),
+            total_visited(walkers),
+            schedule,
+            diagnostics,
+        );
+        if verdict != Verdict::Continue {
+            average_windows(walkers, windows.len());
+        }
+        match verdict {
+            Verdict::Flat => {
+                for walker in walkers.iter_mut() {
+                    walker.estimate.reset_histogram();
+                }
+            }
+            Verdict::Converged => {
+                diagnostics.converged = true;
+                break;
+            }
+            Verdict::Switched | Verdict::Continue => {}
+        }
+    }
+    average_windows(walkers, windows.len());
+    state.finish(
+        sweeps,
+        pooled_flatness(walkers, windows.len()),
+        total_visited(walkers),
+        diagnostics,
+    );
+}
+
+/// The replica-exchange Wang-Landau stage (Vogel, Li, Wüst & Landau, PRL
+/// 110, 210603 (2013)): overlapping windows, `walkers_per_window` walkers
+/// each, configuration exchanges between adjacent windows, and one merged
+/// estimate at the end.
+fn run_parallel_stage<L: Lattice>(
+    spins: Vec<i8>,
+    rng: rand_xoshiro::Xoshiro256StarStar,
+    lattice: &L,
+    binning: &EnergyBinning,
+    ctx: &WalkerContext<'_>,
+    window: BinWindow,
+    active: [bool; 3],
+    p: &WangLandauParams<'_>,
+) -> Result<StageOutput, MCIsingError> {
+    let windows = split_windows(window, p.n_windows, p.window_overlap)?;
+    let contexts: Vec<WalkerContext<'_>> = windows
+        .iter()
+        .map(|&w| WalkerContext {
+            binning: ctx.binning,
+            table: ctx.table,
+            window: w,
+            num_sites: ctx.num_sites,
+            use_nn: ctx.use_nn,
+            use_nnn: ctx.use_nnn,
+            use_tnn: ctx.use_tnn,
+        })
+        .collect();
+    let template = WalkerState::new(spins, rng, lattice, binning, active);
+    let (mut walkers, drive_in_sweeps) =
+        build_rewl_walkers(&template, &windows, &contexts, lattice, p)?;
+    let mut diagnostics = WlDiagnostics {
+        n_windows: windows.len(),
+        walkers_per_window: p.walkers_per_window,
+        window_bins: windows.iter().map(|w| (w.lo, w.hi)).collect(),
+        exchange_attempted: vec![0; windows.len().saturating_sub(1)],
+        exchange_accepted: vec![0; windows.len().saturating_sub(1)],
+        drive_in_sweeps,
+        ..WlDiagnostics::default()
+    };
+    run_rewl_schedule(
+        &mut walkers,
+        &windows,
+        &contexts,
+        lattice,
+        p,
+        &mut diagnostics,
+    );
+    diagnostics.accepted = walkers.iter().map(|w| w.state.accepted).sum();
+    diagnostics.attempted = walkers.iter().map(|w| w.state.attempted).sum();
+
+    // The estimates within a window are averaged, hence identical.
+    let per_window = p.walkers_per_window;
+    let pieces: Vec<(BinWindow, Vec<f64>)> = windows
+        .iter()
+        .enumerate()
+        .map(|(index, &w)| (w, walkers[index * per_window].estimate.log_g().to_vec()))
+        .collect();
+    let (log_g, merge_bins) = merge_windows(&pieces, binning.n_bins);
+    diagnostics.merge_bins = merge_bins;
+    diagnostics.visited_bins = log_g.iter().filter(|v| v.is_finite()).count();
+    let mut histogram = vec![0u64; binning.n_bins];
+    for walker in &walkers {
+        let w = walker.estimate.window();
+        for (offset, &count) in walker.estimate.histogram().iter().enumerate() {
+            histogram[w.lo + offset] += count;
+        }
+    }
+    Ok(StageOutput {
+        seeds: walkers.into_iter().map(|w| w.state).collect(),
+        log_g,
+        histogram,
+        diagnostics,
     })
 }
 
@@ -399,10 +1000,10 @@ fn drive_in<L: Lattice>(
         }
         if sweeps >= p.drive_max_sweeps {
             let n = ctx.num_sites as f64;
-            let (e_lo, e_hi) = p.energy_window.unwrap_or((
+            let (e_lo, e_hi) = (
                 ctx.binning.energy_of_bin(ctx.window.lo) / n,
                 ctx.binning.energy_of_bin(ctx.window.hi) / n,
-            ));
+            );
             return Err(MCIsingError::EnergyWindowUnreachable {
                 e_lo,
                 e_hi,
@@ -422,7 +1023,8 @@ fn drive_in<L: Lattice>(
     }
 }
 
-/// Stage 1: flatness-driven halving of `ln f`, then the 1/t schedule.
+/// Stage 1 of the serial walker: flatness-driven halving of `ln f`, then
+/// the 1/t schedule (see [`ScheduleState`]).
 fn run_wang_landau_stage<L: Lattice>(
     state: &mut WalkerState,
     estimate: &mut WlEstimate,
@@ -433,24 +1035,19 @@ fn run_wang_landau_stage<L: Lattice>(
     let bins = ctx.window.len() as f64;
     let proposals_per_sweep = ctx.num_sites as f64;
     let mut diagnostics = WlDiagnostics::default();
-    let mut log_f = schedule.log_f_initial;
+    let mut clock = ScheduleState::new(schedule, estimate.n_visited());
     let mut sweeps: u64 = 0;
-    let mut iteration_start: u64 = 0;
-    let mut iteration_log_f = log_f;
-    let mut one_over_t = false;
-    let mut visited_at_last_check = estimate.n_visited();
     loop {
         if schedule.max_sweeps.is_some_and(|max| sweeps >= max) {
             break;
         }
-        wl_sweep(state, estimate, ctx, lattice, log_f);
+        wl_sweep(state, estimate, ctx, lattice, clock.log_f);
         sweeps += 1;
         // Mean visits per bin of the window: the Belardinelli–Pereyra
         // clock (sweeps for a full-range run whose bin count is ~N).
         let t_inv = bins / (sweeps as f64 * proposals_per_sweep);
-        if one_over_t {
-            log_f = t_inv;
-            if log_f < schedule.log_f_final {
+        if clock.one_over_t {
+            if clock.tick(t_inv, schedule) {
                 diagnostics.converged = true;
                 break;
             }
@@ -459,56 +1056,29 @@ fn run_wang_landau_stage<L: Lattice>(
         if !sweeps.is_multiple_of(schedule.check_interval) {
             continue;
         }
-        let flat = estimate.flatness();
-        let visited_stable = estimate.n_visited() == visited_at_last_check;
-        visited_at_last_check = estimate.n_visited();
-        if log_f <= t_inv && visited_stable {
-            diagnostics.close_iteration(
-                iteration_log_f,
-                sweeps - iteration_start,
-                flat,
-                estimate.n_visited(),
-            );
-            one_over_t = true;
-            diagnostics.one_over_t_switch_sweep = Some(sweeps);
-            log_f = t_inv;
-            iteration_start = sweeps;
-            iteration_log_f = log_f;
-            if log_f < schedule.log_f_final {
+        let verdict = clock.check(
+            sweeps,
+            t_inv,
+            estimate.flatness(),
+            estimate.n_visited(),
+            schedule,
+            &mut diagnostics,
+        );
+        match verdict {
+            Verdict::Flat => estimate.reset_histogram(),
+            Verdict::Converged => {
                 diagnostics.converged = true;
                 break;
             }
-        } else if flat >= schedule.flatness {
-            diagnostics.close_iteration(
-                iteration_log_f,
-                sweeps - iteration_start,
-                flat,
-                estimate.n_visited(),
-            );
-            estimate.reset_histogram();
-            log_f *= 0.5;
-            iteration_start = sweeps;
-            iteration_log_f = log_f;
-            if log_f < schedule.log_f_final {
-                diagnostics.converged = true;
-                break;
-            }
-            if log_f <= t_inv && visited_stable {
-                one_over_t = true;
-                diagnostics.one_over_t_switch_sweep = Some(sweeps);
-                log_f = t_inv;
-                iteration_log_f = log_f;
-            }
+            Verdict::Switched | Verdict::Continue => {}
         }
     }
-    diagnostics.close_iteration(
-        iteration_log_f,
-        sweeps - iteration_start,
+    clock.finish(
+        sweeps,
         estimate.flatness(),
         estimate.n_visited(),
+        &mut diagnostics,
     );
-    diagnostics.total_sweeps = sweeps;
-    diagnostics.final_log_f = log_f;
     diagnostics
 }
 
@@ -522,7 +1092,7 @@ struct WalkerOutput {
 /// Run one production walker: thermalize (unrecorded), then measure.
 fn run_one_walker<L: Lattice>(
     k: usize,
-    seed_state: &WalkerState,
+    seed_states: &[WalkerState],
     frozen: &[f64],
     edges: (usize, usize),
     ctx: &WalkerContext<'_>,
@@ -537,7 +1107,7 @@ fn run_one_walker<L: Lattice>(
             .wrapping_add(PRODUCTION_SEED_OFFSET)
             .wrapping_add(k as u64),
     );
-    let mut walker = seed_state.spawn(rng);
+    let mut walker = seed_states[k % seed_states.len()].spawn(rng);
     let mut histogram = vec![0u64; window_len];
     let mut edge_tracker = EdgeTracker::new(edges.0, edges.1);
     {
@@ -607,21 +1177,26 @@ fn run_one_walker<L: Lattice>(
 /// from the Wang-Landau walker's final configuration with its own
 /// generator.
 fn run_production<L: Lattice>(
-    seed_state: &WalkerState,
-    estimate: &WlEstimate,
+    seed_states: &[WalkerState],
+    frozen: &[f64],
     ctx: &WalkerContext<'_>,
     lattice: &L,
     p: &WangLandauParams<'_>,
     shape: &[usize],
 ) -> (Vec<MucaSeries>, Vec<u64>, ProductionDiagnostics) {
-    let frozen = estimate.log_g();
-    let edges = estimate
-        .visited_edges()
-        .unwrap_or((seed_state.bin, seed_state.bin));
+    let visited_edges = {
+        let lo = frozen.iter().position(|v| v.is_finite());
+        let hi = frozen.iter().rposition(|v| v.is_finite());
+        match (lo, hi) {
+            (Some(lo), Some(hi)) => Some((ctx.window.lo + lo, ctx.window.lo + hi)),
+            _ => None,
+        }
+    };
+    let edges = visited_edges.unwrap_or((seed_states[0].bin, seed_states[0].bin));
     let n_measurements = (p.production_sweeps / p.measurement_interval) as usize;
     let outputs: Vec<WalkerOutput> = (0..p.n_walkers)
         .into_par_iter()
-        .map(|k| run_one_walker(k, seed_state, frozen, edges, ctx, lattice, p, shape))
+        .map(|k| run_one_walker(k, seed_states, frozen, edges, ctx, lattice, p, shape))
         .collect();
 
     let mut pooled = vec![0u64; ctx.binning.n_bins];
@@ -634,7 +1209,7 @@ fn run_production<L: Lattice>(
         rejected_unvisited: Vec::with_capacity(p.n_walkers),
         round_trips: Vec::with_capacity(p.n_walkers),
         histogram_flatness: 0.0,
-        edge_bins: estimate.visited_edges(),
+        edge_bins: visited_edges,
     };
     let mut production = Vec::with_capacity(p.n_walkers);
     for output in outputs {
@@ -659,8 +1234,13 @@ fn run_production<L: Lattice>(
 ///
 /// `energy_window` is per site, `bin_width` in total-energy units;
 /// `initial_log_g` (one entry per energy bin, NaN = unknown) seeds the
-/// estimate, and `max_wl_sweeps = 0` freezes it as given. Returns the dict
-/// described at `WangLandauResult::into_pydict`.
+/// estimate, and `max_wl_sweeps = 0` freezes it as given. With
+/// `n_windows > 1` or `walkers_per_window > 1` the first stage runs the
+/// replica-exchange Wang-Landau algorithm (overlapping windows sharing
+/// `window_overlap` of their length, exchanges every `exchange_interval`
+/// sweeps, estimates averaged within a window and joined at the end);
+/// otherwise the serial walker runs. Returns the dict described at
+/// `WangLandauResult::into_pydict`.
 ///
 /// # Errors
 ///
@@ -680,6 +1260,8 @@ fn run_production<L: Lattice>(
     flatness = 0.8, log_f_initial = 1.0, log_f_final = 1e-6,
     check_interval = 1000, max_wl_sweeps = None,
     drive_beta = 1.0, drive_max_sweeps = 10_000,
+    n_windows = 1, walkers_per_window = 1, window_overlap = 0.75,
+    exchange_interval = 100,
 ))]
 pub fn run_wang_landau<'py>(
     py: Python<'py>,
@@ -705,6 +1287,10 @@ pub fn run_wang_landau<'py>(
     max_wl_sweeps: Option<u64>,
     drive_beta: f64,
     drive_max_sweeps: u64,
+    n_windows: usize,
+    walkers_per_window: usize,
+    window_overlap: f64,
+    exchange_interval: u64,
 ) -> PyResult<Bound<'py, PyDict>> {
     let lat_type = lattice_type.to_string();
     let initial: Option<Vec<f64>> = match initial_log_g {
@@ -737,6 +1323,10 @@ pub fn run_wang_landau<'py>(
             },
             drive_beta,
             drive_max_sweeps,
+            n_windows,
+            walkers_per_window,
+            window_overlap,
+            exchange_interval,
             n_walkers,
             production_sweeps,
             production_thermalization,
@@ -788,6 +1378,10 @@ mod tests {
             schedule: schedule(log_f_final),
             drive_beta: 1.0,
             drive_max_sweeps: 10_000,
+            n_windows: 1,
+            walkers_per_window: 1,
+            window_overlap: 0.75,
+            exchange_interval: 100,
             n_walkers: 1,
             production_sweeps,
             production_thermalization: 0,
@@ -1262,7 +1856,9 @@ mod tests {
             ),
             "{err}"
         );
-        assert!(err.to_string().contains("(1.74, 1.76)"));
+        // The message names the window's bin energies (both edges map to
+        // the E = 28 bin, 1.75 per site).
+        assert!(err.to_string().contains("(1.75, 1.75)"), "{err}");
     }
 
     #[test]
@@ -1421,6 +2017,199 @@ mod tests {
             .bins
             .iter()
             .all(|&b| result.log_g[b as usize].is_finite()));
+    }
+
+    #[test]
+    fn test_split_windows_cover_the_range_with_overlap() {
+        let window = BinWindow { lo: 3, hi: 102 };
+        let windows = split_windows(window, 4, 0.75).unwrap();
+        assert_eq!(windows.len(), 4);
+        assert_eq!(windows[0].lo, 3);
+        assert_eq!(windows[3].hi, 102);
+        for pair in windows.windows(2) {
+            assert!(pair[1].lo > pair[0].lo && pair[1].lo <= pair[0].hi);
+            assert!(pair[1].hi > pair[0].hi);
+            // Roughly three quarters shared.
+            let shared = (pair[0].hi - pair[1].lo + 1) as f64 / pair[0].len() as f64;
+            assert!((shared - 0.75).abs() < 0.1, "{shared}");
+        }
+        assert_eq!(split_windows(window, 1, 0.75).unwrap(), vec![window]);
+        // No overlap means no exchanges: rejected.
+        assert!(matches!(
+            split_windows(window, 2, 0.0).unwrap_err(),
+            MCIsingError::InvalidWindowSplit(_)
+        ));
+        // Windows narrower than two bins: rejected.
+        assert!(matches!(
+            split_windows(BinWindow { lo: 0, hi: 2 }, 8, 0.75).unwrap_err(),
+            MCIsingError::InvalidWindowSplit(_)
+        ));
+    }
+
+    #[test]
+    fn test_merge_windows_joins_pieces_at_matching_slopes() {
+        // An exact parabola split into two overlapping pieces with an
+        // arbitrary offset on the second: the merge recovers it.
+        let truth: Vec<f64> = (0..40_usize)
+            .map(|k| -((k as f64 - 20.0) / 6.0).powi(2))
+            .collect();
+        let first = BinWindow { lo: 0, hi: 24 };
+        let second = BinWindow { lo: 15, hi: 39 };
+        let piece_a = truth[0..=24].to_vec();
+        let piece_b: Vec<f64> = truth[15..=39].iter().map(|v| v + 7.5).collect();
+        let (merged, joins) = merge_windows(&[(first, piece_a), (second, piece_b)], 40);
+        assert_eq!(joins.len(), 1);
+        assert!((15..24).contains(&joins[0]));
+        for (k, (m, t)) in merged.iter().zip(&truth).enumerate() {
+            assert!((m - t).abs() < 1e-9, "bin {k}: {m} vs {t}");
+        }
+        // Unvisited entries stay unvisited, pieces without overlap keep their offset.
+        let (merged, joins) = merge_windows(
+            &[
+                (BinWindow { lo: 0, hi: 3 }, vec![0.0, 1.0, f64::NAN, 3.0]),
+                (BinWindow { lo: 6, hi: 8 }, vec![10.0, 11.0, 12.0]),
+            ],
+            10,
+        );
+        assert!(merged[2].is_nan() && merged[4].is_nan() && merged[9].is_nan());
+        assert_eq!(merged[6], 10.0);
+        assert_eq!(joins, vec![6]);
+    }
+
+    fn parallel_params(
+        n_windows: usize,
+        walkers_per_window: usize,
+        log_f_final: f64,
+        production_sweeps: u64,
+    ) -> WangLandauParams<'static> {
+        let mut p = params(
+            "square",
+            4,
+            [1.0, 0.0, 0.0, 0.0],
+            log_f_final,
+            production_sweeps,
+        );
+        p.n_windows = n_windows;
+        p.walkers_per_window = walkers_per_window;
+        p.exchange_interval = 20;
+        p.schedule.check_interval = 100;
+        p
+    }
+
+    #[test]
+    fn test_replica_exchange_stage_matches_exact_log_g() {
+        let dos = square4_dos();
+        let exact = dos.log_g_by_energy(1.0, 0.0, 0.0);
+        for (n_windows, per_window) in [(1, 3), (2, 2), (3, 1)] {
+            let p = parallel_params(n_windows, per_window, 1e-5, 20_000);
+            let result = run(&p);
+            let wl = &result.wl;
+            assert_eq!(wl.n_windows, n_windows);
+            assert_eq!(wl.walkers_per_window, per_window);
+            assert_eq!(wl.window_bins.len(), n_windows);
+            assert_eq!(wl.exchange_attempted.len(), n_windows - 1);
+            assert_eq!(wl.merge_bins.len(), n_windows - 1);
+            if n_windows > 1 {
+                assert!(wl.exchange_attempted.iter().all(|&a| a > 0));
+                assert!(wl.exchange_accepted.iter().sum::<u64>() > 0);
+            }
+            assert_eq!(
+                wl.attempted,
+                wl.total_sweeps * 16 * (n_windows * per_window) as u64
+            );
+            assert!(wl.converged);
+            let deviation = aligned_deviation(&result, &exact);
+            println!(
+                "calib rewl {n_windows}x{per_window}: max|dln g|={deviation:.4} sweeps={} \
+                 exchanges={:?}/{:?}",
+                wl.total_sweeps, wl.exchange_accepted, wl.exchange_attempted
+            );
+            // Pooled flatness ends the halving stage sooner than a single
+            // walker's, so at log_f_final = 1e-5 the residual is a little larger.
+            assert!(deviation <= 0.15, "{n_windows}x{per_window}: {deviation}");
+            // The parallel schedule ends after fewer sweeps per walker (its
+            // clock pools the walkers), so the canonical gate is 2 % / 5 %.
+            for temperature in GATE_TEMPERATURES {
+                let ex = dos.exact_at(temperature, 1.0);
+                let (e, cv) =
+                    canonical_from_log_g(&result.binning, &result.log_g, 1.0 / temperature);
+                assert!(
+                    ((e - ex.energy) / ex.energy).abs() <= 0.02,
+                    "T={temperature}: {e} vs {}",
+                    ex.energy
+                );
+                assert!(
+                    ((cv - ex.specific_heat) / ex.specific_heat).abs() <= 0.05,
+                    "T={temperature}: {cv} vs {}",
+                    ex.specific_heat
+                );
+            }
+            // Production ran on the merged estimate from every walker's end state.
+            assert_eq!(result.production.len(), 1);
+            assert_eq!(result.production[0].series.energies.len(), 20_000);
+            assert!(result.production_diagnostics.histogram_flatness > 0.5);
+            let e = reweight_series(&result, 1.0 / 2.269);
+            let exact_e = dos.exact_at(2.269, 1.0).energy;
+            assert!(((e - exact_e) / exact_e).abs() <= 0.02, "{e} vs {exact_e}");
+        }
+    }
+
+    #[test]
+    fn test_replica_exchange_stage_is_deterministic_across_thread_counts() {
+        let p = parallel_params(2, 2, 1e-3, 1_000);
+        let serial = with_pool(1, || run(&p));
+        let parallel = with_pool(4, || run(&p));
+        let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+        assert_eq!(bits(&serial.log_g), bits(&parallel.log_g));
+        assert_eq!(serial.wl_histogram, parallel.wl_histogram);
+        assert_eq!(serial.wl.exchange_accepted, parallel.wl.exchange_accepted);
+        assert_eq!(
+            bits(&serial.production[0].series.energies),
+            bits(&parallel.production[0].series.energies)
+        );
+        assert_eq!(serial.final_spins, parallel.final_spins);
+    }
+
+    #[test]
+    fn test_replica_exchange_validation() {
+        let err = |p: WangLandauParams<'_>| error_of(&p).to_string();
+        let mut p = parallel_params(2, 2, 1e-3, 10);
+        p.window_overlap = 1.0;
+        assert!(err(p).contains("window_overlap"));
+        let mut p = parallel_params(2, 2, 1e-3, 10);
+        p.exchange_interval = 30; // 100 is not a multiple of 30
+        assert!(err(p).contains("exchange_interval"));
+        let p = parallel_params(0, 1, 1e-3, 10);
+        assert!(err(p).contains("n_windows"));
+        let p = parallel_params(1, 0, 1e-3, 10);
+        assert!(err(p).contains("walkers_per_window"));
+        let mut p = parallel_params(1, 1, 1e-3, 10);
+        p.exchange_interval = 0;
+        assert!(err(p).contains("exchange_interval"));
+        // The serial path ignores the cadence rule.
+        let mut p = parallel_params(1, 1, 1e-3, 10);
+        p.exchange_interval = 30;
+        assert!(run_wang_landau_internal(&p).is_ok());
+        // Too many windows for a three-bin range.
+        let mut p = parallel_params(8, 1, 1e-3, 10);
+        p.energy_window = Some((-2.0, -1.5));
+        assert!(err(p).contains("windows"));
+    }
+
+    #[test]
+    fn test_replica_exchange_with_window_and_cap() {
+        let mut p = parallel_params(2, 2, 1e-3, 500);
+        p.energy_window = Some((-1.5, 0.5));
+        p.schedule.max_sweeps = Some(150);
+        let result = run(&p);
+        assert!(!result.wl.converged);
+        assert_eq!(result.wl.total_sweeps, 150);
+        assert_eq!(result.wl.window_bins[0].0, 2);
+        assert_eq!(result.wl.window_bins[1].1, 10);
+        assert!(result.production[0]
+            .bins
+            .iter()
+            .all(|&b| (2..=10).contains(&(b as usize))));
     }
 
     #[test]

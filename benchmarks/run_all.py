@@ -31,6 +31,10 @@ existing results file):
 ``peapods``
     Matched-physics Metropolis comparison with the peapods package
     (``uv sync --group benchmark``); skipped when peapods is missing.
+``wang_landau``
+    Wall time and flip-attempt rate of the Wang-Landau stage (serial, and
+    the replica-exchange stage on every core) and of the multicanonical
+    production stage.
 
 Every number is stored as measured (medians of repeated runs); ratios are
 computed at render time from the stored medians, never rounded by hand.
@@ -56,7 +60,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Final
 
@@ -66,8 +70,11 @@ from mcising import (
     Algorithm,
     ExecutionMode,
     LatticeConfig,
+    LatticeType,
     Simulation,
     SimulationConfig,
+    WangLandauConfig,
+    WangLandauSimulation,
 )
 from mcising._core import IsingSimulation
 from mcising._provenance import git_commit
@@ -189,6 +196,18 @@ class PeapodsBudget:
 
 
 @dataclass(frozen=True)
+class WangLandauBudget:
+    square_size: int
+    cubic_size: int
+    #: ``ln f`` runs down to ``10 ** -log_f_final_exponent``.
+    log_f_final_exponent: int
+    n_windows: int
+    walkers_per_window: int
+    production_sweeps: int
+    repeats: int
+
+
+@dataclass(frozen=True)
 class Budget:
     quick: bool
     lattices: LatticesBudget
@@ -199,6 +218,7 @@ class Budget:
     overhead: OverheadBudget
     correlation: CorrelationBudget
     peapods: PeapodsBudget
+    wang_landau: WangLandauBudget
 
 
 FULL_BUDGET: Final = Budget(
@@ -258,6 +278,15 @@ FULL_BUDGET: Final = Budget(
         n_sweeps=100_000,
         seeds=(42, 123, 7),
     ),
+    wang_landau=WangLandauBudget(
+        square_size=32,
+        cubic_size=12,
+        log_f_final_exponent=6,
+        n_windows=8,
+        walkers_per_window=1,
+        production_sweeps=20_000,
+        repeats=3,
+    ),
 )
 
 #: The test suite's budget: every section runs end to end in a few seconds.
@@ -299,6 +328,15 @@ QUICK_BUDGET: Final = Budget(
     correlation=CorrelationBudget(sizes=(8,), repeats=1),
     peapods=PeapodsBudget(
         size_2d=8, cubic_size=4, n_thermalization=50, n_sweeps=200, seeds=(42,)
+    ),
+    wang_landau=WangLandauBudget(
+        square_size=8,
+        cubic_size=4,
+        log_f_final_exponent=3,
+        n_windows=1,
+        walkers_per_window=1,
+        production_sweeps=100,
+        repeats=1,
     ),
 )
 
@@ -917,6 +955,98 @@ def run_peapods(budget: Budget, context: Context) -> dict[str, Any]:
     return {**base, "status": status, "rows": rows}
 
 
+#: Per-site energy window of the cubic J1-J2 workload (holds both phases).
+CUBIC_WINDOW: Final = (-1.7, -0.5)
+
+
+def _wang_landau_workloads(b: WangLandauBudget) -> list[tuple[str, WangLandauConfig]]:
+    log_f_final = 10.0**-b.log_f_final_exponent
+    common: dict[str, Any] = {
+        "log_f_final": log_f_final,
+        "check_interval": 200,
+        "exchange_interval": 50,
+        "seed": TIMING_SEED,
+        "production_sweeps": 0,
+    }
+    square = LatticeConfig(size=b.square_size, j1=1.0)
+    cubic = LatticeConfig(
+        lattice_type=LatticeType.CUBIC, size=b.cubic_size, j1=1.0, j2=-0.5
+    )
+    return [
+        (
+            f"Square {b.square_size}×{b.square_size}, whole spectrum",
+            WangLandauConfig(lattice=square, **common),
+        ),
+        (
+            f"Cubic {b.cubic_size}³ J1-J2, energy window",
+            WangLandauConfig(lattice=cubic, energy_window=CUBIC_WINDOW, **common),
+        ),
+        (
+            f"Cubic {b.cubic_size}³ J1-J2, energy window, replica exchange",
+            WangLandauConfig(
+                lattice=cubic,
+                energy_window=CUBIC_WINDOW,
+                n_windows=b.n_windows,
+                walkers_per_window=b.walkers_per_window,
+                **common,
+            ),
+        ),
+    ]
+
+
+def _time_wang_landau(config: WangLandauConfig, repeats: int) -> dict[str, Any]:
+    """Median wall time of the first stage and of a production stage on its
+    weights (``initial_log_g`` frozen with ``max_wl_sweeps=0``)."""
+    stage_seconds: list[float] = []
+    results = None
+    for _ in range(repeats):
+        start = time.perf_counter()
+        results = WangLandauSimulation(config).run(show_progress=False)
+        stage_seconds.append(time.perf_counter() - start)
+    assert results is not None
+    wl = results.wang_landau
+    production_config = replace(
+        config,
+        max_wl_sweeps=0,
+        production_sweeps=max(config.production_sweeps, 1),
+        n_walkers=1,
+        n_windows=1,
+        walkers_per_window=1,
+    )
+    production_seconds: list[float] = []
+    production_attempts = 0
+    for _ in range(repeats):
+        start = time.perf_counter()
+        produced = WangLandauSimulation(production_config).run(
+            show_progress=False, initial_log_g=results.log_g
+        )
+        production_seconds.append(time.perf_counter() - start)
+        production_attempts = int(produced.production.attempted[0])
+    return {
+        "sites": int(config.lattice.num_sites),
+        "n_bins": int(results.n_bins),
+        "walkers": int(wl.n_windows * wl.walkers_per_window),
+        "wl_sweeps": int(wl.total_sweeps),
+        "wl_attempts": int(wl.attempted),
+        "wl_median_seconds": float(statistics.median(stage_seconds)),
+        "wl_converged": bool(wl.converged),
+        "production_sweeps": int(production_config.production_sweeps),
+        "production_attempts": production_attempts,
+        "production_median_seconds": float(statistics.median(production_seconds)),
+    }
+
+
+def run_wang_landau(budget: Budget, context: Context) -> dict[str, Any]:
+    b = budget.wang_landau
+    rows = []
+    for label, config in _wang_landau_workloads(b):
+        context.log(f"[wang_landau] {label}")
+        row = _time_wang_landau(config, b.repeats)
+        row["label"] = label
+        rows.append(row)
+    return {"cpu_count": os.cpu_count() or 1, "rows": rows}
+
+
 @dataclass(frozen=True)
 class Section:
     name: str
@@ -932,6 +1062,7 @@ SECTIONS: Final[tuple[Section, ...]] = (
     Section("overhead", run_overhead),
     Section("correlation", run_correlation),
     Section("peapods", run_peapods),
+    Section("wang_landau", run_wang_landau),
 )
 SECTION_NAMES: Final[tuple[str, ...]] = tuple(s.name for s in SECTIONS)
 
@@ -960,10 +1091,20 @@ def run_all(
 
 
 def merge_sections(existing: dict[str, Any], fresh: dict[str, Any]) -> dict[str, Any]:
-    """Fold a partial run into an existing document (same schema and budget)."""
+    """Fold a partial run into an existing document (same schema and budget).
+
+    The fresh budget may carry sections the existing document predates;
+    every budget entry the existing document has must be unchanged.
+    """
     if existing.get("schema_version") != fresh.get("schema_version"):
         raise BenchmarkError("schema_version differs; rerun every section")
-    if existing.get("budget") != fresh.get("budget"):
+    # Compare through JSON: the fresh document holds the dataclass's tuples,
+    # the loaded one lists.
+    existing_budget = json.loads(json.dumps(existing.get("budget") or {}))
+    fresh_budget = json.loads(json.dumps(fresh.get("budget") or {}))
+    if not existing_budget or any(
+        fresh_budget.get(key) != value for key, value in existing_budget.items()
+    ):
         raise BenchmarkError("budget differs from the existing document")
     merged = {**existing, **{k: v for k, v in fresh.items() if k != "sections"}}
     merged["sections"] = {**existing.get("sections", {}), **fresh["sections"]}
@@ -1411,6 +1552,71 @@ def _lattice_dims(row: dict[str, Any]) -> str:
     return "×".join([str(size)] * int(row["dim"]))
 
 
+def render_wang_landau(document: dict[str, Any]) -> str:
+    section = _section(document, "wang_landau")
+    b = document["budget"]["wang_landau"]
+    rows = []
+    serial: dict[str, float] | None = None
+    exchange_note = ""
+    for row in section["rows"]:
+        wl_seconds = float(row["wl_median_seconds"])
+        wl_rate = float(row["wl_attempts"]) / wl_seconds
+        walkers = int(row["walkers"])
+        sweeps = float(row["wl_sweeps"])
+        speedup = ""
+        if "replica exchange" in row["label"] and serial is not None:
+            speedup = _fmt_ratio(serial["seconds"] / wl_seconds)
+            per_walker = wl_rate / walkers / serial["rate"]
+            exchange_note = (
+                f" The replica-exchange row reaches that `ln f` in "
+                f"{_fmt_ratio(serial['sweeps'] / sweeps)} fewer sweeps per walker "
+                "than the serial cubic run; its walkers synchronise at every "
+                "exchange, so the slowest of them sets the pace and the attempt "
+                f"rate per walker is {per_walker:.0%} of the serial one here, "
+                "which is what separates the two speed-ups."
+            )
+        elif "Cubic" in row["label"]:
+            serial = {"seconds": wl_seconds, "rate": wl_rate, "sweeps": sweeps}
+            speedup = "1.0×"
+        rows.append(
+            [
+                row["label"],
+                _fmt_int(row["n_bins"]),
+                str(walkers),
+                _fmt_int(sweeps),
+                _fmt_seconds(wl_seconds),
+                _fmt_int(wl_rate),
+                speedup,
+                _fmt_int(
+                    float(row["production_attempts"])
+                    / float(row["production_median_seconds"])
+                ),
+            ]
+        )
+    header = [
+        "Workload",
+        "Bins",
+        "Walkers",
+        "Sweeps per walker",
+        "Wang-Landau stage",
+        "Flip attempts/s",
+        "Wall-time speed-up",
+        "Production attempts/s",
+    ]
+    caption = (
+        "Wang-Landau stage to `ln f = 1e-"
+        f"{b['log_f_final_exponent']}` (flatness checks every 200 sweeps), then "
+        f"a one-walker production stage of {b['production_sweeps']:,} sweeps on "
+        "the frozen weights; the cubic workloads sample the J1-J2 model at "
+        f"J2 = -1/2 inside the per-site energy window {CUBIC_WINDOW} that holds "
+        "both phases of its first-order transition, and the replica-exchange row "
+        f"runs {b['n_windows']} windows × {b['walkers_per_window']} walkers on the "
+        f"Rayon pool ({section['cpu_count']} threads); {_machine(document)}; "
+        f"medians of {b['repeats']} runs.{exchange_note}"
+    )
+    return _table(header, rows) + f"\n\n{caption}"
+
+
 RENDERERS: Final[dict[str, Callable[[dict[str, Any]], str]]] = {
     "headline": render_headline,
     "index-card": render_index_card,
@@ -1422,6 +1628,7 @@ RENDERERS: Final[dict[str, Callable[[dict[str, Any]], str]]] = {
     "overhead": render_overhead,
     "correlation": render_correlation,
     "peapods": render_peapods,
+    "wang_landau": render_wang_landau,
 }
 
 
@@ -1500,6 +1707,8 @@ DOC_BLOCKS: Final[tuple[tuple[Path, str], ...]] = (
     (REPO_ROOT / "docs" / "tutorial" / "cluster-algorithms.md", "cluster"),
     (REPO_ROOT / "docs" / "tutorial" / "parallel-execution.md", "parallel"),
     (REPO_ROOT / "docs" / "guide" / "configuration.md", "correlation"),
+    (REPO_ROOT / "docs" / "advanced" / "performance.md", "wang_landau"),
+    (REPO_ROOT / "docs" / "tutorial" / "wang-landau.md", "wang_landau"),
 )
 
 

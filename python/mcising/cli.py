@@ -38,9 +38,11 @@ from mcising.constants import (
     DEFAULT_N_THERMALIZATION,
     DEFAULT_SEED,
     DEFAULT_WL_CHECK_INTERVAL,
+    DEFAULT_WL_EXCHANGE_INTERVAL,
     DEFAULT_WL_FLATNESS,
     DEFAULT_WL_LOG_F_FINAL,
     DEFAULT_WL_PRODUCTION_SWEEPS,
+    DEFAULT_WL_WINDOW_OVERLAP,
     TC_CUBIC_3D,
     TC_HONEYCOMB_2D,
     TC_SQUARE_2D,
@@ -379,6 +381,13 @@ def _print_wang_landau_config(config: WangLandauConfig) -> None:
     table.add_row("Check interval", str(config.check_interval))
     if config.max_wl_sweeps is not None:
         table.add_row("Max WL sweeps", str(config.max_wl_sweeps))
+    if config.parallel_stage:
+        table.add_row(
+            "Parallel stage",
+            f"{config.n_windows} window(s) x {config.walkers_per_window} walker(s), "
+            f"overlap {config.window_overlap}, exchange every "
+            f"{config.exchange_interval} sweeps",
+        )
     table.add_row(
         "Production",
         f"{config.n_walkers} walker(s) x {config.production_sweeps} sweeps",
@@ -452,6 +461,26 @@ def wang_landau(
             help="Store a spin configuration at each production measurement.",
         ),
     ] = False,
+    n_windows: Annotated[
+        int,
+        typer.Option("--windows", help="Energy windows of the parallel first stage."),
+    ] = 1,
+    walkers_per_window: Annotated[
+        int,
+        typer.Option("--walkers-per-window", help="Wang-Landau walkers per window."),
+    ] = 1,
+    window_overlap: Annotated[
+        float,
+        typer.Option(
+            "--window-overlap", help="Fraction of a window shared with its neighbour."
+        ),
+    ] = DEFAULT_WL_WINDOW_OVERLAP,
+    exchange_interval: Annotated[
+        int,
+        typer.Option(
+            "--exchange-interval", help="Sweeps between replica-exchange attempts."
+        ),
+    ] = DEFAULT_WL_EXCHANGE_INTERVAL,
     temperatures: Annotated[
         list[float] | None,
         typer.Option(
@@ -487,6 +516,10 @@ def wang_landau(
         measurement_interval=measurement_interval,
         n_walkers=n_walkers,
         store_configs=store_configs,
+        n_windows=n_windows,
+        walkers_per_window=walkers_per_window,
+        window_overlap=window_overlap,
+        exchange_interval=exchange_interval,
     )
     _print_wang_landau_config(config)
     results = WangLandauSimulation(config).run(show_progress=True)
@@ -1265,6 +1298,9 @@ mcising wang-landau [OPTIONS]
     mcising wang-landau -L 16 -T 2.0 -T 2.269 -T 3.0 -o dos.h5
     mcising wang-landau -L 12 --lattice cubic --j2 -0.5 \\
         --energy-window -1.7:-0.5 --walkers 8 -T 2.4 -o dos.h5
+    mcising wang-landau -L 32 --lattice cubic --j2 -0.5 \\
+        --energy-window -1.6:-0.6 --windows 8 --walkers-per-window 4 \\
+        --walkers 32 -T 2.4 -o dos.h5
     mcising wang-landau -L 16 --j2 0.3 --bin-width 1.0 -o dos.h5
 
 mcising summary <file.h5>

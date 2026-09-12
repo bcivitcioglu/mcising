@@ -49,10 +49,12 @@ from mcising.constants import (
     DEFAULT_WL_CHECK_INTERVAL,
     DEFAULT_WL_DRIVE_BETA,
     DEFAULT_WL_DRIVE_MAX_SWEEPS,
+    DEFAULT_WL_EXCHANGE_INTERVAL,
     DEFAULT_WL_FLATNESS,
     DEFAULT_WL_LOG_F_FINAL,
     DEFAULT_WL_LOG_F_INITIAL,
     DEFAULT_WL_PRODUCTION_SWEEPS,
+    DEFAULT_WL_WINDOW_OVERLAP,
 )
 from mcising.exceptions import ConfigurationError
 from mcising.statistics import Estimate
@@ -148,6 +150,21 @@ class WangLandauConfig:
         Inverse temperature of the Metropolis drive into the window.
     drive_max_sweeps : int
         Cap on the drive-in; an unreachable window raises.
+    n_windows : int
+        Energy windows of the replica-exchange Wang-Landau stage (Vogel,
+        Li, Wüst & Landau 2013). ``1`` runs the serial walker; more
+        split the range into overlapping windows sampled in parallel and
+        joined at the end.
+    walkers_per_window : int
+        Walkers per window, run in parallel; their estimates are averaged
+        at every check. ``n_windows * walkers_per_window`` is the
+        parallelism of the first stage.
+    window_overlap : float
+        Fraction of a window's length shared with its neighbour, in
+        ``[0, 1)``.
+    exchange_interval : int
+        Sweeps between replica-exchange attempts; ``check_interval`` must
+        be a multiple of it when the parallel stage runs.
     """
 
     lattice: LatticeConfig = field(default_factory=LatticeConfig)
@@ -166,6 +183,10 @@ class WangLandauConfig:
     store_configs: bool = False
     drive_beta: float = DEFAULT_WL_DRIVE_BETA
     drive_max_sweeps: int = DEFAULT_WL_DRIVE_MAX_SWEEPS
+    n_windows: int = 1
+    walkers_per_window: int = 1
+    window_overlap: float = DEFAULT_WL_WINDOW_OVERLAP
+    exchange_interval: int = DEFAULT_WL_EXCHANGE_INTERVAL
 
     def __post_init__(self) -> None:
         if self.energy_window is not None:
@@ -229,6 +250,30 @@ class WangLandauConfig:
         if self.drive_max_sweeps < 1:
             msg = f"drive_max_sweeps must be >= 1, got {self.drive_max_sweeps}"
             raise ConfigurationError(msg)
+        if self.n_windows < 1:
+            msg = f"n_windows must be >= 1, got {self.n_windows}"
+            raise ConfigurationError(msg)
+        if self.walkers_per_window < 1:
+            msg = f"walkers_per_window must be >= 1, got {self.walkers_per_window}"
+            raise ConfigurationError(msg)
+        if not _is_finite(self.window_overlap) or not 0.0 <= self.window_overlap < 1.0:
+            msg = f"window_overlap must be in [0, 1), got {self.window_overlap}"
+            raise ConfigurationError(msg)
+        if self.exchange_interval < 1:
+            msg = f"exchange_interval must be >= 1, got {self.exchange_interval}"
+            raise ConfigurationError(msg)
+        if self.parallel_stage and self.check_interval % self.exchange_interval != 0:
+            raise ConfigurationError(
+                "The parallel Wang-Landau stage checks flatness on "
+                "exchange_interval boundaries, so check_interval must be a "
+                f"multiple of exchange_interval; got check_interval="
+                f"{self.check_interval}, exchange_interval={self.exchange_interval}"
+            )
+
+    @property
+    def parallel_stage(self) -> bool:
+        """Whether the replica-exchange (parallel) first stage runs."""
+        return self.n_windows > 1 or self.walkers_per_window > 1
 
     @property
     def n_measurements(self) -> int:
@@ -292,9 +337,21 @@ class WangLandauDiagnostics:
     accepted, attempted : int
         Flip acceptance counters of the stage.
     drive_in_sweeps : int
-        Metropolis sweeps spent reaching the energy window.
+        Metropolis sweeps spent reaching the energy window (summed over
+        walkers).
     visited_bins : int
         Energy bins entered at least once.
+    n_windows, walkers_per_window : int
+        Layout of the replica-exchange stage (``1`` and ``1`` for the
+        serial walker).
+    window_bins : tuple[tuple[int, int], ...]
+        Inclusive bin range of every window.
+    exchange_attempted, exchange_accepted : tuple[int, ...]
+        Replica-exchange attempts and acceptances per adjacent window
+        pair (empty for a single window).
+    merge_bins : tuple[int, ...]
+        Bin at which each window's estimate was joined to the previous
+        one (empty for a single window).
     """
 
     iteration_log_f: tuple[float, ...]
@@ -309,6 +366,12 @@ class WangLandauDiagnostics:
     attempted: int
     drive_in_sweeps: int
     visited_bins: int
+    n_windows: int = 1
+    walkers_per_window: int = 1
+    window_bins: tuple[tuple[int, int], ...] = ()
+    exchange_attempted: tuple[int, ...] = ()
+    exchange_accepted: tuple[int, ...] = ()
+    merge_bins: tuple[int, ...] = ()
 
     @property
     def n_iterations(self) -> int:
@@ -319,6 +382,14 @@ class WangLandauDiagnostics:
     def acceptance(self) -> float:
         """Flip acceptance rate of the stage (``nan`` without attempts)."""
         return self.accepted / self.attempted if self.attempted else math.nan
+
+    @property
+    def exchange_acceptance(self) -> FloatArray:
+        """Replica-exchange acceptance per adjacent window pair (``nan`` where none)."""
+        attempted = np.asarray(self.exchange_attempted, dtype=np.float64)
+        accepted = np.asarray(self.exchange_accepted, dtype=np.float64)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(attempted > 0, accepted / attempted, np.nan)
 
     @classmethod
     def _from_raw(cls, raw: Mapping[str, Any]) -> WangLandauDiagnostics:
@@ -336,6 +407,14 @@ class WangLandauDiagnostics:
             attempted=int(raw["attempted"]),
             drive_in_sweeps=int(raw["drive_in_sweeps"]),
             visited_bins=int(raw["visited_bins"]),
+            n_windows=int(raw.get("n_windows", 1)),
+            walkers_per_window=int(raw.get("walkers_per_window", 1)),
+            window_bins=tuple(
+                (int(lo), int(hi)) for lo, hi in raw.get("window_bins", ())
+            ),
+            exchange_attempted=tuple(int(x) for x in raw.get("exchange_attempted", ())),
+            exchange_accepted=tuple(int(x) for x in raw.get("exchange_accepted", ())),
+            merge_bins=tuple(int(x) for x in raw.get("merge_bins", ())),
         )
 
 
@@ -1140,10 +1219,15 @@ class WangLandauResults:
         status = (
             "converged" if wl.converged else "NOT CONVERGED (capped by max_wl_sweeps)"
         )
+        layout = (
+            f"; {wl.n_windows} window(s) x {wl.walkers_per_window} walker(s)"
+            if wl.n_windows > 1 or wl.walkers_per_window > 1
+            else ""
+        )
         console.print(
             f"Wang-Landau: {status}; {wl.n_iterations} modification factors, "
             f"final ln f = {wl.final_log_f:.2e}, {wl.total_sweeps} sweeps, "
-            f"{wl.visited_bins} visited bins"
+            f"{wl.visited_bins} visited bins{layout}"
         )
         console.print(
             f"Production: {prod.n_walkers} walker(s) x {prod.sweeps_per_walker} "
@@ -1271,6 +1355,10 @@ class WangLandauSimulation:
                 max_wl_sweeps=config.max_wl_sweeps,
                 drive_beta=config.drive_beta,
                 drive_max_sweeps=config.drive_max_sweeps,
+                n_windows=config.n_windows,
+                walkers_per_window=config.walkers_per_window,
+                window_overlap=config.window_overlap,
+                exchange_interval=config.exchange_interval,
             )
         results = WangLandauResults._from_raw(raw, metadata)
         results.metadata["elapsed_seconds"] = time.monotonic() - start

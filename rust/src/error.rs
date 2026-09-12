@@ -33,6 +33,9 @@ pub enum MCIsingError {
     InvalidLogF(&'static str, f64),
     InvalidDriveBeta(f64),
     InvalidInitialLogG(String),
+    InvalidWindowOverlap(f64),
+    InvalidWindowSplit(String),
+    IncompatibleCheckCadence(u64, u64),
 }
 
 impl fmt::Display for MCIsingError {
@@ -178,6 +181,26 @@ impl fmt::Display for MCIsingError {
             }
             Self::InvalidInitialLogG(msg) => {
                 write!(f, "Invalid initial_log_g: {msg}")
+            }
+            Self::InvalidWindowOverlap(value) => {
+                write!(
+                    f,
+                    "window_overlap must be a fraction in [0, 1) of the window \
+                     length shared by adjacent energy windows, got {value}"
+                )
+            }
+            Self::InvalidWindowSplit(msg) => {
+                write!(f, "Cannot split the energy range into windows: {msg}")
+            }
+            Self::IncompatibleCheckCadence(check_interval, exchange_interval) => {
+                write!(
+                    f,
+                    "The parallel Wang-Landau stage advances in \
+                     exchange_interval-sized chunks and checks flatness on \
+                     chunk boundaries, so check_interval must be a multiple of \
+                     exchange_interval; got check_interval={check_interval}, \
+                     exchange_interval={exchange_interval}"
+                )
             }
         }
     }
