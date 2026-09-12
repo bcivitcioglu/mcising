@@ -1007,6 +1007,18 @@ def _write_wang_landau_hdf5(f: Any, results: WangLandauResults) -> None:
     stage.attrs["attempted"] = wl.attempted
     stage.attrs["drive_in_sweeps"] = wl.drive_in_sweeps
     stage.attrs["visited_bins"] = wl.visited_bins
+    stage.attrs["n_windows"] = wl.n_windows
+    stage.attrs["walkers_per_window"] = wl.walkers_per_window
+    stage.create_dataset(
+        "window_bins", data=np.asarray(wl.window_bins, dtype=np.int64).reshape(-1, 2)
+    )
+    stage.create_dataset(
+        "exchange_attempted", data=np.asarray(wl.exchange_attempted, dtype=np.int64)
+    )
+    stage.create_dataset(
+        "exchange_accepted", data=np.asarray(wl.exchange_accepted, dtype=np.int64)
+    )
+    stage.create_dataset("merge_bins", data=np.asarray(wl.merge_bins, dtype=np.int64))
 
     prod = results.production
     production = f.create_group("production")
@@ -1169,6 +1181,28 @@ def load_wang_landau_hdf5(path: str | Path) -> WangLandauResults:
             attempted=int(stage.attrs["attempted"]),
             drive_in_sweeps=int(stage.attrs["drive_in_sweeps"]),
             visited_bins=int(stage.attrs["visited_bins"]),
+            # Additive (files written before the parallel stage existed).
+            n_windows=int(stage.attrs.get("n_windows", 1)),
+            walkers_per_window=int(stage.attrs.get("walkers_per_window", 1)),
+            window_bins=tuple(
+                (int(lo), int(hi))
+                for lo, hi in np.asarray(stage["window_bins"]).reshape(-1, 2)
+            )
+            if "window_bins" in stage
+            else (),
+            exchange_attempted=tuple(
+                int(x) for x in np.asarray(stage["exchange_attempted"])
+            )
+            if "exchange_attempted" in stage
+            else (),
+            exchange_accepted=tuple(
+                int(x) for x in np.asarray(stage["exchange_accepted"])
+            )
+            if "exchange_accepted" in stage
+            else (),
+            merge_bins=tuple(int(x) for x in np.asarray(stage["merge_bins"]))
+            if "merge_bins" in stage
+            else (),
         )
         edges = (
             (int(production.attrs["edge_lo"]), int(production.attrs["edge_hi"]))
@@ -1248,6 +1282,12 @@ def wang_landau_summary(
     }
     if wl.one_over_t_switch_sweep is not None:
         stage["one_over_t_switch_sweep"] = wl.one_over_t_switch_sweep
+    stage["n_windows"] = wl.n_windows
+    stage["walkers_per_window"] = wl.walkers_per_window
+    stage["window_bins"] = [list(pair) for pair in wl.window_bins]
+    stage["exchange_attempted"] = list(wl.exchange_attempted)
+    stage["exchange_accepted"] = list(wl.exchange_accepted)
+    stage["merge_bins"] = list(wl.merge_bins)
     record["wang_landau"] = stage
     prod = results.production
     production: dict[str, object] = {

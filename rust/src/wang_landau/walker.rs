@@ -65,10 +65,7 @@ impl WalkerState {
     }
 
     /// Exchange configurations (spins, shells, bin) with another walker;
-    /// generators and counters stay put. The replica-exchange hook: no
-    /// production caller yet (the windowed replica-exchange stage is the
-    /// next step), so the lib target does not use it.
-    #[allow(dead_code)]
+    /// generators and counters stay put (the replica-exchange move).
     pub(crate) fn swap_configuration(&mut self, other: &mut Self) {
         std::mem::swap(&mut self.spins, &mut other.spins);
         std::mem::swap(&mut self.shells, &mut other.shells);
@@ -206,6 +203,53 @@ impl WlEstimate {
         &self.log_g
     }
 
+    pub(crate) fn window(&self) -> BinWindow {
+        self.window
+    }
+
+    pub(crate) fn histogram(&self) -> &[u64] {
+        &self.hist
+    }
+
+    /// `ln g` at a global bin: `None` outside the window or never visited.
+    pub(crate) fn log_g_at(&self, bin: usize) -> Option<f64> {
+        if !self.window.contains(bin as i64) {
+            return None;
+        }
+        let value = self.log_g[bin - self.window.lo];
+        value.is_finite().then_some(value)
+    }
+
+    /// Replace the estimate by the element-wise mean over `others` and
+    /// itself, ignoring unvisited entries (the replica-exchange rule: every
+    /// walker of a window carries the window's pooled knowledge).
+    pub(crate) fn average_with(estimates: &mut [&mut WlEstimate]) {
+        if estimates.len() < 2 {
+            return;
+        }
+        let len = estimates[0].log_g.len();
+        let mut mean = vec![f64::NAN; len];
+        for (bin, slot) in mean.iter_mut().enumerate() {
+            let mut sum = 0.0;
+            let mut count = 0usize;
+            for estimate in estimates.iter() {
+                let value = estimate.log_g[bin];
+                if value.is_finite() {
+                    sum += value;
+                    count += 1;
+                }
+            }
+            if count > 0 {
+                *slot = sum / count as f64;
+            }
+        }
+        let n_visited = mean.iter().filter(|v| v.is_finite()).count();
+        for estimate in estimates.iter_mut() {
+            estimate.log_g.copy_from_slice(&mean);
+            estimate.n_visited = n_visited;
+        }
+    }
+
     pub(crate) fn n_visited(&self) -> usize {
         self.n_visited
     }
@@ -217,13 +261,6 @@ impl WlEstimate {
 
     pub(crate) fn reset_histogram(&mut self) {
         self.hist.iter_mut().for_each(|h| *h = 0);
-    }
-
-    /// Lowest and highest visited bins (global indices).
-    pub(crate) fn visited_edges(&self) -> Option<(usize, usize)> {
-        let lo = self.log_g.iter().position(|v| v.is_finite())?;
-        let hi = self.log_g.iter().rposition(|v| v.is_finite())?;
-        Some((self.window.lo + lo, self.window.lo + hi))
     }
 
     /// Expand to the full grid: NaN / 0 outside the window.
@@ -425,7 +462,6 @@ mod tests {
         let window = BinWindow { lo: 3, hi: 7 };
         let mut est = WlEstimate::new(window, 5);
         assert_eq!(est.n_visited(), 1);
-        assert_eq!(est.visited_edges(), Some((5, 5)));
         est.log_g[2] = 4.5;
         // A neighbour discovered now inherits 4.5, not 0.
         let origin = est.log_g[2];
@@ -434,7 +470,6 @@ mod tests {
         *slot = origin;
         est.n_visited += 1;
         assert_eq!(est.log_g[3], 4.5);
-        assert_eq!(est.visited_edges(), Some((5, 6)));
         let (log_g, hist) = est.into_global(10);
         assert_eq!(log_g.len(), 10);
         assert!(log_g[0].is_nan() && log_g[9].is_nan());

@@ -65,7 +65,11 @@ FIXTURE_PATH: Final = REPO_ROOT / "tests" / "data" / "golden_runs.json"
 #: 3: Wang-Landau cases (``kind = "wang_landau"``) with their density of
 #: states, histograms, diagnostics and walker series (additive; every
 #: schema-2 value unchanged).
-SCHEMA_VERSION: Final = 3
+#: 4: the replica-exchange layout in the Wang-Landau diagnostics and a
+#: parallel-stage case; a run that converges during the halving stage now
+#: reports its last histogram instead of zeros (ln g and every series
+#: unchanged).
+SCHEMA_VERSION: Final = 4
 
 
 @dataclass(frozen=True)
@@ -265,6 +269,21 @@ CASES: Final[tuple[GoldenCase, ...]] = (
         "Wang-Landau with an energy window (drive-in) on the cubic J1-J2 model",
         kind="wang_landau",
     ),
+    GoldenCase(
+        "wang_landau_square8_replica_exchange",
+        {
+            "lattice": _square(8, j1=1.0),
+            "n_windows": 2,
+            "walkers_per_window": 2,
+            "exchange_interval": 20,
+            "check_interval": 100,
+            "log_f_final": 1e-3,
+            "production_sweeps": 200,
+            "n_walkers": 2,
+        },
+        "replica-exchange Wang-Landau: two windows, two walkers each, merged",
+        kind="wang_landau",
+    ),
 )
 
 
@@ -278,6 +297,15 @@ def _floats(values: Any) -> list[float]:
 
 def _ints(values: Any) -> list[int]:
     return [int(v) for v in np.asarray(values).tolist()]
+
+
+def _listify(value: Any) -> Any:
+    """Tuples (nested too) become lists, as JSON round-trips them."""
+    if isinstance(value, tuple | list):
+        return [_listify(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _listify(item) for key, item in value.items()}
+    return value
 
 
 def run_wang_landau_case(case: GoldenCase) -> dict[str, Any]:
@@ -314,14 +342,8 @@ def run_wang_landau_case(case: GoldenCase) -> dict[str, Any]:
         "log_g": _floats(results.log_g),
         "wl_histogram": _ints(results.wl_histogram),
         "production_histogram": _ints(results.production_histogram),
-        "wang_landau": {
-            key: (list(value) if isinstance(value, tuple) else value)
-            for key, value in dataclasses.asdict(results.wang_landau).items()
-        },
-        "production": {
-            key: (list(value) if isinstance(value, tuple) else value)
-            for key, value in dataclasses.asdict(results.production).items()
-        },
+        "wang_landau": _listify(dataclasses.asdict(results.wang_landau)),
+        "production": _listify(dataclasses.asdict(results.production)),
         "walkers": walkers,
         "final_spins_sha256": _sha256(
             np.ascontiguousarray(results.final_spins).tobytes()

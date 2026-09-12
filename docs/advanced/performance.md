@@ -3,7 +3,7 @@
 <!-- benchmarks:headline:begin -->
 On one core of an Apple M4 (10 cores: 4 performance + 6 efficiency), mcising performs **351M Metropolis spin updates per second** on a 32×32 square lattice at Tc — 140.4× faster than pure Python and 15.0× faster than a NumPy checkerboard implementation of the same update, and 2.4× faster than peapods on a matched workload (energy recorded every sweep on both sides).
 
-mcising 0.29.0 (commit 2e3548a), Python 3.12.11, measured 2026-09-01; medians of repeated runs. Regenerate with `uv run --group benchmark python benchmarks/run_all.py --write-docs`.
+mcising 1.1.0 (commit 0161357), Python 3.12.11, measured 2026-09-12; medians of repeated runs. Regenerate with `uv run --group benchmark python benchmarks/run_all.py --write-docs`.
 <!-- benchmarks:headline:end -->
 
 Every table on this page is rendered by `benchmarks/run_all.py` from the
@@ -102,6 +102,23 @@ Metropolis on the square lattice at Tc, one thread, Apple M4 (10 cores: 4 perfor
 
 Metropolis, 128×128 square lattice, 20 temperatures from 3.5 to 1.5, 500 thermalization + 2,000 production sweeps per temperature (measured every 10), Apple M4 (10 cores: 4 performance + 6 efficiency); medians of 3 runs. The independent and parallel-tempering rows each run in a fresh process with `RAYON_NUM_THREADS` set to the thread count; the cooldown mode is single-threaded by construction.
 <!-- benchmarks:parallel:end -->
+
+## Wang-Landau sampling
+
+The flat-histogram stage is a single random walk by default and a set of
+replica-exchange walkers when asked (see the
+[tutorial](../tutorial/wang-landau.md#scaling-out)); the production stage
+is a plain multicanonical chain.
+
+<!-- benchmarks:wang_landau:begin -->
+| Workload | Bins | Walkers | Sweeps per walker | Wang-Landau stage | Flip attempts/s | Wall-time speed-up | Production attempts/s |
+|---|---|---|---|---|---|---|---|
+| Square 32×32, whole spectrum | 1,025 | 1 | 2,141,200 | 40.27 s | 54,451,864 |  | 6,027,962 |
+| Cubic 12³ J1-J2, energy window | 10,369 | 1 | 468,000 | 15.19 s | 53,247,849 | 1.0× | 10,483,343 |
+| Cubic 12³ J1-J2, energy window, replica exchange | 10,369 | 8 | 218,200 | 14.26 s | 211,525,333 | 1.1× | 9,213,939 |
+
+Wang-Landau stage to `ln f = 1e-6` (flatness checks every 200 sweeps), then a one-walker production stage of 20,000 sweeps on the frozen weights; the cubic workloads sample the J1-J2 model at J2 = -1/2 inside the per-site energy window (-1.7, -0.5) that holds both phases of its first-order transition, and the replica-exchange row runs 8 windows × 1 walkers on the Rayon pool (10 threads); Apple M4 (10 cores: 4 performance + 6 efficiency); medians of 3 runs. The replica-exchange row reaches that `ln f` in 2.1× fewer sweeps per walker than the serial cubic run; its walkers synchronise at every exchange, so the slowest of them sets the pace and the attempt rate per walker is 50% of the serial one here, which is what separates the two speed-ups.
+<!-- benchmarks:wang_landau:end -->
 
 ## Why it's fast
 

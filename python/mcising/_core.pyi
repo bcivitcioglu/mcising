@@ -403,6 +403,10 @@ def run_wang_landau(
     max_wl_sweeps: int | None = None,
     drive_beta: float = 1.0,
     drive_max_sweeps: int = 10000,
+    n_windows: int = 1,
+    walkers_per_window: int = 1,
+    window_overlap: float = 0.75,
+    exchange_interval: int = 100,
 ) -> dict[str, Any]:
     """Wang-Landau density of states plus a multicanonical run (internal).
 
@@ -422,7 +426,15 @@ def run_wang_landau(
     ``energy_window`` is per site, ``bin_width`` in total-energy units
     (required when the couplings are not exactly representable in
     binary), ``initial_log_g`` has one entry per energy bin (NaN =
-    unknown). The GIL is released while sampling.
+    unknown). With ``n_windows > 1`` or ``walkers_per_window > 1`` the
+    first stage is the replica-exchange Wang-Landau algorithm: the range
+    is split into ``n_windows`` windows sharing ``window_overlap`` of
+    their length, every window holds ``walkers_per_window`` walkers
+    (seeded ``base_seed + 1 + index``) advanced in parallel, adjacent
+    windows exchange configurations every ``exchange_interval`` sweeps
+    (``check_interval`` must be a multiple of it), the walkers of a
+    window average their estimates at every check, and the windows are
+    joined at the end. The GIL is released while sampling.
 
     Returns
     -------
@@ -435,7 +447,9 @@ def run_wang_landau(
         ``iteration_visited_bins``; ``total_sweeps``,
         ``one_over_t_switch_sweep``, ``final_log_f``, ``converged``,
         ``accepted``, ``attempted``, ``drive_in_sweeps``,
-        ``visited_bins``), ``final_spins``, ``final_rng_state``,
+        ``visited_bins``, ``n_windows``, ``walkers_per_window``,
+        ``window_bins``, ``exchange_attempted``, ``exchange_accepted``,
+        ``merge_bins``), ``final_spins``, ``final_rng_state``,
         ``walkers`` (one dict per walker: ``walker``, ``energies``,
         ``magnetizations``, ``staggered_magnetizations``, ``bin_index``,
         ``accepted``, ``attempted``, ``round_trips`` and

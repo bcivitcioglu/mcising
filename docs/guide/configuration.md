@@ -127,6 +127,10 @@ have their own configuration:
 | `n_walkers` | `int` | `1` | Independent production walkers (parallel) |
 | `store_configs` | `bool` | `False` | Keep a spin configuration per measurement |
 | `drive_beta`, `drive_max_sweeps` | `float`, `int` | `1.0`, `10000` | Metropolis drive into the energy window |
+| `n_windows` | `int` | `1` | Energy windows of the replica-exchange first stage (`1`: the serial walker) |
+| `walkers_per_window` | `int` | `1` | Walkers per window, run in parallel |
+| `window_overlap` | `float` | `0.75` | Fraction of a window shared with its neighbour |
+| `exchange_interval` | `int` | `100` | Sweeps between replica-exchange attempts (`check_interval` must be a multiple) |
 
 `WangLandauConfig.from_dict(data)` rebuilds a config from
 `dataclasses.asdict(config)` like the other configs.

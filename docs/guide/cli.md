@@ -81,6 +81,8 @@ mcising wang-landau -L 4 --lattice cubic --j2 -0.5 --energy-window -1.7:-0.5 --l
 | `--interval` | 1 | Sweeps between production measurements |
 | `--walkers` | 1 | Independent production walkers |
 | `--store-configs` | off | Keep a configuration per measurement |
+| `--windows`, `--walkers-per-window` | 1, 1 | Replica-exchange first stage: energy windows and walkers per window |
+| `--window-overlap`, `--exchange-interval` | 0.75, 100 | Window overlap fraction and sweeps between exchange attempts |
 | `-T`, `--temperature` | — | Temperatures to report reweighted estimates at |
 | `-o`, `--output` | — | HDF5 output |
 | `--json` | — | JSON summary (diagnostics plus the `-T` estimates) |

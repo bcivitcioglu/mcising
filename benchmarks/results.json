@@ -1,8 +1,8 @@
 {
  "schema_version": 1,
- "generated_utc": "2026-09-01T20:06:11+00:00",
- "mcising_version": "0.29.0",
- "git_commit": "2e3548a",
+ "generated_utc": "2026-09-12T08:36:03+00:00",
+ "mcising_version": "1.1.0",
+ "git_commit": "0161357",
  "python": "3.12.11",
  "platform": "macOS-26.6.2-arm64-arm-64bit",
  "machine": {
@@ -109,6 +109,15 @@
     123,
     7
    ]
+  },
+  "wang_landau": {
+   "square_size": 32,
+   "cubic_size": 12,
+   "log_f_final_exponent": 6,
+   "n_windows": 8,
+   "walkers_per_window": 1,
+   "production_sweeps": 20000,
+   "repeats": 3
   }
  },
  "sections": {
@@ -505,7 +514,53 @@
    "status": "matched",
    "generated_utc": "2026-09-01T20:07:35+00:00",
    "elapsed_seconds": 38.656528084000456
+  },
+  "wang_landau": {
+   "cpu_count": 10,
+   "rows": [
+    {
+     "sites": 1024,
+     "n_bins": 1025,
+     "walkers": 1,
+     "wl_sweeps": 2141200,
+     "wl_attempts": 2192588800,
+     "wl_median_seconds": 40.26655183301773,
+     "wl_converged": true,
+     "production_sweeps": 1,
+     "production_attempts": 1024,
+     "production_median_seconds": 0.00016987498383969069,
+     "label": "Square 32\u00d732, whole spectrum"
+    },
+    {
+     "sites": 1728,
+     "n_bins": 10369,
+     "walkers": 1,
+     "wl_sweeps": 468000,
+     "wl_attempts": 808704000,
+     "wl_median_seconds": 15.187543208012357,
+     "wl_converged": true,
+     "production_sweeps": 1,
+     "production_attempts": 1728,
+     "production_median_seconds": 0.0001648329198360443,
+     "label": "Cubic 12\u00b3 J1-J2, energy window"
+    },
+    {
+     "sites": 1728,
+     "n_bins": 10369,
+     "walkers": 8,
+     "wl_sweeps": 218200,
+     "wl_attempts": 3016396800,
+     "wl_median_seconds": 14.260215374990366,
+     "wl_converged": true,
+     "production_sweeps": 1,
+     "production_attempts": 1728,
+     "production_median_seconds": 0.00018754194024950266,
+     "label": "Cubic 12\u00b3 J1-J2, energy window, replica exchange"
+    }
+   ],
+   "generated_utc": "2026-09-12T08:39:32+00:00",
+   "elapsed_seconds": 209.3590686249081
   }
  },
- "elapsed_seconds": 83.6697057079873
+ "elapsed_seconds": 209.35907212505117
 }

@@ -282,6 +282,17 @@ $\ln g_\mathrm{prod}(E) = \ln H_\mathrm{prod}(E) + \ln g_\mathrm{WL}(E)$,
 and its difference to $\ln g_\mathrm{WL}$ is the measured error of the
 weights.
 
+The first stage parallelises as replica-exchange Wang-Landau (Vogel, Li,
+Wüst & Landau, Phys. Rev. Lett. 110, 210603 (2013)): the range is split
+into overlapping windows, each sampled by several walkers; walkers of
+adjacent windows exchange configurations with probability
+$\min\left(1, \frac{g_i(E_i)\, g_j(E_j)}{g_i(E_j)\, g_j(E_i)}\right)$
+when both energies lie in both windows; the walkers of a window average
+their estimates at every flatness check; one modification-factor schedule
+governs all windows (a check passes when the pooled histogram of every
+window is flat, the $1/t$ clock is the slowest window's); and the pieces
+are joined at the overlap bin where their slopes $d\ln g/dE$ agree best.
+
 #### Diagnostics
 
 Whether the walk actually connected the two ends of its energy range

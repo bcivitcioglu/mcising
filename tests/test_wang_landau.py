@@ -118,11 +118,24 @@ class TestConfig:
             ("n_walkers", 0, "n_walkers"),
             ("drive_beta", -1.0, "drive_beta"),
             ("drive_max_sweeps", 0, "drive_max_sweeps"),
+            ("n_windows", 0, "n_windows"),
+            ("walkers_per_window", 0, "walkers_per_window"),
+            ("window_overlap", 1.0, "window_overlap"),
+            ("window_overlap", -0.1, "window_overlap"),
+            ("exchange_interval", 0, "exchange_interval"),
         ],
     )
     def test_invalid_values_raise(self, field: str, value: object, match: str) -> None:
         with pytest.raises(ConfigurationError, match=match):
             WangLandauConfig(**{field: value})  # type: ignore[arg-type]
+
+    def test_parallel_stage_cadence(self) -> None:
+        assert not WangLandauConfig().parallel_stage
+        assert WangLandauConfig(n_windows=2).parallel_stage
+        with pytest.raises(ConfigurationError, match="multiple of exchange_interval"):
+            WangLandauConfig(n_windows=2, check_interval=150, exchange_interval=100)
+        # The serial walker ignores the exchange cadence.
+        WangLandauConfig(check_interval=150, exchange_interval=100)
 
     def test_from_dict_round_trip(self) -> None:
         config = WangLandauConfig(
@@ -446,6 +459,70 @@ class TestDeterminismAndDiagnostics:
         assert r.bin_width == 2.0 and r.energy_bins[0] == -6.0
         estimate = r.reweight(1.0, order_parameter=(1, 2, 4))
         assert math.isfinite(estimate.order_parameter.value)
+
+
+@pytest.fixture(scope="module")
+def rewl() -> WangLandauResults:
+    """A 2 x 2 replica-exchange run on the 8 x 8 torus, shared by the class."""
+    return _run(
+        lattice=LatticeConfig(size=8, j1=1.0),
+        n_windows=2,
+        walkers_per_window=2,
+        exchange_interval=20,
+        check_interval=100,
+        log_f_final=1e-5,
+        n_walkers=2,
+        production_sweeps=50_000,
+    )
+
+
+class TestReplicaExchangeStage:
+    """The parallel first stage: windows, walkers, exchanges, one estimate."""
+
+    def test_diagnostics_describe_the_layout(self, rewl: WangLandauResults) -> None:
+        wl = rewl.wang_landau
+        assert (wl.n_windows, wl.walkers_per_window) == (2, 2)
+        assert len(wl.window_bins) == 2
+        assert wl.window_bins[0][0] == 0 and wl.window_bins[1][1] == rewl.n_bins - 1
+        assert wl.window_bins[1][0] < wl.window_bins[0][1]  # overlap
+        assert len(wl.exchange_attempted) == 1 and wl.exchange_attempted[0] > 0
+        assert wl.exchange_acceptance.shape == (1,)
+        assert 0.0 < wl.exchange_acceptance[0] <= 1.0
+        assert len(wl.merge_bins) == 1
+        assert wl.window_bins[1][0] <= wl.merge_bins[0] <= wl.window_bins[0][1]
+        assert wl.converged
+        assert rewl.production.total_round_trips > 0
+
+    @pytest.mark.parametrize("temperature", [2.0, TC_SQUARE_2D, 3.0])
+    def test_matches_ferdinand_fisher(
+        self, rewl: WangLandauResults, temperature: float
+    ) -> None:
+        estimate = rewl.reweight(temperature)
+        _assert_agrees(
+            estimate.energy,
+            square_torus_energy_per_site(8, temperature),
+            label=f"rewl <e> at T={temperature}",
+            power=0.01,
+        )
+        _assert_agrees(
+            estimate.specific_heat,
+            square_torus_specific_heat(8, temperature),
+            label=f"rewl Cv at T={temperature}",
+            power=0.10,
+        )
+
+    def test_serial_diagnostics_defaults(self, square4: WangLandauResults) -> None:
+        wl = square4.wang_landau
+        assert (wl.n_windows, wl.walkers_per_window) == (1, 1)
+        assert wl.window_bins == ((0, 16),)
+        assert wl.exchange_attempted == () and wl.merge_bins == ()
+        assert wl.exchange_acceptance.shape == (0,)
+
+    def test_summary_mentions_the_layout(
+        self, rewl: WangLandauResults, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        rewl.summary()
+        assert "2 window(s) x 2 walker(s)" in capsys.readouterr().out
 
 
 @pytest.mark.slow

@@ -166,6 +166,67 @@ transition temperature; the equal-weight one with `q` equal to the number
 of ordered states (six for the layered phase: three axes, two signs) has
 the smallest finite-size corrections.
 
+The committed script
+[`examples/cubic_first_order.py`](https://github.com/bcivitcioglu/mcising/blob/master/examples/cubic_first_order.py)
+runs this analysis for $L = 8, 12, 16$ with the parallel first stage
+described below and produces this figure: the reweighted energy
+distributions at $T_h(L)$, single-peaked at $L = 8$ and bimodal from
+$L = 12$ on, and the barrier against the interface area $L^2$.
+
+![Canonical energy distributions of the cubic J1-J2 model at the equal-height temperature for L = 8, 12, 16, and the free-energy barrier against L squared](../assets/figures/cubic_first_order.png)
+
+## Scaling out
+
+The first stage is a single random walk by default. On a large lattice
+it is the expensive part (its cost grows with the number of energy bins
+times `1 / log_f_final`), and it parallelises the way Vogel, Li, Wüst
+and Landau's replica-exchange Wang-Landau does: the energy range is split
+into `n_windows` overlapping windows, each sampled by
+`walkers_per_window` walkers in parallel; adjacent windows exchange
+configurations every `exchange_interval` sweeps so no walker is trapped
+at a window edge; the walkers of a window pool their estimates at every
+flatness check; and the windows are joined at the end where their slopes
+agree. Everything else — the `1/t` schedule, the production stage, the
+reweighting — is unchanged, and the run stays deterministic for any
+thread count.
+
+```python
+config = WangLandauConfig(
+    lattice=LatticeConfig(size=8, j1=1.0),
+    n_windows=2,
+    walkers_per_window=2,
+    exchange_interval=20,
+    check_interval=100,     # a multiple of exchange_interval
+    log_f_final=1e-4,
+    production_sweeps=5_000,
+    n_walkers=4,
+)
+parallel = WangLandauSimulation(config).run(show_progress=False)
+wl = parallel.wang_landau
+print(wl.window_bins, wl.exchange_acceptance, wl.merge_bins)
+print(parallel.reweight(2.269).energy)
+```
+
+`window_bins` are the bin ranges of the windows, `exchange_acceptance`
+the replica-exchange acceptance per adjacent pair (a pair that never
+swaps means the overlap is too small for the barrier between the
+windows), and `merge_bins` the bins at which the pieces were joined. The
+first stage ends when the slowest window is flat, so the wall time falls
+with the number of windows until one window's own flatness sets the
+pace; the block below is the speed-up `benchmarks/run_all.py` measured
+on the development machine. Keep the window that matters for a
+first-order transition inside one window, or at least away from a join.
+
+<!-- benchmarks:wang_landau:begin -->
+| Workload | Bins | Walkers | Sweeps per walker | Wang-Landau stage | Flip attempts/s | Wall-time speed-up | Production attempts/s |
+|---|---|---|---|---|---|---|---|
+| Square 32×32, whole spectrum | 1,025 | 1 | 2,141,200 | 40.27 s | 54,451,864 |  | 6,027,962 |
+| Cubic 12³ J1-J2, energy window | 10,369 | 1 | 468,000 | 15.19 s | 53,247,849 | 1.0× | 10,483,343 |
+| Cubic 12³ J1-J2, energy window, replica exchange | 10,369 | 8 | 218,200 | 14.26 s | 211,525,333 | 1.1× | 9,213,939 |
+
+Wang-Landau stage to `ln f = 1e-6` (flatness checks every 200 sweeps), then a one-walker production stage of 20,000 sweeps on the frozen weights; the cubic workloads sample the J1-J2 model at J2 = -1/2 inside the per-site energy window (-1.7, -0.5) that holds both phases of its first-order transition, and the replica-exchange row runs 8 windows × 1 walkers on the Rayon pool (10 threads); Apple M4 (10 cores: 4 performance + 6 efficiency); medians of 3 runs. The replica-exchange row reaches that `ln f` in 2.1× fewer sweeps per walker than the serial cubic run; its walkers synchronise at every exchange, so the slowest of them sets the pace and the attempt rate per walker is 50% of the serial one here, which is what separates the two speed-ups.
+<!-- benchmarks:wang_landau:end -->
+
 ## Saving and the command line
 
 `save_hdf5` writes a Wang-Landau results file (its own layout and

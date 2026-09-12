@@ -49,7 +49,7 @@ How mcising compares with peapods, ALPS and the Julia spin-model packages, featu
 <!-- benchmarks:headline:begin -->
 On one core of an Apple M4 (10 cores: 4 performance + 6 efficiency), mcising performs **351M Metropolis spin updates per second** on a 32×32 square lattice at Tc — 140.4× faster than pure Python and 15.0× faster than a NumPy checkerboard implementation of the same update, and 2.4× faster than peapods on a matched workload (energy recorded every sweep on both sides).
 
-mcising 0.29.0 (commit 2e3548a), Python 3.12.11, measured 2026-09-01; medians of repeated runs. Regenerate with `uv run --group benchmark python benchmarks/run_all.py --write-docs`.
+mcising 1.1.0 (commit 0161357), Python 3.12.11, measured 2026-09-12; medians of repeated runs. Regenerate with `uv run --group benchmark python benchmarks/run_all.py --write-docs`.
 <!-- benchmarks:headline:end -->
 
 <!-- benchmarks:baselines:begin -->
@@ -253,6 +253,7 @@ Three committed scripts reproduce known physics end to end and write the figures
 python examples/onsager_reproduction.py    # <E>/N and <|m|> vs Onsager's and Yang's exact curves
 python examples/tc_binder_crossing.py      # Tc from Binder-cumulant crossings of three lattice sizes
 python examples/stripe_phase_diagram.py    # J1-J2 phase diagram: ferromagnet vs stripe order
+python examples/cubic_first_order.py       # first-order transition of the cubic J1-J2 model by Wang-Landau sampling
 ```
 
 Every script takes `--out DIR` and `--quick`; the committed output is in [`docs/assets/figures/`](docs/assets/figures/).

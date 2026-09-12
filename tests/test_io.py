@@ -927,6 +927,41 @@ class TestWangLandauIO:
         assert a.energy == b.energy and a.specific_heat == b.specific_heat
         assert a.order_parameter == b.order_parameter
 
+    def test_round_trip_of_the_parallel_stage_and_tolerant_read(
+        self, tmp_path: Path
+    ) -> None:
+        results = _wang_landau_results(
+            n_windows=2, walkers_per_window=2, exchange_interval=20, store_configs=False
+        )
+        path = tmp_path / "rewl.h5"
+        save_hdf5(results, path)
+        loaded = load_wang_landau_hdf5(path)
+        assert loaded.wang_landau == results.wang_landau
+        assert loaded.wang_landau.n_windows == 2
+        assert len(loaded.wang_landau.merge_bins) == 1
+        record = wang_landau_summary(loaded)
+        stage = record["wang_landau"]
+        assert stage["n_windows"] == 2 and len(stage["window_bins"]) == 2
+        assert len(stage["exchange_accepted"]) == 1
+        # A file written before the parallel stage existed loads with the
+        # serial defaults.
+        with h5py.File(path, "a") as f:
+            stage_group = f["wang_landau"]
+            for name in (
+                "window_bins",
+                "exchange_attempted",
+                "exchange_accepted",
+                "merge_bins",
+            ):
+                del stage_group[name]
+            del stage_group.attrs["n_windows"]
+            del stage_group.attrs["walkers_per_window"]
+        legacy = load_wang_landau_hdf5(path)
+        assert legacy.wang_landau.n_windows == 1
+        assert (
+            legacy.wang_landau.window_bins == () and legacy.wang_landau.merge_bins == ()
+        )
+
     def test_round_trip_without_configurations(self, tmp_path: Path) -> None:
         results = _wang_landau_results(store_configs=False, n_walkers=1)
         path = tmp_path / "dos.h5"

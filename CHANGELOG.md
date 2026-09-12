@@ -74,6 +74,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with two production walkers and stored configurations; an energy window
   with drive-in on the cubic J1-J2 model); every pre-existing value in it
   is unchanged bit for bit.
+- Replica-exchange Wang-Landau for the first stage (Vogel, Li, Wüst &
+  Landau 2013). `WangLandauConfig(n_windows=..., walkers_per_window=...,
+  window_overlap=0.75, exchange_interval=100)` splits the energy range
+  into overlapping windows sampled by several walkers each on the Rayon
+  pool, exchanges configurations between adjacent windows, averages the
+  walkers of a window at every flatness check under one shared `ln f`
+  schedule (a window is flat when the pooled histogram of its walkers
+  is; the `1/t` clock is the slowest window's), and joins the pieces
+  where their slopes agree; the layout, exchange acceptance per pair and
+  join bins are recorded in `WangLandauDiagnostics` (saved in the HDF5
+  `wang_landau/` group and the JSON summary with tolerant reads; CLI
+  `--windows`, `--walkers-per-window`, `--window-overlap`,
+  `--exchange-interval`). Runs are deterministic for any thread count.
+  The default single walker is unchanged, except that a run whose `ln f`
+  reaches its final value during the halving stage now returns the
+  histogram since its last reset instead of all zeros; the golden fixture
+  is rewritten at record schema 4 with the new diagnostics keys, that
+  histogram, and a replica-exchange case (ln g, every series and every
+  canonical case unchanged bit for bit).
+- `examples/cubic_first_order.py`: the first-order transition of the
+  cubic J1-J2 model at `|J2|/J1 = 0.5` by Wang-Landau sampling — the
+  reweighted energy distributions at the equal-height temperature for
+  `L = 8, 12, 16`, the equal-weight temperature with six ordered states,
+  the barrier against the interface area and the interface tension; CI
+  runs it at both budgets, the figure is on the tutorial page.
+- `benchmarks/run_all.py` gains the `wang_landau` section: the
+  Wang-Landau stage and the production stage on the square 32 x 32
+  spectrum and on the cubic 12^3 J1-J2 energy window, serial and with
+  eight replica-exchange windows (sweeps per walker, attempt rates and
+  the wall-time speed-up next to the sweep ratio), rendered into
+  `docs/advanced/performance.md` and the tutorial's "Scaling out"
+  section from `benchmarks/results.json`, which is regenerated at the
+  full budget.
 
 ## [1.1.0] - 2026-09-11
 
