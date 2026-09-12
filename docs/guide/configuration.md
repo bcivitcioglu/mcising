@@ -106,6 +106,31 @@ import numpy as np
 temperatures=tuple(np.linspace(1.5, 3.5, 50))
 ```
 
+## WangLandauConfig
+
+Flat-histogram runs (see the [Wang-Landau tutorial](../tutorial/wang-landau.md))
+have their own configuration:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `lattice` | `LatticeConfig` | square, `L=10`, `j1=1` | Geometry and couplings |
+| `seed` | `int` | `42` | Wang-Landau walker seed; production walker `k` uses `seed + 1000 + k` |
+| `energy_window` | `(float, float) \| None` | `None` | Per-site energy range to sample (`None`: the whole spectrum) |
+| `bin_width` | `float \| None` | `None` | Bin width in total-energy units (`None`: the exact grid; required for couplings not exactly representable in binary) |
+| `flatness` | `float` | `0.8` | Flatness criterion `min H >= flatness * mean H` |
+| `log_f_initial`, `log_f_final` | `float` | `1.0`, `1e-6` | Modification-factor schedule (halving, then `1/t`) |
+| `check_interval` | `int` | `1000` | Sweeps between flatness checks |
+| `max_wl_sweeps` | `int \| None` | `None` | Cap on the first stage (`0` freezes an `initial_log_g`) |
+| `production_sweeps` | `int` | `10000` | Sweeps per production walker |
+| `production_thermalization` | `int` | `0` | Discarded sweeps per production walker |
+| `measurement_interval` | `int` | `1` | Sweeps between production measurements |
+| `n_walkers` | `int` | `1` | Independent production walkers (parallel) |
+| `store_configs` | `bool` | `False` | Keep a spin configuration per measurement |
+| `drive_beta`, `drive_max_sweeps` | `float`, `int` | `1.0`, `10000` | Metropolis drive into the energy window |
+
+`WangLandauConfig.from_dict(data)` rebuilds a config from
+`dataclasses.asdict(config)` like the other configs.
+
 ## Defaults
 
 | Parameter | Default |

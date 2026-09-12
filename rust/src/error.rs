@@ -18,9 +18,27 @@ pub enum MCIsingError {
     InvalidInterval(&'static str, usize),
     IncompatibleSwapCadence(usize, usize),
     InvalidSeedOffsets(usize, usize),
+    NonDyadicCouplingsNeedBinWidth,
+    InvalidBinWidth(f64),
+    TooManyEnergyBins(usize, usize),
+    DegenerateEnergySpectrum,
+    InvalidEnergyWindow(f64, f64),
+    EnergyWindowUnreachable {
+        e_lo: f64,
+        e_hi: f64,
+        reached: f64,
+        sweeps: u64,
+    },
+    InvalidFlatness(f64),
+    InvalidLogF(&'static str, f64),
+    InvalidDriveBeta(f64),
+    InvalidInitialLogG(String),
 }
 
 impl fmt::Display for MCIsingError {
+    // One flat table of messages: splitting it by theme would hide the
+    // one place a reviewer reads every user-facing error.
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidLatticeSize(size) => {
@@ -97,6 +115,69 @@ impl fmt::Display for MCIsingError {
                     "seed_offsets must have one entry per temperature, \
                      got {n_offsets} offsets for {n_temps} temperatures"
                 )
+            }
+            Self::NonDyadicCouplingsNeedBinWidth => {
+                write!(
+                    f,
+                    "The couplings are not exactly representable in binary at a \
+                     usable resolution, so the exact energy grid cannot be \
+                     built; pass bin_width (in total-energy units) to bin the \
+                     density of states explicitly"
+                )
+            }
+            Self::InvalidBinWidth(width) => {
+                write!(f, "bin_width must be positive and finite, got {width}")
+            }
+            Self::TooManyEnergyBins(requested, max) => {
+                write!(
+                    f,
+                    "The energy grid would need {requested} bins, more than the \
+                     {max} supported; pass a coarser bin_width or an energy_window"
+                )
+            }
+            Self::DegenerateEnergySpectrum => {
+                write!(
+                    f,
+                    "Every spin flip is energy-neutral (all couplings are zero), \
+                     so there is no density of states to sample"
+                )
+            }
+            Self::InvalidEnergyWindow(lo, hi) => {
+                write!(
+                    f,
+                    "energy_window must be a finite (lo, hi) pair per site with \
+                     lo < hi that contains at least one energy bin, got ({lo}, {hi})"
+                )
+            }
+            Self::EnergyWindowUnreachable {
+                e_lo,
+                e_hi,
+                reached,
+                sweeps,
+            } => {
+                write!(
+                    f,
+                    "Could not drive the configuration into the energy window \
+                     ({e_lo}, {e_hi}) per site within {sweeps} sweeps (reached \
+                     {reached}); widen the window, raise drive_max_sweeps, or \
+                     check that the window is physically reachable"
+                )
+            }
+            Self::InvalidFlatness(value) => {
+                write!(f, "flatness must be in (0, 1], got {value}")
+            }
+            Self::InvalidLogF(name, value) => {
+                write!(
+                    f,
+                    "{name} must be positive and finite with \
+                     log_f_final < log_f_initial, got {value}"
+                )
+            }
+            Self::InvalidDriveBeta(value) => {
+                write!(f, "drive_beta must be positive and finite, got {value}")
+            }
+            Self::InvalidInitialLogG(msg) => {
+                write!(f, "Invalid initial_log_g: {msg}")
             }
         }
     }

@@ -43,6 +43,7 @@ nav:
     - Frustrated Magnetism: tutorial/frustrated-magnetism.md
     - Cluster Algorithms: tutorial/cluster-algorithms.md
     - Parallel Execution: tutorial/parallel-execution.md
+    - Wang-Landau Sampling: tutorial/wang-landau.md
     - Adaptive Mode: tutorial/adaptive-mode.md
   - User Guide:
     - Configuration: guide/configuration.md
@@ -53,6 +54,7 @@ nav:
     - Simulation: reference/simulation.md
     - Configuration: reference/config.md
     - Statistics: reference/statistics.md
+    - Wang-Landau: reference/wang-landau.md
     - I/O: reference/io.md
     - Plotting: reference/plotting.md
     - Exceptions: reference/exceptions.md

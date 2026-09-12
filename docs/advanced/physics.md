@@ -225,6 +225,119 @@ smooth, plausible numbers. Every parallel-tempering run therefore records
 
 Only production rounds are counted; thermalization never swaps.
 
+### Wang-Landau and multicanonical sampling
+
+At a first-order transition the two coexisting phases are separated by a
+free-energy barrier $\Delta F \propto \sigma L^{d-1}$, and every canonical
+sampler — parallel tempering included — needs a time exponential in that
+barrier to cross it. Flat-histogram methods remove the barrier from the
+sampling problem by making every energy equally likely.
+
+**Wang-Landau** (Wang & Landau, Phys. Rev. Lett. 86, 2050 (2001)) is a
+random walk in energy with the acceptance probability
+
+$$
+P(E \to E') = \min\left(1, \frac{g(E)}{g(E')}\right),
+$$
+
+where the density of states $g(E)$ is *learned as the walk proceeds*:
+after every proposal the current bin receives $\ln g(E) \mathrel{+}= \ln
+f$ and one histogram count. When the histogram is flat — its minimum over
+the visited bins is at least `flatness` times its mean — the histogram is
+reset and $\ln f \to \ln f / 2$. Once $\ln f$ falls below $1/t$, with $t$
+the mean number of visits per bin, the schedule switches to $\ln f = 1/t$
+(Belardinelli & Pereyra, Phys. Rev. E 75, 046701 (2007)), whose error
+decreases as $t^{-1/2}$ instead of saturating. mcising walks on the exact
+energy grid of the couplings: the walker carries the integer
+neighbour-shell sums, the bin width is the greatest common divisor of all
+single-flip energy changes, and the bin of a state is a pure function of
+those integers. Proposals pick random sites (a sequential scan is not
+ergodic on this walk), a proposal leaving the energy window is rejected
+and still counts as a visit of the current bin (Schulz, Binder, Müller &
+Landau, Phys. Rev. E 67, 067102 (2003)), and a bin entered for the first
+time starts from the $\ln g$ of the bin the walker came from.
+
+**Multicanonical production** (Berg & Neuhaus, Phys. Rev. Lett. 68, 9
+(1992)) then freezes the weights $W(E) = 1/g(E)$. With fixed weights the
+walk is an exact Markov chain whose stationary distribution is
+$\pi(x) \propto W(E(x))$ — for *any* positive $W$ — so a canonical
+average at inverse temperature $\beta$ follows from the recorded series
+without bias:
+
+$$
+\langle A \rangle_T = \frac{\sum_i w_i A_i}{\sum_i w_i},
+\qquad
+\ln w_i = \ln g(E_i) - \beta E_i .
+$$
+
+The Wang-Landau weights only set the variance, through how flat the
+production histogram is; the honest uncertainty is the delete-one-block
+jackknife of the reweighted series, with blocks that never straddle two
+walkers (blocks shorter than a few round-trip times underestimate it).
+Every measurement records the energy, the magnetization and the staggered
+magnetizations, so the order parameter of a symmetry-broken phase, its
+susceptibility and its Binder cumulant are available at any temperature.
+The production histogram also refines the estimate,
+$\ln g_\mathrm{prod}(E) = \ln H_\mathrm{prod}(E) + \ln g_\mathrm{WL}(E)$,
+and its difference to $\ln g_\mathrm{WL}$ is the measured error of the
+weights.
+
+#### Diagnostics
+
+Whether the walk actually connected the two ends of its energy range
+cannot be read off the reweighted averages. Every run records
+`results.wang_landau` (the $\ln f$ schedule, sweeps and flatness per
+iteration, whether $\ln f$ reached `log_f_final`) and
+`results.production`: the flip acceptance of every walker, the flatness
+of the pooled production histogram, and the number of **round trips** —
+excursions from the lowest visited energy bin to the highest and back —
+each walker completed, the analogue of a replica's round trip in parallel
+tempering. Each reweighted estimate carries the Kish **effective sample
+size** $(\sum_i w_i)^2 / \sum_i w_i^2$ and the **edge weight**, the
+canonical weight sitting in the two outermost visited bins, which must be
+negligible for the estimate to be trusted.
+
+#### Free-energy barriers
+
+At the transition the canonical energy distribution $P_T(E) \propto
+g(E)\,e^{-\beta E}$ is bimodal. Following Lee & Kosterlitz (Phys. Rev.
+Lett. 65, 137 (1990)), mcising reports
+
+$$
+\frac{\Delta F}{T} = \ln \frac{P_\mathrm{peak}}{P_\mathrm{bottom}},
+\qquad
+\sigma = \frac{T\,(\Delta F / T)}{2 L^{d-1}},
+$$
+
+with $P_\mathrm{bottom}$ the mean of $P_T$ over the middle third between
+the peaks (the slab plateau of a periodic box, which holds two
+interfaces of area $L^{d-1}$) or its minimum, measured from the lower
+peak; the peaks are located on the histogram smoothed over one percent
+of the visited bins (the phases are hundreds of bins wide on a large
+lattice, the per-bin noise of a finite run is not), and a secondary
+peak below a thousandth of the main one is not a phase (the low-energy
+tail of any lattice has dips from the degeneracies of its first
+excitations). The **equal-height temperature** is the
+conventional place to quote the barrier; the **equal-weight temperature**
+$T_w(q)$, at which the weight of the ordered phase is $q$ times that of
+the disordered one ($q$ = number of ordered states), is the finite-size
+transition temperature with exponentially small corrections (Borgs &
+Kotecký, J. Stat. Phys. 61, 79 (1990)). Both shift as $L^{-d}$. The
+barrier estimate is only meaningful once the bottom is a plateau, i.e.
+for sizes at which the peaks are well separated.
+
+The cubic $J_1$-$J_2$ model is the case this machinery was built for.
+With ferromagnetic $J_1$ and antiferromagnetic next-nearest-neighbour
+$J_2$ (twelve face diagonals), the ground state is ferromagnetic for
+$|J_2|/J_1 < 1/4$ and layered — ferromagnetic planes alternating along
+one axis, $e_0 = -J_1 + 2 J_2$ per site — beyond that; the three axes and
+two signs give six ordered states, and the transition out of the layered
+phase is first order (the order parameter is a three-component field
+with cubic anisotropy whose single-axis state has no stable fixed point:
+Aharony, Phys. Rev. B 8, 4270 (1973)). Its order parameter is
+$\psi = \max_k |m_k|$ over the layered components $k = 1, 2, 4$ of the
+staggered magnetization.
+
 ## Correlation length
 
 The correlation length is the second-moment (structure-factor curvature)

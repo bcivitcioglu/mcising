@@ -113,11 +113,11 @@ This runs a Monte Carlo simulation of the 2D Ising model on a 32x32 square latti
 
     [:octicons-arrow-right-24: Parallel execution](tutorial/parallel-execution.md)
 
--   :material-chart-scatter-plot:{ .lg .middle } **3 MC Algorithms**
+-   :material-chart-scatter-plot:{ .lg .middle } **4 Sampling Algorithms**
 
     ---
 
-    Metropolis single-spin-flip, Wolff cluster, and Swendsen-Wang cluster. Choose the right tool for your physics.
+    Metropolis single-spin-flip, Wolff and Swendsen-Wang clusters, and Wang-Landau flat-histogram sampling for first-order transitions. Choose the right tool for your physics.
 
     [:octicons-arrow-right-24: Algorithms](tutorial/cluster-algorithms.md)
 

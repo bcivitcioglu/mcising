@@ -137,6 +137,15 @@ impl IsingSimulation {
         })
     }
 
+    /// Dismantle a freshly constructed simulation into the pieces a walker
+    /// that is not an `IsingSimulation` reuses: the seeded initial
+    /// configuration, the lattice, and the generator positioned right after
+    /// that draw. Used by the Wang-Landau runner so every sampler shares one
+    /// validation path and one seeding convention.
+    pub(crate) fn into_parts(self) -> (Vec<i8>, LatticeKind, Xoshiro256StarStar) {
+        (self.spins, self.lattice, self.rng)
+    }
+
     /// Replace the spin configuration (pure Rust, no PyO3).
     ///
     /// # Errors

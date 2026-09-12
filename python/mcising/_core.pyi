@@ -3,9 +3,9 @@
 This stub is the API reference for the compiled classes and functions:
 mkdocstrings renders it for ``IsingSimulation`` and editors show it, so
 every public symbol carries a docstring. Keep them in step with the ``///``
-comments in ``rust/src/simulation.rs`` and ``rust/src/parallel.rs``
-(``tests/test_core_stub_docs.py`` enforces their presence, ``stubtest``
-their signatures).
+comments in ``rust/src/simulation.rs``, ``rust/src/parallel.rs`` and
+``rust/src/wang_landau/mod.rs`` (``tests/test_core_stub_docs.py`` enforces
+their presence, ``stubtest`` their signatures).
 """
 
 from typing import Any, final
@@ -17,6 +17,7 @@ __all__ = [
     "IsingSimulation",
     "run_independent_temperatures",
     "run_parallel_tempering",
+    "run_wang_landau",
 ]
 
 # @final subsumes @disjoint_base (stubtest rejects the combination).
@@ -376,4 +377,76 @@ def run_independent_temperatures(
         unknown algorithm or lattice, an empty or non-positive temperature
         list, a zero ``measurement_interval``, or ``seed_offsets`` of the
         wrong length.
+    """
+
+def run_wang_landau(
+    lattice_size: int,
+    j1: float,
+    j2: float,
+    j3: float,
+    h: float,
+    base_seed: int,
+    lattice_type: str,
+    production_sweeps: int,
+    measurement_interval: int,
+    *,
+    n_walkers: int = 1,
+    production_thermalization: int = 0,
+    store_configs: bool = False,
+    bin_width: float | None = None,
+    energy_window: tuple[float, float] | None = None,
+    initial_log_g: NDArray[np.float64] | None = None,
+    flatness: float = 0.8,
+    log_f_initial: float = 1.0,
+    log_f_final: float = 1e-6,
+    check_interval: int = 1000,
+    max_wl_sweeps: int | None = None,
+    drive_beta: float = 1.0,
+    drive_max_sweeps: int = 10000,
+) -> dict[str, Any]:
+    """Wang-Landau density of states plus a multicanonical run (internal).
+
+    Behind :class:`mcising.WangLandauSimulation`. Stage 1 is the
+    Wang-Landau random walk on the exact energy grid of the couplings
+    (single-spin flips at random sites, ``ln g(E) += log_f`` at every
+    visit, ``log_f`` halved at every flat histogram — ``min H >= flatness
+    * mean H`` checked every ``check_interval`` sweeps — and the
+    Belardinelli-Pereyra ``log_f = 1/t`` schedule once ``log_f`` drops
+    below ``1/t``, with ``t`` the mean number of visits per bin of the
+    window), stopped at ``log_f_final`` or after ``max_wl_sweeps``
+    (``max_wl_sweeps=0`` keeps ``initial_log_g`` as given). Stage 2 runs
+    ``n_walkers`` chains with the frozen weights ``1/g(E)`` on the Rayon
+    pool, seeded ``base_seed + 1000 + k``, discarding
+    ``production_thermalization`` sweeps and measuring every
+    ``measurement_interval`` sweeps for ``production_sweeps`` sweeps.
+    ``energy_window`` is per site, ``bin_width`` in total-energy units
+    (required when the couplings are not exactly representable in
+    binary), ``initial_log_g`` has one entry per energy bin (NaN =
+    unknown). The GIL is released while sampling.
+
+    Returns
+    -------
+    dict[str, Any]
+        ``energy_bins`` (per site), ``bin_width``, ``num_sites``,
+        ``window_bins``, ``energy_window``, ``log_g`` (NaN where never
+        visited), ``wl_histogram``, ``production_histogram``,
+        ``wl_diagnostics`` (per-iteration ``iteration_log_f``,
+        ``iteration_sweeps``, ``iteration_flatness``,
+        ``iteration_visited_bins``; ``total_sweeps``,
+        ``one_over_t_switch_sweep``, ``final_log_f``, ``converged``,
+        ``accepted``, ``attempted``, ``drive_in_sweeps``,
+        ``visited_bins``), ``final_spins``, ``final_rng_state``,
+        ``walkers`` (one dict per walker: ``walker``, ``energies``,
+        ``magnetizations``, ``staggered_magnetizations``, ``bin_index``,
+        ``accepted``, ``attempted``, ``round_trips`` and
+        ``configurations`` when stored) and ``production_diagnostics``
+        (``n_walkers``, ``sweeps_per_walker``, ``thermalization_sweeps``,
+        ``accepted``, ``attempted``, ``rejected_unvisited``,
+        ``round_trips`` per walker, ``histogram_flatness``,
+        ``edge_bins``). Raises ``ValueError`` for an unknown lattice, a
+        non-finite coupling, a zero interval or walker count, a flatness
+        outside ``(0, 1]``, a schedule that is not ``0 < log_f_final <
+        log_f_initial``, non-dyadic couplings without ``bin_width``, an
+        invalid or unreachable ``energy_window``, or a mis-sized
+        ``initial_log_g``.
     """

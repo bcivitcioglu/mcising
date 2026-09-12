@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Wang-Landau sampling with a multicanonical production run, the
+  flat-histogram method the pre-1.0 plan deferred. Parallel tempering
+  cannot certify averages at a strongly first-order transition: the
+  replicas stay on one side of the free-energy barrier and the round-trip
+  count is zero. `WangLandauSimulation(WangLandauConfig(...)).run()` now
+  estimates the density of states `g(E)` on the exact energy grid of the
+  couplings (the walker carries the integer neighbour-shell sums; the bin
+  width is the greatest common divisor of every single-flip energy change,
+  so no reachable energy falls between two bins; couplings that are not
+  exactly representable in binary take an explicit `bin_width`), with
+  random-site proposals, an optional per-site `energy_window` reached by a
+  Metropolis drive-in, the flatness-driven halving of `ln f` and the
+  Belardinelli-Pereyra `1/t` schedule, and then freezes the weights
+  `1/g(E)` for `n_walkers` independent multicanonical walkers on the Rayon
+  pool that record the energy, magnetization and staggered magnetizations
+  of every measurement. `WangLandauResults` reweights the production
+  series to any temperature (`reweight`, `reweight_curve`,
+  `to_dataframe`: energy, specific heat, energy cumulant, magnetization
+  and an order parameter `max_k |m_k|` over chosen staggered components,
+  each with its susceptibility and Binder cumulant) with delete-one-block
+  jackknife errors whose blocks never straddle walkers, and reports the
+  effective sample size and edge weight of every estimate; it builds the
+  canonical energy histogram, measures the free-energy barrier and
+  interface tension of a bimodal one (`free_energy_barrier`, plateau or
+  minimum estimator), locates the equal-height and equal-weight
+  pseudo-transition temperatures, and refines `ln g` with the production
+  histogram. Mixing evidence travels with the run as it does for parallel
+  tempering: `results.wang_landau` records the `ln f` schedule and
+  whether it converged, `results.production` the acceptance, histogram
+  flatness and energy-space round trips of every walker. Weights can be
+  reused across runs (`run(initial_log_g=...)`, frozen with
+  `max_wl_sweeps=0`). Validated against the exact density of states of
+  the 3 x 3 and 4 x 4 tori and the 12-site chain (Rust enumeration oracle,
+  now over `(S1, S2, M)` so J1-J2-h couplings are exact too), the
+  Ferdinand-Fisher solution of the finite square torus (`tests/_analytic.py`),
+  a frozen-wrong-weights run that must still reproduce the exact averages,
+  a parallel-tempering run of the square J1-J2 model, and the layered
+  transition of the cubic J1-J2 model at `|J2|/J1 = 0.5`. New public
+  names: `WangLandauConfig`, `WangLandauSimulation`, `WangLandauResults`,
+  `CanonicalEstimates` (plus `BarrierEstimate`, `WangLandauDiagnostics`,
+  `MulticanonicalDiagnostics`, `WalkerSeries` in `mcising.wang_landau`)
+  and the leaf module `mcising.reweighting`; `_core.run_wang_landau` is
+  private. Persistence (HDF5/JSON) and the CLI command follow in the next
+  step. No existing sampler, RNG stream or recorded arithmetic changed:
+  the golden fixture replays unchanged.
+
 ## [1.1.0] - 2026-09-11
 
 Built for the first-order-transition campaign that runs parallel tempering

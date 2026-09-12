@@ -210,7 +210,7 @@ fn energy_per_site_serial<L: Lattice>(
 /// (a factor-4 margin over the f64 rounding of the check itself); an
 /// overflow to `inf` fails the check, which is the safe direction.
 /// Subnormal couplings fall back to the serial path.
-fn dyadic_exact<L: Lattice>(lattice: &L, j1: f64, j2: f64, j3: f64, h: f64) -> bool {
+pub(crate) fn dyadic_exact<L: Lattice>(lattice: &L, j1: f64, j2: f64, j3: f64, h: f64) -> bool {
     let n = lattice.num_sites() as f64;
     let terms = [
         (j1, lattice.coordination_number() as f64 * n),
@@ -243,7 +243,7 @@ fn dyadic_exact<L: Lattice>(lattice: &L, j1: f64, j2: f64, j3: f64, h: f64) -> b
 
 /// Exponent of the ulp of a normal, nonzero f64 (`c = m·2^e` with `m` odd);
 /// `None` for zero, subnormal, infinite or NaN inputs.
-fn ulp_exponent(c: f64) -> Option<i32> {
+pub(crate) fn ulp_exponent(c: f64) -> Option<i32> {
     let bits = c.to_bits();
     let biased = ((bits >> 52) & 0x7ff) as i32;
     if biased == 0 || biased == 0x7ff {
