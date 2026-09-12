@@ -19,7 +19,7 @@ jobs:
     name: Build JOSS draft
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build draft PDF
         # Runs the openjournals/inara image, the same one JOSS uses at submission.
         uses: openjournals/openjournals-draft-action@master
