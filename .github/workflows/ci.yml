@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master, feat/wang-landau]
+    branches: [master, feat/multicanonical-wang-landau]
   pull_request:
-    branches: [master, feat/wang-landau]
+    branches: [master, feat/multicanonical-wang-landau]
   workflow_dispatch:
 
 concurrency:
