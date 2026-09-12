@@ -4,14 +4,16 @@
 Each case in ``CASES`` is a small, fixed-seed ``SimulationConfig`` covering
 one execution path (cooldown per algorithm and lattice, independent,
 parallel tempering, adaptive) and one coupling family (J1 only, J1-J2-h,
-J1-J3, antiferromagnetic). ``run_case`` replays a case and records every
-number the run produced: the energy and magnetization series verbatim (JSON
-floats round-trip float64 exactly), correlation data when enabled, the
-adaptive diagnostics, and SHA-256 digests of the stored configurations, the
-final spin state and the final RNG state (cooldown paths only — the parallel
-runners own their replicas). ``compare`` reports every field that differs,
-bit for bit (floats are compared through ``float.hex`` so ``-0.0`` and
-``0.0`` are distinct).
+J1-J3, antiferromagnetic), or a ``WangLandauConfig`` covering the
+flat-histogram path (exact grid, energy window, production walkers).
+``run_case`` replays a case and records every number the run produced: the
+energy and magnetization series verbatim (JSON floats round-trip float64
+exactly), correlation data when enabled, the adaptive diagnostics, the
+density of states and its histograms, and SHA-256 digests of the stored
+configurations, the final spin state and the final RNG state (cooldown and
+Wang-Landau paths — the parallel runners own their replicas). ``compare``
+reports every field that differs, bit for bit (floats are compared through
+``float.hex`` so ``-0.0`` and ``0.0`` are distinct; NaN equals NaN).
 
 ``tests/test_golden.py`` replays every case against the committed
 ``tests/data/golden_runs.json``. The fixture pins the RNG streams and the
@@ -46,7 +48,12 @@ from typing import Any, Final
 
 import mcising
 import numpy as np
-from mcising import Simulation, SimulationConfig
+from mcising import (
+    Simulation,
+    SimulationConfig,
+    WangLandauConfig,
+    WangLandauSimulation,
+)
 from mcising._provenance import git_commit
 from mcising.config import ExecutionMode
 
@@ -55,7 +62,10 @@ FIXTURE_PATH: Final = REPO_ROOT / "tests" / "data" / "golden_runs.json"
 #: Bump when the *record layout* changes (not when values change).
 #: 2: ``staggered_magnetizations`` per temperature and ``pt_diagnostics``
 #: per parallel-tempering case (additive; every schema-1 value unchanged).
-SCHEMA_VERSION: Final = 2
+#: 3: Wang-Landau cases (``kind = "wang_landau"``) with their density of
+#: states, histograms, diagnostics and walker series (additive; every
+#: schema-2 value unchanged).
+SCHEMA_VERSION: Final = 3
 
 
 @dataclass(frozen=True)
@@ -67,15 +77,19 @@ class GoldenCase:
     name : str
         Stable identifier; also the test id.
     config : dict[str, Any]
-        Input for :meth:`SimulationConfig.from_dict` (kept as a plain dict so
-        the fixture records exactly what was run).
+        Input for :meth:`SimulationConfig.from_dict` or
+        :meth:`WangLandauConfig.from_dict` (kept as a plain dict so the
+        fixture records exactly what was run).
     note : str
         Which path or coupling family the case pins.
+    kind : str
+        ``"simulation"`` (the default) or ``"wang_landau"``.
     """
 
     name: str
     config: dict[str, Any]
     note: str
+    kind: str = "simulation"
 
 
 def _square(size: int, **couplings: float) -> dict[str, Any]:
@@ -224,6 +238,33 @@ CASES: Final[tuple[GoldenCase, ...]] = (
         "adaptive thermalization (anneal + extend + production_sweeps) with the "
         "single end-of-production correlation snapshot and every diagnostic",
     ),
+    GoldenCase(
+        "wang_landau_square4",
+        {
+            "lattice": _square(4, j1=1.0),
+            "log_f_final": 1e-3,
+            "check_interval": 100,
+            "production_sweeps": 300,
+            "measurement_interval": 3,
+            "n_walkers": 2,
+            "store_configs": True,
+        },
+        "Wang-Landau on the exact grid, two production walkers, configurations",
+        kind="wang_landau",
+    ),
+    GoldenCase(
+        "wang_landau_cubic_j1j2_window",
+        {
+            "lattice": {"lattice_type": "cubic", "size": 4, "j1": 1.0, "j2": -0.5},
+            "energy_window": [-1.7, -0.5],
+            "log_f_final": 1e-2,
+            "check_interval": 50,
+            "production_sweeps": 200,
+            "production_thermalization": 20,
+        },
+        "Wang-Landau with an energy window (drive-in) on the cubic J1-J2 model",
+        kind="wang_landau",
+    ),
 )
 
 
@@ -235,8 +276,64 @@ def _floats(values: Any) -> list[float]:
     return [float(v) for v in np.asarray(values, dtype=np.float64).tolist()]
 
 
+def _ints(values: Any) -> list[int]:
+    return [int(v) for v in np.asarray(values).tolist()]
+
+
+def run_wang_landau_case(case: GoldenCase) -> dict[str, Any]:
+    """Replay one Wang-Landau case and return its complete record."""
+    config = WangLandauConfig.from_dict(case.config)
+    results = WangLandauSimulation(config).run(show_progress=False)
+    walkers: list[dict[str, Any]] = []
+    for walker in results.walkers:
+        entry: dict[str, Any] = {
+            "energies": _floats(walker.energy),
+            "magnetizations": _floats(walker.magnetization),
+            "staggered_magnetizations": [
+                _floats(row) for row in walker.staggered_magnetization
+            ],
+            "bin_index": _ints(walker.bin_index),
+            "accepted": walker.accepted,
+            "attempted": walker.attempted,
+            "round_trips": walker.round_trips,
+        }
+        if walker.configurations is not None:
+            configs = np.ascontiguousarray(walker.configurations)
+            entry["configurations_shape"] = list(configs.shape)
+            entry["configurations_dtype"] = str(configs.dtype)
+            entry["configurations_sha256"] = _sha256(configs.tobytes())
+        walkers.append(entry)
+    return {
+        "name": case.name,
+        "note": case.note,
+        "kind": case.kind,
+        "config": case.config,
+        "energy_bins": _floats(results.energy_bins),
+        "bin_width": float(results.bin_width),
+        "window_bins": list(results.window_bins),
+        "log_g": _floats(results.log_g),
+        "wl_histogram": _ints(results.wl_histogram),
+        "production_histogram": _ints(results.production_histogram),
+        "wang_landau": {
+            key: (list(value) if isinstance(value, tuple) else value)
+            for key, value in dataclasses.asdict(results.wang_landau).items()
+        },
+        "production": {
+            key: (list(value) if isinstance(value, tuple) else value)
+            for key, value in dataclasses.asdict(results.production).items()
+        },
+        "walkers": walkers,
+        "final_spins_sha256": _sha256(
+            np.ascontiguousarray(results.final_spins).tobytes()
+        ),
+        "final_rng_state_sha256": _sha256(results.final_rng_state),
+    }
+
+
 def run_case(case: GoldenCase) -> dict[str, Any]:
     """Replay one case and return its complete record."""
+    if case.kind == "wang_landau":
+        return run_wang_landau_case(case)
     config = SimulationConfig.from_dict(case.config)
     sim = Simulation(config)
     results = sim.run(show_progress=False)

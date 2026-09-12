@@ -166,6 +166,20 @@ transition temperature; the equal-weight one with `q` equal to the number
 of ordered states (six for the layered phase: three axes, two signs) has
 the smallest finite-size corrections.
 
+## Saving and the command line
+
+`save_hdf5` writes a Wang-Landau results file (its own layout and
+schema, see [Saving results](../guide/saving-results.md#wang-landau-runs)),
+`load_wang_landau_hdf5` reads it back with every estimate recomputed from
+the stored series, and `save_json_summary(results, path,
+temperatures=...)` writes the diagnostics plus the reweighted estimates.
+The same run from the shell:
+
+```bash
+mcising wang-landau -L 4 --log-f-final 1e-3 --check-interval 100 --production-sweeps 200 -T 2.0 -T 3.0 -o dos.h5
+mcising summary dos.h5 -T 2.269
+```
+
 ## When to use which
 
 | Situation | Tool |

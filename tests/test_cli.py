@@ -17,6 +17,12 @@ from mcising.cli import app  # isort: skip
 
 runner = CliRunner()
 
+#: Typer renders usage errors through rich, which colours the offending option
+#: name. On a CI runner that styling splits a flag into several escape
+#: sequences, so a test that looks for the flag in the output must ask for
+#: plain text first.
+PLAIN_ENV = {"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"}
+
 
 class TestRunOptionValidation:
     """P11: enum-typed options give exit-2 usage errors, not tracebacks."""
@@ -223,3 +229,109 @@ class TestSummaryErrors:
         assert "U4" in header
         for line in lines[1:]:
             assert len(line.split(",")) == len(header)
+
+
+class TestWangLandauCommand:
+    """`mcising wang-landau` and the Wang-Landau-aware `summary`."""
+
+    def test_runs_saves_and_summarizes(self, tmp_path: Path) -> None:
+        h5 = tmp_path / "dos.h5"
+        js = tmp_path / "dos.json"
+        result = runner.invoke(
+            app,
+            [
+                "wang-landau",
+                "-L",
+                "4",
+                "--log-f-final",
+                "1e-3",
+                "--check-interval",
+                "100",
+                "--production-sweeps",
+                "200",
+                "--walkers",
+                "2",
+                "-T",
+                "2.0",
+                "-T",
+                "3.0",
+                "-o",
+                str(h5),
+                "--json",
+                str(js),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "Wang-Landau" in result.output and "Saved HDF5" in result.output
+        assert h5.exists() and js.exists()
+        data = json.loads(js.read_text())
+        assert data["kind"] == "wang_landau"
+        assert set(data["results"]) == {"2.000000", "3.000000"}
+
+        table = runner.invoke(app, ["summary", str(h5), "-T", "2.269"])
+        assert table.exit_code == 0, table.output
+        assert "Reweighted" in table.output and "converged" in table.output
+
+        as_json = runner.invoke(app, ["summary", str(h5), "--json", "-T", "2.0"])
+        assert as_json.exit_code == 0, as_json.output
+        payload = json.loads(as_json.output)
+        assert payload["kind"] == "wang_landau"
+        assert "energy" in payload["results"]["2.000000"]
+
+        as_csv = runner.invoke(
+            app, ["summary", str(h5), "--csv", "-T", "2.0", "-T", "3.0"]
+        )
+        assert as_csv.exit_code == 0, as_csv.output
+        lines = [line for line in as_csv.output.splitlines() if line.strip()]
+        assert lines[0].startswith("T,E,E_err,Cv,Cv_err")
+        assert len(lines) == 3
+
+    def test_windowed_cubic_run_and_tip(self, tmp_path: Path) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "wang-landau",
+                "-L",
+                "4",
+                "--lattice",
+                "cubic",
+                "--j2",
+                "-0.5",
+                "--energy-window",
+                "-1.7:-0.5",
+                "--log-f-final",
+                "1e-2",
+                "--check-interval",
+                "50",
+                "--production-sweeps",
+                "50",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "Tip: use -o" in result.output
+
+    def test_bad_energy_window_exits_2(self) -> None:
+        for value in ("1.0", "a:b", "0.5:-0.5"):
+            result = runner.invoke(
+                app, ["wang-landau", "--energy-window", value], env=PLAIN_ENV
+            )
+            assert result.exit_code == 2, value
+            assert "energy-window" in result.output
+
+    def test_canonical_summary_ignores_temperatures_and_info_lists_schemas(
+        self, tmp_path: Path
+    ) -> None:
+        config = SimulationConfig(
+            lattice=LatticeConfig(size=4), temperatures=(2.0,), n_sweeps=20
+        )
+        path = tmp_path / "sim.h5"
+        save_hdf5(Simulation(config).run(show_progress=False), path)
+        result = runner.invoke(app, ["summary", str(path), "-T", "3.0"])
+        assert result.exit_code == 0, result.output
+        info = runner.invoke(app, ["info"])
+        assert info.exit_code == 0
+        assert "Wang-Landau HDF5 schema" in info.output
+        docs = runner.invoke(app, ["docs", "cli"])
+        assert "wang-landau" in docs.output
+        algorithms = runner.invoke(app, ["docs", "algorithms"])
+        assert "wang_landau" in algorithms.output

@@ -24,10 +24,14 @@ from mcising.io import (
     _config_to_json,
     load_completed_temperatures,
     load_hdf5,
+    load_wang_landau_hdf5,
+    results_file_kind,
     save_hdf5,
     save_json_summary,
+    wang_landau_summary,
 )
 from mcising.simulation import Simulation
+from mcising.wang_landau import WangLandauConfig, WangLandauSimulation
 
 from tests._legacy_schema import write_legacy_hdf5
 
@@ -354,9 +358,7 @@ class TestSchemaCompat:
         assert loaded.metadata["version"] == "0.2.0"
         assert loaded.metadata["schema_version"] == 1
 
-    def test_legacy_file_without_version_reports_unknown(
-        self, tmp_path: Path
-    ) -> None:
+    def test_legacy_file_without_version_reports_unknown(self, tmp_path: Path) -> None:
         path = tmp_path / "legacy.h5"
         write_legacy_hdf5(path, version=None)
         loaded = load_hdf5(path)
@@ -486,13 +488,8 @@ class TestStatisticsGroup:
                 assert int(attrs["n_samples"]) == stats.n_samples
                 assert float(attrs["energy"]) == stats.energy.value
                 assert float(attrs["energy_error"]) == stats.energy.error
-                assert (
-                    float(attrs["specific_heat"]) == stats.specific_heat.value
-                )
-                assert (
-                    float(attrs["binder_cumulant"])
-                    == stats.binder_cumulant.value
-                )
+                assert float(attrs["specific_heat"]) == stats.specific_heat.value
+                assert float(attrs["binder_cumulant"]) == stats.binder_cumulant.value
 
     def test_non_finite_attrs_omitted(self, sim_results, tmp_path: Path) -> None:
         # n=2 samples: jackknife errors are NaN by policy and must be
@@ -574,9 +571,7 @@ class TestExactRoundTrip:
     def test_roundtrip_exact_per_lattice(
         self, lattice_type: LatticeType, tmp_path: Path
     ) -> None:
-        config = _small_config(
-            lattice=LatticeConfig(lattice_type=lattice_type, size=4)
-        )
+        config = _small_config(lattice=LatticeConfig(lattice_type=lattice_type, size=4))
         results = Simulation(config).run(show_progress=False)
         path = tmp_path / "exact.h5"
         save_hdf5(results, path)
@@ -745,9 +740,7 @@ class TestErrorPaths:
         with pytest.raises(KeyError):
             load_hdf5(path)
 
-    def test_file_without_temperature_groups_loads_empty(
-        self, tmp_path: Path
-    ) -> None:
+    def test_file_without_temperature_groups_loads_empty(self, tmp_path: Path) -> None:
         from mcising.simulation import SimulationResults
 
         path = tmp_path / "meta_only.h5"
@@ -861,3 +854,163 @@ class TestConfigRecordTolerance:
             assert int(attrs["seed"]) == 7
             assert attrs["mode"] == "cooldown"
             assert attrs["algorithm"] == "wolff"
+
+
+def _wang_landau_results(**overrides):
+    kwargs = dict(
+        lattice=LatticeConfig(size=4),
+        log_f_final=1e-3,
+        check_interval=100,
+        production_sweeps=300,
+        measurement_interval=3,
+        n_walkers=2,
+        store_configs=True,
+    )
+    kwargs.update(overrides)
+    return WangLandauSimulation(WangLandauConfig(**kwargs)).run(show_progress=False)
+
+
+@pytest.fixture(scope="module")
+def wl_results():
+    return _wang_landau_results()
+
+
+class TestWangLandauIO:
+    """The Wang-Landau file kind: schema 4, its own layout, loud refusals."""
+
+    def test_round_trip_restores_every_array_and_estimate(
+        self, wl_results, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "dos.h5"
+        save_hdf5(wl_results, path)
+        assert results_file_kind(path) == "wang_landau"
+        loaded = load_wang_landau_hdf5(path)
+        np.testing.assert_array_equal(loaded.energy_bins, wl_results.energy_bins)
+        np.testing.assert_array_equal(loaded.log_g, wl_results.log_g)  # NaN-aware
+        np.testing.assert_array_equal(loaded.wl_histogram, wl_results.wl_histogram)
+        np.testing.assert_array_equal(
+            loaded.production_histogram, wl_results.production_histogram
+        )
+        assert loaded.bin_width == wl_results.bin_width
+        assert loaded.window_bins == wl_results.window_bins
+        assert loaded.wang_landau == wl_results.wang_landau
+        assert loaded.production == wl_results.production
+        assert len(loaded.walkers) == 2
+        for a, b in zip(loaded.walkers, wl_results.walkers, strict=True):
+            np.testing.assert_array_equal(a.energy, b.energy)
+            np.testing.assert_array_equal(a.magnetization, b.magnetization)
+            np.testing.assert_array_equal(
+                a.staggered_magnetization, b.staggered_magnetization
+            )
+            np.testing.assert_array_equal(a.bin_index, b.bin_index)
+            assert a.bin_index.dtype == np.int64
+            assert a.configurations is not None and b.configurations is not None
+            np.testing.assert_array_equal(a.configurations, b.configurations)
+            assert (a.accepted, a.attempted, a.round_trips) == (
+                b.accepted,
+                b.attempted,
+                b.round_trips,
+            )
+        np.testing.assert_array_equal(loaded.final_spins, wl_results.final_spins)
+        assert loaded.final_rng_state == wl_results.final_rng_state
+        assert loaded.metadata["kind"] == "wang_landau"
+        assert loaded.metadata["schema_version"] == 4
+        assert loaded.metadata["seed"] == 42
+        assert loaded.metadata["version"] == mcising.__version__
+        assert loaded.config == wl_results.config
+        assert loaded.metadata["elapsed_seconds"] == pytest.approx(
+            wl_results.metadata["elapsed_seconds"]
+        )
+        # Reweighting is recomputed from the stored series: identical.
+        a = loaded.reweight(2.269)
+        b = wl_results.reweight(2.269)
+        assert a.energy == b.energy and a.specific_heat == b.specific_heat
+        assert a.order_parameter == b.order_parameter
+
+    def test_round_trip_without_configurations(self, tmp_path: Path) -> None:
+        results = _wang_landau_results(store_configs=False, n_walkers=1)
+        path = tmp_path / "dos.h5"
+        save_hdf5(results, path)
+        loaded = load_wang_landau_hdf5(path)
+        assert loaded.walkers[0].configurations is None
+        assert loaded.n_samples == results.n_samples
+
+    def test_canonical_file_attributes_and_kind(
+        self, sim_results, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "sim.h5"
+        save_hdf5(sim_results, path)
+        assert results_file_kind(path) == "canonical"
+        with h5py.File(path, "r") as f:
+            assert f["metadata"].attrs["schema_version"] == HDF5_SCHEMA_VERSION
+            assert f["metadata"].attrs["kind"] == "canonical"
+
+    def test_loaders_refuse_the_other_kind(
+        self, wl_results, sim_results, tmp_path: Path
+    ) -> None:
+        dos = tmp_path / "dos.h5"
+        sim = tmp_path / "sim.h5"
+        save_hdf5(wl_results, dos)
+        save_hdf5(sim_results, sim)
+        with pytest.raises(ConfigurationError, match="load_wang_landau_hdf5"):
+            load_hdf5(dos)
+        with pytest.raises(ConfigurationError, match="load_hdf5"):
+            load_wang_landau_hdf5(sim)
+        with h5py.File(dos, "r") as f:
+            assert int(f["metadata"].attrs["schema_version"]) == 4
+
+    def test_a_reader_without_the_file_kind_refuses_loudly(
+        self, wl_results, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """mcising 1.1.0 reads schemas up to 3: a Wang-Landau file must
+        make it stop with the upgrade message rather than load an empty
+        set of temperature groups."""
+        import mcising.io as io_module
+
+        path = tmp_path / "dos.h5"
+        save_hdf5(wl_results, path)
+        monkeypatch.setattr(io_module, "MAX_SCHEMA_VERSION", 3)
+        with h5py.File(path, "a") as f:
+            del f["metadata"].attrs["kind"]  # the old reader knows no kind
+        with pytest.raises(ConfigurationError, match="Upgrade mcising"):
+            load_hdf5(path)
+
+    def test_unreadable_config_record_is_refused(
+        self, wl_results, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "dos.h5"
+        save_hdf5(wl_results, path)
+        with h5py.File(path, "a") as f:
+            f["metadata"].attrs["config_json"] = "{"
+        with pytest.raises(ConfigurationError, match="WangLandauConfig"):
+            load_wang_landau_hdf5(path)
+        with h5py.File(path, "a") as f:
+            f["metadata"].attrs["config_json"] = '{"lattice": {"size": 1}}'
+        with pytest.raises(ConfigurationError, match="WangLandauConfig"):
+            load_wang_landau_hdf5(path)
+
+    def test_json_summary(self, wl_results, tmp_path: Path) -> None:
+        path = tmp_path / "dos.json"
+        save_json_summary(wl_results, path, temperatures=(2.0, 3.0))
+        with open(path) as f:
+            text = f.read()
+        data = json.loads(text)
+        # Estimates are never written as NaN or null (P07); the config record
+        # legitimately carries None for its unset optional fields.
+        assert "NaN" not in text
+        without_config = {key: value for key, value in data.items() if key != "config"}
+        assert "null" not in json.dumps(without_config)
+        assert data["kind"] == "wang_landau" and data["schema_version"] == 4
+        assert data["config"]["lattice"]["size"] == 4
+        assert data["energy_grid"]["n_bins"] == 17
+        assert data["wang_landau"]["converged"] is True
+        assert len(data["production"]["round_trips"]) == 2
+        entry = data["results"]["2.000000"]
+        assert {"energy", "energy_error", "specific_heat", "order_parameter"} <= set(
+            entry
+        )
+        assert entry["energy"] == pytest.approx(wl_results.reweight(2.0).energy.value)
+        assert wang_landau_summary(wl_results)["results"] == {}
+        # Without production there is no estimate at all, only diagnostics.
+        empty = wang_landau_summary(_wang_landau_results(production_sweeps=0), (2.0,))
+        assert "energy" not in empty["results"]["2.000000"]

@@ -12,7 +12,11 @@ from rich.panel import Panel
 from rich.table import Table
 
 import mcising
-from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit
+from mcising._provenance import (
+    HDF5_SCHEMA_VERSION,
+    WANG_LANDAU_SCHEMA_VERSION,
+    git_commit,
+)
 from mcising.benchmarks import BenchmarkResult
 from mcising.config import (
     AdaptiveConfig,
@@ -33,18 +37,31 @@ from mcising.constants import (
     DEFAULT_N_SWEEPS,
     DEFAULT_N_THERMALIZATION,
     DEFAULT_SEED,
+    DEFAULT_WL_CHECK_INTERVAL,
+    DEFAULT_WL_FLATNESS,
+    DEFAULT_WL_LOG_F_FINAL,
+    DEFAULT_WL_PRODUCTION_SWEEPS,
     TC_CUBIC_3D,
     TC_HONEYCOMB_2D,
     TC_SQUARE_2D,
     TC_TRIANGULAR_2D,
 )
 from mcising.io import (
+    WANG_LANDAU_KIND,
     _pt_diagnostics_summary,
     checkpoint_run,
+    load_wang_landau_hdf5,
+    results_file_kind,
     save_hdf5,
     save_json_summary,
+    wang_landau_summary,
 )
 from mcising.simulation import Simulation
+from mcising.wang_landau import (
+    WangLandauConfig,
+    WangLandauResults,
+    WangLandauSimulation,
+)
 
 __all__: Final[list[str]] = ["app"]
 
@@ -69,6 +86,7 @@ def info() -> None:
     if commit is not None:
         table.add_row("Git commit", commit)
     table.add_row("HDF5 schema", str(HDF5_SCHEMA_VERSION))
+    table.add_row("Wang-Landau HDF5 schema", str(WANG_LANDAU_SCHEMA_VERSION))
     table.add_row(
         "Lattice types",
         ", ".join(lt.value for lt in LatticeType),
@@ -319,6 +337,172 @@ def run(
     if output is None and json_summary is None and checkpoint is None:
         console.print(
             "\n[dim]Tip: use -o results.h5 or --json summary.json to save output.[/dim]"
+        )
+
+
+def _parse_energy_window(value: str) -> tuple[float, float]:
+    """Parse a 'lo:hi' per-site energy window."""
+    parts = value.split(":")
+    if len(parts) != 2:
+        raise typer.BadParameter(
+            f"--energy-window must be lo:hi per site (e.g. -1.7:-0.5), got '{value}'"
+        )
+    try:
+        lo, hi = float(parts[0]), float(parts[1])
+    except ValueError:
+        raise typer.BadParameter(
+            f"--energy-window values must be numbers, got '{value}'"
+        )
+    if not lo < hi:
+        raise typer.BadParameter(f"--energy-window needs lo < hi, got '{value}'")
+    return lo, hi
+
+
+def _print_wang_landau_config(config: WangLandauConfig) -> None:
+    """Print a Wang-Landau configuration as a Rich panel."""
+    table = Table(show_header=False, border_style="blue", pad_edge=False)
+    table.add_column("Param", style="bold")
+    table.add_column("Value")
+    lc = config.lattice
+    table.add_row("Lattice", f"L={lc.size} {lc.lattice_type.value}")
+    table.add_row("J1 / J2 / J3 / h", f"{lc.j1} / {lc.j2} / {lc.j3} / {lc.h}")
+    window = config.energy_window
+    table.add_row(
+        "Energy window",
+        "whole spectrum" if window is None else f"{window[0]}:{window[1]} per site",
+    )
+    table.add_row(
+        "Bin width", "exact grid" if config.bin_width is None else str(config.bin_width)
+    )
+    table.add_row("Flatness", str(config.flatness))
+    table.add_row("ln f", f"{config.log_f_initial} -> {config.log_f_final} (1/t)")
+    table.add_row("Check interval", str(config.check_interval))
+    if config.max_wl_sweeps is not None:
+        table.add_row("Max WL sweeps", str(config.max_wl_sweeps))
+    table.add_row(
+        "Production",
+        f"{config.n_walkers} walker(s) x {config.production_sweeps} sweeps",
+    )
+    table.add_row("Measurement interval", str(config.measurement_interval))
+    table.add_row("Seed", str(config.seed))
+    console.print(Panel(table, title="[bold]Wang-Landau[/bold]", border_style="blue"))
+
+
+@app.command("wang-landau")
+def wang_landau(
+    lattice_size: Annotated[
+        int,
+        typer.Option("-L", "--lattice-size", help="Lattice size L."),
+    ] = 16,
+    lattice: Annotated[
+        LatticeType, typer.Option("--lattice", help="Lattice geometry.")
+    ] = LatticeType.SQUARE,
+    j1: Annotated[float, typer.Option(help="Nearest-neighbor coupling.")] = 1.0,
+    j2: Annotated[float, typer.Option(help="Next-nearest-neighbor coupling.")] = 0.0,
+    j3: Annotated[float, typer.Option(help="Third-nearest-neighbor coupling.")] = 0.0,
+    h: Annotated[float, typer.Option(help="External magnetic field.")] = 0.0,
+    seed: Annotated[int, typer.Option(help="Random seed.")] = DEFAULT_SEED,
+    energy_window: Annotated[
+        str | None,
+        typer.Option(
+            "--energy-window",
+            help="Per-site energy window lo:hi to sample (default: whole spectrum).",
+        ),
+    ] = None,
+    bin_width: Annotated[
+        float | None,
+        typer.Option(
+            "--bin-width",
+            help="Energy bin width in total-energy units (default: the exact grid).",
+        ),
+    ] = None,
+    flatness: Annotated[
+        float, typer.Option("--flatness", help="Flatness criterion min H / mean H.")
+    ] = DEFAULT_WL_FLATNESS,
+    log_f_final: Annotated[
+        float, typer.Option("--log-f-final", help="Final modification factor ln f.")
+    ] = DEFAULT_WL_LOG_F_FINAL,
+    check_interval: Annotated[
+        int, typer.Option("--check-interval", help="Sweeps between flatness checks.")
+    ] = DEFAULT_WL_CHECK_INTERVAL,
+    max_wl_sweeps: Annotated[
+        int | None,
+        typer.Option("--max-wl-sweeps", help="Cap on the Wang-Landau stage."),
+    ] = None,
+    production_sweeps: Annotated[
+        int,
+        typer.Option("--production-sweeps", help="Sweeps per production walker."),
+    ] = DEFAULT_WL_PRODUCTION_SWEEPS,
+    production_therm: Annotated[
+        int,
+        typer.Option(
+            "--production-therm", help="Discarded sweeps per production walker."
+        ),
+    ] = 0,
+    measurement_interval: Annotated[
+        int, typer.Option("--interval", help="Sweeps between production measurements.")
+    ] = 1,
+    n_walkers: Annotated[
+        int, typer.Option("--walkers", help="Independent production walkers.")
+    ] = 1,
+    store_configs: Annotated[
+        bool,
+        typer.Option(
+            "--store-configs/--no-store-configs",
+            help="Store a spin configuration at each production measurement.",
+        ),
+    ] = False,
+    temperatures: Annotated[
+        list[float] | None,
+        typer.Option(
+            "-T",
+            "--temperature",
+            help="Temperature(s) to report reweighted estimates at.",
+        ),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option("-o", "--output", help="Output HDF5 file path."),
+    ] = None,
+    json_summary: Annotated[
+        Path | None,
+        typer.Option("--json", help="Output JSON summary path."),
+    ] = None,
+) -> None:
+    """Wang-Landau density of states, then a multicanonical production run."""
+    window = None if energy_window is None else _parse_energy_window(energy_window)
+    config = WangLandauConfig(
+        lattice=LatticeConfig(
+            lattice_type=lattice, size=lattice_size, j1=j1, j2=j2, j3=j3, h=h
+        ),
+        seed=seed,
+        energy_window=window,
+        bin_width=bin_width,
+        flatness=flatness,
+        log_f_final=log_f_final,
+        check_interval=check_interval,
+        max_wl_sweeps=max_wl_sweeps,
+        production_sweeps=production_sweeps,
+        production_thermalization=production_therm,
+        measurement_interval=measurement_interval,
+        n_walkers=n_walkers,
+        store_configs=store_configs,
+    )
+    _print_wang_landau_config(config)
+    results = WangLandauSimulation(config).run(show_progress=True)
+    temps = tuple(temperatures or ())
+    results.summary(temps)
+    elapsed = results.metadata.get("elapsed_seconds", 0)
+    console.print(f"\n[dim]Completed in {float(elapsed):.2f}s[/dim]")  # type: ignore[arg-type]
+    if output is not None:
+        save_hdf5(results, output)
+        console.print(f"\n[green]Saved HDF5:[/green] {output}")
+    if json_summary is not None:
+        save_json_summary(results, json_summary, temperatures=temps)
+        console.print(f"[green]Saved JSON:[/green] {json_summary}")
+    if output is None and json_summary is None:
+        console.print(
+            "\n[dim]Tip: use -o dos.h5 or --json summary.json to save output.[/dim]"
         )
 
 
@@ -628,6 +812,74 @@ def _print_results_summary(results: mcising.SimulationResults) -> None:
 # ═══════════════════════════════════════════════════════════════════
 
 
+def _summarize_wang_landau(
+    results: WangLandauResults,
+    temperatures: tuple[float, ...],
+    *,
+    json_output: bool,
+    csv_output: bool,
+) -> None:
+    """Print a Wang-Landau file as a table, JSON, or CSV."""
+    import json as json_mod
+    import math
+
+    if json_output:
+        print(json_mod.dumps(wang_landau_summary(results, temperatures), indent=2))
+        return
+    if csv_output:
+        columns = (
+            "T",
+            "E",
+            "E_err",
+            "Cv",
+            "Cv_err",
+            "V",
+            "V_err",
+            "M",
+            "M_err",
+            "chi",
+            "chi_err",
+            "U4",
+            "U4_err",
+            "psi",
+            "psi_err",
+            "chi_psi",
+            "chi_psi_err",
+            "U4_psi",
+            "U4_psi_err",
+            "n_eff",
+            "edge_weight",
+        )
+        print(",".join(columns))
+        for est in results.reweight_curve(temperatures):
+            values = [
+                est.temperature,
+                est.energy.value,
+                est.energy.error,
+                est.specific_heat.value,
+                est.specific_heat.error,
+                est.energy_cumulant.value,
+                est.energy_cumulant.error,
+                est.abs_magnetization.value,
+                est.abs_magnetization.error,
+                est.susceptibility.value,
+                est.susceptibility.error,
+                est.binder_cumulant.value,
+                est.binder_cumulant.error,
+                est.order_parameter.value,
+                est.order_parameter.error,
+                est.order_susceptibility.value,
+                est.order_susceptibility.error,
+                est.order_binder.value,
+                est.order_binder.error,
+                est.effective_samples,
+                est.edge_weight,
+            ]
+            print(",".join("" if math.isnan(v) else str(v) for v in values))
+        return
+    results.summary(temperatures)
+
+
 @app.command()
 def summary(
     file: Annotated[Path, typer.Argument(help="HDF5 results file.")],
@@ -639,12 +891,29 @@ def summary(
         bool,
         typer.Option("--csv", help="Output as CSV."),
     ] = False,
+    temperatures: Annotated[
+        list[float] | None,
+        typer.Option(
+            "-T",
+            "--temperature",
+            help="Temperature(s) to reweight a Wang-Landau file to.",
+        ),
+    ] = None,
 ) -> None:
-    """Inspect simulation results from an HDF5 file."""
+    """Inspect simulation or Wang-Landau results from an HDF5 file."""
     import json as json_mod
     import math
 
     from mcising.io import load_hdf5
+
+    if results_file_kind(file) == WANG_LANDAU_KIND:
+        _summarize_wang_landau(
+            load_wang_landau_hdf5(file),
+            tuple(temperatures or ()),
+            json_output=json_output,
+            csv_output=csv_output,
+        )
+        return
 
     results = load_hdf5(file)
 
@@ -929,7 +1198,10 @@ def docs_algorithms() -> None:
 ==========
 metropolis      Single-spin-flip. All couplings. All lattices.
 wolff           Cluster flip (DFS). J2=J3=H=0 only. All lattices.
-swendsen_wang   Multi-cluster (Union-Find). J2=J3=H=0 only."""
+swendsen_wang   Multi-cluster (Union-Find). J2=J3=H=0 only.
+wang_landau     Flat-histogram density of states + multicanonical
+                production (mcising wang-landau). All couplings, all
+                lattices; reweights to any temperature."""
     )
 
 
@@ -986,12 +1258,22 @@ mcising run [OPTIONS]
     mcising run -L 64 --no-store-configs -o results.h5
     mcising run -L 32 --checkpoint sim.h5 --resume
 
+mcising wang-landau [OPTIONS]
+  Wang-Landau density of states, then a multicanonical production run;
+  reweighted estimates at the -T temperatures.
+  Examples:
+    mcising wang-landau -L 16 -T 2.0 -T 2.269 -T 3.0 -o dos.h5
+    mcising wang-landau -L 12 --lattice cubic --j2 -0.5 \\
+        --energy-window -1.7:-0.5 --walkers 8 -T 2.4 -o dos.h5
+    mcising wang-landau -L 16 --j2 0.3 --bin-width 1.0 -o dos.h5
+
 mcising summary <file.h5>
-  Print results table from HDF5.
+  Print results table from HDF5 (Wang-Landau files: -T temperatures).
   Examples:
     mcising summary results.h5
     mcising summary results.h5 --json
     mcising summary results.h5 --csv
+    mcising summary dos.h5 -T 2.269 -T 3.0
 
 mcising plot <type> <file.h5> -o <output.png>
   Generate a plot. Types: energy, magnetization, specific-heat,
