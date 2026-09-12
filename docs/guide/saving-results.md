@@ -98,6 +98,57 @@ refused with a clear error instead of loading incompletely. Resuming a
 pre-0.24 checkpoint keeps its original metadata: a file records the
 code that created it.
 
+## Wang-Landau runs
+
+A [Wang-Landau run](../tutorial/wang-landau.md) is saved with the same
+`save_hdf5` and loaded with `load_wang_landau_hdf5`; the file has its own
+layout and metadata schema (4), so an older mcising refuses it instead of
+reading it as an empty temperature scan, and `load_hdf5` points you to the
+right loader:
+
+```python
+from mcising import (
+    LatticeConfig, WangLandauConfig, WangLandauSimulation,
+    load_wang_landau_hdf5, save_hdf5, save_json_summary,
+)
+
+wl_config = WangLandauConfig(
+    lattice=LatticeConfig(size=8), log_f_final=1e-4, production_sweeps=2_000
+)
+dos = WangLandauSimulation(wl_config).run(show_progress=False)
+save_hdf5(dos, "dos.h5")
+save_json_summary(dos, "dos.json", temperatures=(2.0, 2.269))
+
+reloaded = load_wang_landau_hdf5("dos.h5")
+print(reloaded.reweight(2.269).energy)
+```
+
+```
+dos.h5
+├── metadata/            (schema_version=4, kind="wang_landau", version,
+│                         config_json, seed, git_commit, elapsed_seconds)
+├── density_of_states/
+│   ├── energy_bins      (n_bins,) per-site energy of every bin
+│   ├── log_g            (n_bins,) ln g up to a constant, NaN where unvisited
+│   ├── wl_histogram     (n_bins,)
+│   ├── production_histogram (n_bins,)
+│   └── bin_width, window_lo, window_hi (attributes)
+├── wang_landau/         (ln f schedule per iteration, sweeps, flatness, converged, ...)
+├── production/          (per-walker acceptance, round trips, histogram flatness)
+├── walkers/0/
+│   ├── energy, magnetization, staggered_magnetization, bin_index
+│   └── configurations   (when stored)
+└── state/
+    ├── final_spins      (N,) the Wang-Landau walker's last configuration
+    └── final_rng_state  its generator state
+```
+
+Reweighted estimates are never stored: every quantity is recomputed from
+the walker series on load, so the file cannot disagree with itself. The
+JSON summary carries the diagnostics and the estimates at the temperatures
+you ask for. Canonical result files gain a `kind="canonical"` attribute
+(additive, no schema change).
+
 ## JSON — lightweight summary
 
 ```python

@@ -18,7 +18,13 @@ from mcising.config import (
     SimulationConfig,
 )
 from mcising.exceptions import ConfigurationError, MCIsingError, SimulationError
-from mcising.io import checkpoint_run, load_hdf5, save_hdf5, save_json_summary
+from mcising.io import (
+    checkpoint_run,
+    load_hdf5,
+    load_wang_landau_hdf5,
+    save_hdf5,
+    save_json_summary,
+)
 from mcising.simulation import Simulation, SimulationResults
 from mcising.statistics import Estimate, ObservableStatistics
 from mcising.wang_landau import (
@@ -94,6 +100,7 @@ __all__: Final[list[str]] = [
     # I/O
     "save_hdf5",
     "load_hdf5",
+    "load_wang_landau_hdf5",
     "save_json_summary",
     "checkpoint_run",
     # Plotting (lazy; requires the `plot` extra)

@@ -42,7 +42,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from mcising import reweighting
 from mcising._core import run_wang_landau as _run_wang_landau
-from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit, package_version
+from mcising._provenance import WANG_LANDAU_SCHEMA_VERSION, git_commit, package_version
 from mcising.config import LatticeConfig, LatticeType, _construct, _known_fields
 from mcising.constants import (
     DEFAULT_SEED,
@@ -1226,7 +1226,7 @@ class WangLandauSimulation:
             "config": config,
             "kind": "wang_landau",
             "version": package_version(),
-            "schema_version": HDF5_SCHEMA_VERSION,
+            "schema_version": WANG_LANDAU_SCHEMA_VERSION,
             "seed": config.seed,
         }
         commit = git_commit()

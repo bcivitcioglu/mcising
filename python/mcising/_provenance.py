@@ -17,6 +17,13 @@ from typing import Final
 # per-temperature ``statistics`` subgroup (written for inspection, never read
 # back — statistics are always recomputed from the raw series on load).
 HDF5_SCHEMA_VERSION: Final[int] = 3
+# Wang-Landau results files (``metadata.kind = "wang_landau"``) carry their
+# own, higher schema: a reader that predates the file kind then refuses the
+# file ("upgrade mcising") instead of loading an empty set of temperature
+# groups under a mis-typed config record. Canonical files are unchanged.
+WANG_LANDAU_SCHEMA_VERSION: Final[int] = 4
+#: The newest metadata schema this mcising reads.
+MAX_SCHEMA_VERSION: Final[int] = 4
 
 
 @lru_cache(maxsize=1)

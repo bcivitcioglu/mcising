@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Final, cast
@@ -12,7 +12,13 @@ from typing import Any, Final, cast
 import h5py
 import numpy as np
 
-from mcising._provenance import HDF5_SCHEMA_VERSION, git_commit, package_version
+from mcising._provenance import (
+    HDF5_SCHEMA_VERSION,
+    MAX_SCHEMA_VERSION,
+    WANG_LANDAU_SCHEMA_VERSION,
+    git_commit,
+    package_version,
+)
 from mcising.config import ExecutionMode, SimulationConfig
 from mcising.exceptions import ConfigurationError
 from mcising.simulation import (
@@ -22,10 +28,18 @@ from mcising.simulation import (
     SimulationResults,
 )
 from mcising.statistics import ObservableStatistics
+from mcising.wang_landau import (
+    MulticanonicalDiagnostics,
+    WalkerSeries,
+    WangLandauConfig,
+    WangLandauDiagnostics,
+    WangLandauResults,
+)
 
 __all__: Final[list[str]] = [
     "save_hdf5",
     "load_hdf5",
+    "load_wang_landau_hdf5",
     "save_json_summary",
     "init_checkpoint_file",
     "save_temperature_group",
@@ -33,17 +47,24 @@ __all__: Final[list[str]] = [
     "checkpoint_run",
 ]
 
+#: ``metadata.kind`` of the two file kinds mcising writes.
+CANONICAL_KIND: Final[str] = "canonical"
+WANG_LANDAU_KIND: Final[str] = "wang_landau"
 
-def save_hdf5(results: SimulationResults, path: str | Path) -> None:
-    """Save simulation results to an HDF5 file.
 
-    File structure (metadata schema v3; files without ``schema_version``
+def save_hdf5(results: SimulationResults | WangLandauResults, path: str | Path) -> None:
+    """Save simulation or Wang-Landau results to an HDF5 file.
+
+    A :class:`~mcising.WangLandauResults` is written in its own layout
+    (see :func:`load_wang_landau_hdf5`). For simulation results the file
+    structure is (metadata schema v3; files without ``schema_version``
     were written by mcising <= 0.23.0 and load through a legacy path;
     schema 2 files lack the ``statistics`` subgroup)::
 
         results.h5
         ├── metadata/
         │   ├── schema_version  (attribute, int)
+        │   ├── kind            (attribute, "canonical")
         │   ├── version         (attribute, mcising version that wrote the file)
         │   ├── config_json     (attribute, full config as JSON)
         │   ├── seed            (attribute) [when a config is recorded]
@@ -76,8 +97,8 @@ def save_hdf5(results: SimulationResults, path: str | Path) -> None:
 
     Parameters
     ----------
-    results : SimulationResults
-        The simulation results to save.
+    results : SimulationResults or WangLandauResults
+        The results to save.
     path : str or Path
         Output file path (should end in .h5 or .hdf5).
     """
@@ -86,6 +107,9 @@ def save_hdf5(results: SimulationResults, path: str | Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     with h5py.File(path, "w") as f:
+        if isinstance(results, WangLandauResults):
+            _write_wang_landau_hdf5(f, results)
+            return
         _write_metadata(f, results)
         _write_pt_diagnostics(f, results)
         for temp in results.temperatures:
@@ -343,7 +367,9 @@ def load_hdf5(path: str | Path) -> SimulationResults:
     Raises
     ------
     ConfigurationError
-        If the file's metadata schema is newer than this mcising supports.
+        If the file's metadata schema is newer than this mcising supports,
+        or the file holds Wang-Landau results (use
+        :func:`load_wang_landau_hdf5`).
     """
 
     path = Path(path)
@@ -351,6 +377,12 @@ def load_hdf5(path: str | Path) -> SimulationResults:
     with h5py.File(path, "r") as f:
         metadata: dict[str, object] = {}
         if "metadata" in f:
+            if _file_kind(f["metadata"]) == WANG_LANDAU_KIND:
+                raise ConfigurationError(
+                    f"{path} holds Wang-Landau results (metadata kind "
+                    f"{WANG_LANDAU_KIND!r}); load it with "
+                    "load_wang_landau_hdf5()."
+                )
             metadata = _read_metadata(f["metadata"], path)
         pt_diagnostics = _read_pt_diagnostics(f)
 
@@ -428,22 +460,38 @@ def load_hdf5(path: str | Path) -> SimulationResults:
         )
 
 
-def save_json_summary(results: SimulationResults, path: str | Path) -> None:
+def save_json_summary(
+    results: SimulationResults | WangLandauResults,
+    path: str | Path,
+    *,
+    temperatures: Sequence[float] = (),
+) -> None:
     """Save a JSON summary of simulation results (no large arrays).
 
     Carries the same provenance fields as the HDF5 metadata group
     (version, schema_version, seed, mode, algorithm, git_commit, config);
     fields whose value is unknown are omitted rather than written as null.
+    For :class:`~mcising.WangLandauResults` the summary holds the run
+    diagnostics and the reweighted estimates at ``temperatures`` (see
+    :func:`wang_landau_summary`).
 
     Parameters
     ----------
-    results : SimulationResults
-        The simulation results to summarize.
+    results : SimulationResults or WangLandauResults
+        The results to summarize.
     path : str or Path
         Output file path.
+    temperatures : Sequence[float]
+        Temperatures to reweight Wang-Landau results to (ignored for
+        simulation results, whose temperatures are those of the run).
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    if isinstance(results, WangLandauResults):
+        with open(path, "w") as f:
+            json.dump(wang_landau_summary(results, temperatures), f, indent=2)
+        return
 
     summary: dict[str, object] = {}
     for key in ("version", "schema_version", "seed", "mode", "algorithm", "git_commit"):
@@ -611,6 +659,9 @@ def _write_metadata(f: Any, results: SimulationResults) -> None:
     """
     meta = f.create_group("metadata")
     meta.attrs["schema_version"] = HDF5_SCHEMA_VERSION
+    # Additive (no schema bump): the file kind, so readers and external
+    # tools can tell a canonical results file from a Wang-Landau one.
+    meta.attrs["kind"] = CANONICAL_KIND
     meta.attrs["version"] = package_version()
     commit = git_commit()
     if commit is not None:
@@ -713,12 +764,12 @@ def _schema_version_of(meta: Any, path: Path) -> int:
             f"{path} has a corrupt schema_version attribute ({raw!r}); "
             "expected a positive integer."
         )
-    if schema > HDF5_SCHEMA_VERSION:
+    if schema > MAX_SCHEMA_VERSION:
         written_by = _as_str(meta.attrs.get("version", "a newer mcising"))
         raise ConfigurationError(
             f"{path} uses metadata schema {schema} (written by mcising "
             f"{written_by}), but this mcising ({package_version()}) "
-            f"supports up to schema {HDF5_SCHEMA_VERSION}. Upgrade mcising "
+            f"supports up to schema {MAX_SCHEMA_VERSION}. Upgrade mcising "
             "to read it."
         )
     return schema
@@ -886,6 +937,361 @@ def _write_statistics_group(grp: Any, stats: ObservableStatistics) -> None:
             st_grp.attrs[name] = estimate.value
         if math.isfinite(estimate.error):
             st_grp.attrs[f"{name}_error"] = estimate.error
+
+
+def _file_kind(meta: Any) -> str:
+    """The ``kind`` attribute of a metadata group (canonical when absent)."""
+    if "kind" in meta.attrs:
+        return _as_str(meta.attrs["kind"])
+    return CANONICAL_KIND
+
+
+def results_file_kind(path: str | Path) -> str:
+    """Kind of results an HDF5 file holds: ``"canonical"`` or ``"wang_landau"``.
+
+    Files without a ``kind`` attribute (written before it existed) are
+    canonical.
+    """
+    with h5py.File(Path(path), "r") as f:
+        if "metadata" not in f:
+            return CANONICAL_KIND
+        return _file_kind(f["metadata"])
+
+
+def _write_wang_landau_hdf5(f: Any, results: WangLandauResults) -> None:
+    """Write a Wang-Landau results file (layout at :func:`load_wang_landau_hdf5`)."""
+    meta = f.create_group("metadata")
+    meta.attrs["schema_version"] = WANG_LANDAU_SCHEMA_VERSION
+    meta.attrs["kind"] = WANG_LANDAU_KIND
+    meta.attrs["version"] = package_version()
+    commit = git_commit()
+    if commit is not None:
+        meta.attrs["git_commit"] = commit
+    meta.attrs["config_json"] = _config_to_json(results.metadata.get("config"))
+    seed = results.metadata.get("seed")
+    if isinstance(seed, int):
+        meta.attrs["seed"] = seed
+    if "elapsed_seconds" in results.metadata:
+        meta.attrs["elapsed_seconds"] = results.metadata["elapsed_seconds"]
+
+    grid = f.create_group("density_of_states")
+    grid.create_dataset("energy_bins", data=results.energy_bins)
+    grid.create_dataset("log_g", data=results.log_g)
+    grid.create_dataset("wl_histogram", data=results.wl_histogram)
+    grid.create_dataset("production_histogram", data=results.production_histogram)
+    grid.attrs["bin_width"] = results.bin_width
+    grid.attrs["window_lo"] = results.window_bins[0]
+    grid.attrs["window_hi"] = results.window_bins[1]
+
+    wl = results.wang_landau
+    stage = f.create_group("wang_landau")
+    stage.create_dataset(
+        "iteration_log_f", data=np.asarray(wl.iteration_log_f, dtype=np.float64)
+    )
+    stage.create_dataset(
+        "iteration_sweeps", data=np.asarray(wl.iteration_sweeps, dtype=np.int64)
+    )
+    stage.create_dataset(
+        "iteration_flatness", data=np.asarray(wl.iteration_flatness, dtype=np.float64)
+    )
+    stage.create_dataset(
+        "iteration_visited_bins",
+        data=np.asarray(wl.iteration_visited_bins, dtype=np.int64),
+    )
+    stage.attrs["total_sweeps"] = wl.total_sweeps
+    if wl.one_over_t_switch_sweep is not None:
+        stage.attrs["one_over_t_switch_sweep"] = wl.one_over_t_switch_sweep
+    stage.attrs["final_log_f"] = wl.final_log_f
+    stage.attrs["converged"] = wl.converged
+    stage.attrs["accepted"] = wl.accepted
+    stage.attrs["attempted"] = wl.attempted
+    stage.attrs["drive_in_sweeps"] = wl.drive_in_sweeps
+    stage.attrs["visited_bins"] = wl.visited_bins
+
+    prod = results.production
+    production = f.create_group("production")
+    production.attrs["n_walkers"] = prod.n_walkers
+    production.attrs["sweeps_per_walker"] = prod.sweeps_per_walker
+    production.attrs["thermalization_sweeps"] = prod.thermalization_sweeps
+    production.attrs["histogram_flatness"] = prod.histogram_flatness
+    if prod.edge_bins is not None:
+        production.attrs["edge_lo"] = prod.edge_bins[0]
+        production.attrs["edge_hi"] = prod.edge_bins[1]
+    for name in ("accepted", "attempted", "rejected_unvisited", "round_trips"):
+        production.create_dataset(
+            name, data=np.asarray(getattr(prod, name), dtype=np.int64)
+        )
+
+    walkers = f.create_group("walkers")
+    for index, walker in enumerate(results.walkers):
+        grp = walkers.create_group(str(index))
+        grp.create_dataset("energy", data=walker.energy)
+        grp.create_dataset("magnetization", data=walker.magnetization)
+        grp.create_dataset(
+            "staggered_magnetization", data=walker.staggered_magnetization
+        )
+        grp.create_dataset("bin_index", data=walker.bin_index)
+        if walker.configurations is not None:
+            grp.create_dataset(
+                "configurations",
+                data=walker.configurations,
+                compression="gzip",
+                compression_opts=4,
+            )
+        grp.attrs["accepted"] = walker.accepted
+        grp.attrs["attempted"] = walker.attempted
+        grp.attrs["round_trips"] = walker.round_trips
+
+    state = f.create_group("state")
+    state.create_dataset("final_spins", data=results.final_spins)
+    state.create_dataset(
+        "final_rng_state", data=np.frombuffer(results.final_rng_state, dtype=np.uint8)
+    )
+
+
+def load_wang_landau_hdf5(path: str | Path) -> WangLandauResults:
+    """Load Wang-Landau results from an HDF5 file written by :func:`save_hdf5`.
+
+    File structure (metadata schema 4, ``kind = "wang_landau"``; a
+    canonical simulation file is refused — use :func:`load_hdf5`)::
+
+        results.h5
+        ├── metadata/            (schema_version, kind, version, config_json,
+        │                         seed, git_commit, elapsed_seconds)
+        ├── density_of_states/
+        │   ├── energy_bins      (n_bins,) per-site energy of every bin
+        │   ├── log_g            (n_bins,) ln g up to a constant, NaN unvisited
+        │   ├── wl_histogram     (n_bins,)
+        │   ├── production_histogram (n_bins,)
+        │   └── attrs: bin_width, window_lo, window_hi
+        ├── wang_landau/         (per-iteration arrays + stage attributes)
+        ├── production/          (per-walker counters + stage attributes)
+        ├── walkers/<k>/
+        │   ├── energy, magnetization, staggered_magnetization, bin_index
+        │   ├── configurations   (when stored)
+        │   └── attrs: accepted, attempted, round_trips
+        └── state/
+            ├── final_spins      (N,) int8, flat
+            └── final_rng_state  (bytes) serialized generator
+
+    Parameters
+    ----------
+    path : str or Path
+        Input file path.
+
+    Returns
+    -------
+    WangLandauResults
+        The loaded results; every reweighted quantity is recomputed from
+        the stored series, so the file never holds a second copy of an
+        estimate.
+
+    Raises
+    ------
+    ConfigurationError
+        If the file holds canonical simulation results, has no readable
+        ``WangLandauConfig`` record, or uses a newer schema than this
+        mcising supports.
+    """
+    path = Path(path)
+    with h5py.File(path, "r") as f:
+        if "metadata" not in f:
+            raise ConfigurationError(
+                f"{path} has no metadata group; not an mcising file"
+            )
+        meta = f["metadata"]
+        kind = _file_kind(meta)
+        if kind != WANG_LANDAU_KIND:
+            raise ConfigurationError(
+                f"{path} holds canonical simulation results (metadata kind "
+                f"{kind!r}); load it with load_hdf5()."
+            )
+        schema = _schema_version_of(meta, path)
+        metadata: dict[str, object] = {"schema_version": schema, "kind": kind}
+        for key in ("version", "git_commit"):
+            if key in meta.attrs:
+                metadata[key] = _as_str(meta.attrs[key])
+        if "seed" in meta.attrs:
+            metadata["seed"] = int(meta.attrs["seed"])
+        if "elapsed_seconds" in meta.attrs:
+            metadata["elapsed_seconds"] = float(meta.attrs["elapsed_seconds"])
+        try:
+            record = json.loads(_as_str(meta.attrs["config_json"]))
+            metadata["config"] = WangLandauConfig.from_dict(record)
+        except (KeyError, json.JSONDecodeError, ConfigurationError) as exc:
+            raise ConfigurationError(
+                f"{path} carries no readable WangLandauConfig record: {exc}"
+            ) from exc
+
+        grid = f["density_of_states"]
+        stage = f["wang_landau"]
+        production = f["production"]
+        walkers: list[WalkerSeries] = []
+        for name in sorted(f["walkers"].keys(), key=int):
+            grp = f["walkers"][name]
+            walkers.append(
+                WalkerSeries(
+                    energy=np.array(grp["energy"], dtype=np.float64),
+                    magnetization=np.array(grp["magnetization"], dtype=np.float64),
+                    staggered_magnetization=np.array(
+                        grp["staggered_magnetization"], dtype=np.float64
+                    ),
+                    bin_index=np.array(grp["bin_index"], dtype=np.int64),
+                    configurations=(
+                        np.array(grp["configurations"], dtype=np.int8)
+                        if "configurations" in grp
+                        else None
+                    ),
+                    accepted=int(grp.attrs["accepted"]),
+                    attempted=int(grp.attrs["attempted"]),
+                    round_trips=int(grp.attrs["round_trips"]),
+                )
+            )
+        switch = stage.attrs.get("one_over_t_switch_sweep")
+        wl = WangLandauDiagnostics(
+            iteration_log_f=tuple(
+                float(x) for x in np.asarray(stage["iteration_log_f"])
+            ),
+            iteration_sweeps=tuple(
+                int(x) for x in np.asarray(stage["iteration_sweeps"])
+            ),
+            iteration_flatness=tuple(
+                float(x) for x in np.asarray(stage["iteration_flatness"])
+            ),
+            iteration_visited_bins=tuple(
+                int(x) for x in np.asarray(stage["iteration_visited_bins"])
+            ),
+            total_sweeps=int(stage.attrs["total_sweeps"]),
+            one_over_t_switch_sweep=None if switch is None else int(switch),
+            final_log_f=float(stage.attrs["final_log_f"]),
+            converged=bool(stage.attrs["converged"]),
+            accepted=int(stage.attrs["accepted"]),
+            attempted=int(stage.attrs["attempted"]),
+            drive_in_sweeps=int(stage.attrs["drive_in_sweeps"]),
+            visited_bins=int(stage.attrs["visited_bins"]),
+        )
+        edges = (
+            (int(production.attrs["edge_lo"]), int(production.attrs["edge_hi"]))
+            if "edge_lo" in production.attrs
+            else None
+        )
+        prod = MulticanonicalDiagnostics(
+            n_walkers=int(production.attrs["n_walkers"]),
+            sweeps_per_walker=int(production.attrs["sweeps_per_walker"]),
+            thermalization_sweeps=int(production.attrs["thermalization_sweeps"]),
+            accepted=tuple(int(x) for x in np.asarray(production["accepted"])),
+            attempted=tuple(int(x) for x in np.asarray(production["attempted"])),
+            rejected_unvisited=tuple(
+                int(x) for x in np.asarray(production["rejected_unvisited"])
+            ),
+            round_trips=tuple(int(x) for x in np.asarray(production["round_trips"])),
+            histogram_flatness=float(production.attrs["histogram_flatness"]),
+            edge_bins=edges,
+        )
+        state = f["state"]
+        return WangLandauResults(
+            energy_bins=np.array(grid["energy_bins"], dtype=np.float64),
+            log_g=np.array(grid["log_g"], dtype=np.float64),
+            wl_histogram=np.array(grid["wl_histogram"], dtype=np.int64),
+            production_histogram=np.array(grid["production_histogram"], dtype=np.int64),
+            bin_width=float(grid.attrs["bin_width"]),
+            window_bins=(int(grid.attrs["window_lo"]), int(grid.attrs["window_hi"])),
+            walkers=walkers,
+            wang_landau=wl,
+            production=prod,
+            final_spins=np.array(state["final_spins"], dtype=np.int8),
+            final_rng_state=np.array(
+                state["final_rng_state"], dtype=np.uint8
+            ).tobytes(),
+            metadata=metadata,
+        )
+
+
+def wang_landau_summary(
+    results: WangLandauResults, temperatures: Sequence[float] = ()
+) -> dict[str, object]:
+    """JSON-ready record of a Wang-Landau run: provenance, diagnostics, estimates.
+
+    ``results[T]`` holds the reweighted estimates at every requested
+    temperature (value and ``*_error`` pairs, the effective sample size
+    and the edge weight); non-finite values are omitted rather than
+    written as null (P07 policy).
+    """
+    record: dict[str, object] = {}
+    for key in ("version", "schema_version", "kind", "seed", "git_commit"):
+        if key in results.metadata:
+            record[key] = results.metadata[key]
+    config = results.metadata.get("config")
+    if config is not None:
+        record["config"] = json.loads(_config_to_json(config))
+    if "elapsed_seconds" in results.metadata:
+        record["elapsed_seconds"] = results.metadata["elapsed_seconds"]
+    record["energy_grid"] = {
+        "n_bins": results.n_bins,
+        "bin_width": results.bin_width,
+        "window_bins": list(results.window_bins),
+        "visited_bins": int(results.visited.sum()),
+    }
+    wl = results.wang_landau
+    stage: dict[str, object] = {
+        "iteration_log_f": list(wl.iteration_log_f),
+        "iteration_sweeps": list(wl.iteration_sweeps),
+        "iteration_flatness": list(wl.iteration_flatness),
+        "iteration_visited_bins": list(wl.iteration_visited_bins),
+        "total_sweeps": wl.total_sweeps,
+        "final_log_f": wl.final_log_f,
+        "converged": wl.converged,
+        "accepted": wl.accepted,
+        "attempted": wl.attempted,
+        "drive_in_sweeps": wl.drive_in_sweeps,
+        "visited_bins": wl.visited_bins,
+    }
+    if wl.one_over_t_switch_sweep is not None:
+        stage["one_over_t_switch_sweep"] = wl.one_over_t_switch_sweep
+    record["wang_landau"] = stage
+    prod = results.production
+    production: dict[str, object] = {
+        "n_walkers": prod.n_walkers,
+        "sweeps_per_walker": prod.sweeps_per_walker,
+        "thermalization_sweeps": prod.thermalization_sweeps,
+        "accepted": list(prod.accepted),
+        "attempted": list(prod.attempted),
+        "rejected_unvisited": list(prod.rejected_unvisited),
+        "round_trips": list(prod.round_trips),
+    }
+    if math.isfinite(prod.histogram_flatness):
+        production["histogram_flatness"] = prod.histogram_flatness
+    if prod.edge_bins is not None:
+        production["edge_bins"] = list(prod.edge_bins)
+    record["production"] = production
+
+    estimates: dict[str, object] = {}
+    for temperature in temperatures:
+        est = results.reweight(float(temperature))
+        entry: dict[str, float] = {}
+
+        def put(key: str, value: float, entry: dict[str, float] = entry) -> None:
+            if math.isfinite(value):
+                entry[key] = value
+
+        for name, estimate in (
+            ("energy", est.energy),
+            ("specific_heat", est.specific_heat),
+            ("energy_cumulant", est.energy_cumulant),
+            ("abs_magnetization", est.abs_magnetization),
+            ("susceptibility", est.susceptibility),
+            ("binder_cumulant", est.binder_cumulant),
+            ("order_parameter", est.order_parameter),
+            ("order_susceptibility", est.order_susceptibility),
+            ("order_binder", est.order_binder),
+        ):
+            put(name, estimate.value)
+            put(f"{name}_error", estimate.error)
+        put("effective_samples", est.effective_samples)
+        put("edge_weight", est.edge_weight)
+        estimates[f"{float(temperature):.6f}"] = entry
+    record["results"] = estimates
+    return record
 
 
 def _config_to_json(config: object) -> str:

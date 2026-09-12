@@ -51,9 +51,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CanonicalEstimates` (plus `BarrierEstimate`, `WangLandauDiagnostics`,
   `MulticanonicalDiagnostics`, `WalkerSeries` in `mcising.wang_landau`)
   and the leaf module `mcising.reweighting`; `_core.run_wang_landau` is
-  private. Persistence (HDF5/JSON) and the CLI command follow in the next
-  step. No existing sampler, RNG stream or recorded arithmetic changed:
-  the golden fixture replays unchanged.
+  private. No existing sampler, RNG stream or recorded arithmetic changed.
+- Wang-Landau results are saved and loaded. `save_hdf5` accepts a
+  `WangLandauResults` and writes its own layout (`density_of_states/`,
+  `wang_landau/`, `production/`, `walkers/<k>/`, `state/`) under metadata
+  schema 4 with `kind="wang_landau"`, so an mcising that predates the file
+  kind refuses it with the upgrade message instead of reading an empty
+  temperature scan under a mis-typed config record; canonical files are
+  unchanged apart from an additive `kind="canonical"` attribute (schema 3).
+  `load_wang_landau_hdf5` reads the file back with every estimate
+  recomputed from the walker series, `load_hdf5` refuses it by name, and
+  `results_file_kind` tells the two apart. `save_json_summary(results,
+  path, temperatures=...)` writes the run diagnostics and the reweighted
+  estimates at the requested temperatures (`wang_landau_summary` is the
+  record). New CLI command `mcising wang-landau` (lattice and coupling
+  options as `run`, `--energy-window lo:hi`, `--bin-width`, the ln f
+  schedule and production knobs, `-T` for the reweighted table, `-o`,
+  `--json`); `mcising summary` recognises Wang-Landau files and takes
+  `-T`; `mcising info` and `mcising docs` list the new schema and
+  command. The golden fixture (`tests/data/golden_runs.json`) is rewritten
+  at record schema 3 with two appended Wang-Landau cases (the exact grid
+  with two production walkers and stored configurations; an energy window
+  with drive-in on the cubic J1-J2 model); every pre-existing value in it
+  is unchanged bit for bit.
 
 ## [1.1.0] - 2026-09-11
 

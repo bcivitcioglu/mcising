@@ -6,6 +6,7 @@ mcising provides a full command-line interface for running simulations, inspecti
 
 ```
 mcising run        # Run a simulation → HDF5 file
+mcising wang-landau # Density of states + multicanonical production → HDF5 file
 mcising summary    # Inspect results from HDF5
 mcising plot       # Generate plots from HDF5
 mcising export     # Export lattice PNGs to zip
@@ -53,7 +54,47 @@ mcising run -L 32 --lattice triangular --j1 1.0 --j2 0.5 \
     --adaptive --seed 42 -o results.h5
 ```
 
+## `mcising wang-landau`
+
+Estimate the density of states with Wang-Landau sampling, run the
+multicanonical production stage, and report reweighted estimates at the
+`-T` temperatures (see the [tutorial](../tutorial/wang-landau.md)).
+
+```bash
+mcising wang-landau -L 4 --log-f-final 1e-3 --check-interval 100 --production-sweeps 200 -T 2.0 -T 3.0 -o dos.h5 --json dos.json
+mcising wang-landau -L 4 --lattice cubic --j2 -0.5 --energy-window -1.7:-0.5 --log-f-final 1e-2 --check-interval 50 --production-sweeps 100 --walkers 2 -T 2.4
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `-L`, `--lattice-size` | 16 | Linear size |
+| `--lattice` | square | Lattice geometry |
+| `--j1`, `--j2`, `--j3`, `--h` | 1, 0, 0, 0 | Couplings and field |
+| `--energy-window lo:hi` | whole spectrum | Per-site energy range to sample |
+| `--bin-width` | exact grid | Bin width in total-energy units (needed for couplings not representable in binary) |
+| `--flatness` | 0.8 | Flatness criterion |
+| `--log-f-final` | 1e-6 | Final modification factor |
+| `--check-interval` | 1000 | Sweeps between flatness checks |
+| `--max-wl-sweeps` | none | Cap on the Wang-Landau stage |
+| `--production-sweeps` | 10000 | Sweeps per production walker |
+| `--production-therm` | 0 | Discarded sweeps per production walker |
+| `--interval` | 1 | Sweeps between production measurements |
+| `--walkers` | 1 | Independent production walkers |
+| `--store-configs` | off | Keep a configuration per measurement |
+| `-T`, `--temperature` | — | Temperatures to report reweighted estimates at |
+| `-o`, `--output` | — | HDF5 output |
+| `--json` | — | JSON summary (diagnostics plus the `-T` estimates) |
+
 ## `mcising summary`
+
+For a Wang-Landau file the same command prints the run diagnostics and,
+with `-T`, the reweighted estimates:
+
+```bash
+mcising summary dos.h5 -T 2.269 -T 3.0
+mcising summary dos.h5 --json -T 2.0
+mcising summary dos.h5 --csv -T 2.0 -T 3.0
+```
 
 Inspect simulation results from an HDF5 file. Shows mean energy, magnetization, specific heat, and susceptibility per temperature.
 

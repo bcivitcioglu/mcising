@@ -39,7 +39,10 @@ From 1.0.0 onward:
 - **File-format compatibility.** HDF5 files carry a `schema_version`;
   every release reads all older schema versions. Additive fields are
   introduced with tolerant reads and no version bump; incompatible
-  changes bump the schema version and are breaking-change flagged.
+  changes bump the schema version and are breaking-change flagged. A new
+  *kind* of file (Wang-Landau results, `metadata.kind = "wang_landau"`,
+  schema 4) gets a schema above the canonical one so that a reader that
+  predates it refuses the file loudly; canonical files are unchanged.
 - **Exception contract.** Invalid configuration raises
   `ConfigurationError`, which is also a `ValueError` — `except
   ValueError` catches invalid-input errors from both the Python layer
