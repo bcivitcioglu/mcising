@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, feat/wang-landau]
   pull_request:
-    branches: [master]
+    branches: [master, feat/wang-landau]
   workflow_dispatch:
 
 concurrency:
