@@ -8,7 +8,8 @@ This page states what that promise covers.
 The public API is everything importable from the top-level `mcising`
 package (see `mcising.__all__`), the documented submodules
 (`mcising.statistics`, `mcising.plotting`, `mcising.io`,
-`mcising.config`, `mcising.benchmarks`), the `mcising` command-line
+`mcising.config`, `mcising.benchmarks`, `mcising.wang_landau`,
+`mcising.reweighting`), the `mcising` command-line
 interface, and the HDF5/JSON file formats.
 
 **Not** covered:

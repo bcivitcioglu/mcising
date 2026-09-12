@@ -21,6 +21,12 @@ from mcising.exceptions import ConfigurationError, MCIsingError, SimulationError
 from mcising.io import checkpoint_run, load_hdf5, save_hdf5, save_json_summary
 from mcising.simulation import Simulation, SimulationResults
 from mcising.statistics import Estimate, ObservableStatistics
+from mcising.wang_landau import (
+    CanonicalEstimates,
+    WangLandauConfig,
+    WangLandauResults,
+    WangLandauSimulation,
+)
 
 if TYPE_CHECKING:
     from mcising.plotting import (
@@ -77,6 +83,11 @@ __all__: Final[list[str]] = [
     "Algorithm",
     "ExecutionMode",
     "AdaptiveConfig",
+    # Wang-Landau / multicanonical sampling
+    "WangLandauConfig",
+    "WangLandauSimulation",
+    "WangLandauResults",
+    "CanonicalEstimates",
     # Statistics
     "Estimate",
     "ObservableStatistics",

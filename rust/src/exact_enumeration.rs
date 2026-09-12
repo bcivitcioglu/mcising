@@ -1,11 +1,13 @@
 //! Exact-enumeration oracle for small systems (test-only).
 //!
 //! Enumerates every spin configuration of a small lattice into a joint
-//! density of states g(S, M) over the integer nearest-neighbor bond sum
-//! S = sum_<ij> s_i s_j (each bond counted once) and the integer
-//! magnetization M = sum_i s_i. At h = J2 = J3 = 0 the total energy of a
-//! state is E = -J1 * S, so a single enumeration yields exact
-//! thermodynamics for any temperature and either sign of J1.
+//! density of states g(S1, S2, M) over the integer nearest-neighbor bond sum
+//! S1 = sum_<ij> s_i s_j (each bond counted once), the next-nearest-neighbor
+//! bond sum S2, and the integer magnetization M = sum_i s_i. The total
+//! energy of a state is E = -J1 * S1 - J2 * S2 - h * M, so a single
+//! enumeration yields exact thermodynamics for any temperature, either sign
+//! of J1, any J2 and any field h (J3 is not enumerated: on the 4x4 torus the
+//! third-neighbour shell coincides with the nearest one across the wrap).
 //!
 //! Conventions (chosen to match the production observables exactly):
 //!
@@ -35,12 +37,15 @@ use crate::rng::create_rng;
 use rand::Rng;
 use std::sync::OnceLock;
 
-/// Joint density of states over (bond sum S, magnetization M).
+/// Joint density of states over (NN bond sum S1, NNN bond sum S2,
+/// magnetization M).
 ///
-/// Dense storage: `counts[(s + num_bonds) * (2N + 1) + (m + N)]`.
+/// Dense storage: `counts[((s1 + nb1) * (2 nb2 + 1) + (s2 + nb2)) * (2N + 1)
+/// + (m + N)]`.
 pub(crate) struct DensityOfStates {
     num_sites: usize,
     num_bonds: usize,
+    num_nnn_bonds: usize,
     counts: Vec<u64>,
 }
 
@@ -73,6 +78,17 @@ pub(crate) fn nn_bond_sum<L: Lattice>(spins: &[i8], lattice: &L) -> i32 {
     twice_sum / 2
 }
 
+/// Next-nearest-neighbor bond sum, each bond counted once.
+pub(crate) fn nnn_bond_sum<L: Lattice>(spins: &[i8], lattice: &L) -> i32 {
+    let mut twice_sum = 0i32;
+    for (i, &s) in spins.iter().enumerate() {
+        for &nbr in lattice.next_nearest_neighbors(i) {
+            twice_sum += i32::from(s) * i32::from(spins[nbr]);
+        }
+    }
+    twice_sum / 2
+}
+
 /// Enumerate all 2^N spin states of `lattice` into a density of states.
 ///
 /// # Panics
@@ -86,24 +102,32 @@ pub(crate) fn enumerate_states<L: Lattice>(lattice: &L) -> DensityOfStates {
         .map(|i| lattice.nearest_neighbors(i).len())
         .sum::<usize>()
         / 2;
+    let num_nnn_bonds = (0..n)
+        .map(|i| lattice.next_nearest_neighbors(i).len())
+        .sum::<usize>()
+        / 2;
 
-    let width = 2 * n + 1;
-    let mut counts = vec![0u64; (2 * num_bonds + 1) * width];
+    let width_m = 2 * n + 1;
+    let width_s2 = 2 * num_nnn_bonds + 1;
+    let mut counts = vec![0u64; (2 * num_bonds + 1) * width_s2 * width_m];
     let mut spins = vec![1i8; n];
     for state in 0u32..(1u32 << n) {
         for (i, s) in spins.iter_mut().enumerate() {
             *s = if (state >> i) & 1 == 1 { 1 } else { -1 };
         }
-        let bond_sum = nn_bond_sum(&spins, lattice);
+        let s1 = nn_bond_sum(&spins, lattice);
+        let s2 = nnn_bond_sum(&spins, lattice);
         let m: i32 = spins.iter().map(|&x| i32::from(x)).sum();
-        let row = usize::try_from(bond_sum + num_bonds as i32).expect("bond sum in range");
+        let row = usize::try_from(s1 + num_bonds as i32).expect("bond sum in range");
+        let plane = usize::try_from(s2 + num_nnn_bonds as i32).expect("nnn bond sum in range");
         let col = usize::try_from(m + n as i32).expect("magnetization in range");
-        counts[row * width + col] += 1;
+        counts[(row * width_s2 + plane) * width_m + col] += 1;
     }
 
     DensityOfStates {
         num_sites: n,
         num_bonds,
+        num_nnn_bonds,
         counts,
     }
 }
@@ -114,56 +138,102 @@ impl DensityOfStates {
         self.counts.iter().sum()
     }
 
-    /// Iterate populated cells as (S, M, count).
-    fn populated(&self) -> impl Iterator<Item = (i32, i32, u64)> + '_ {
-        let width = 2 * self.num_sites + 1;
-        let nb = self.num_bonds as i32;
+    /// Iterate populated cells as (S1, S2, M, count).
+    fn populated(&self) -> impl Iterator<Item = (i32, i32, i32, u64)> + '_ {
+        let width_m = 2 * self.num_sites + 1;
+        let width_s2 = 2 * self.num_nnn_bonds + 1;
+        let nb1 = self.num_bonds as i32;
+        let nb2 = self.num_nnn_bonds as i32;
         let n = self.num_sites as i32;
         self.counts
             .iter()
             .enumerate()
             .filter(|(_, &c)| c > 0)
-            .map(move |(idx, &c)| ((idx / width) as i32 - nb, (idx % width) as i32 - n, c))
+            .map(move |(idx, &c)| {
+                let col = idx % width_m;
+                let plane = (idx / width_m) % width_s2;
+                let row = idx / (width_m * width_s2);
+                (row as i32 - nb1, plane as i32 - nb2, col as i32 - n, c)
+            })
     }
 
     /// Exact thermodynamics at `temperature` for coupling `j1` (h=J2=J3=0).
+    pub(crate) fn exact_at(&self, temperature: f64, j1: f64) -> Exact {
+        self.exact_at_couplings(temperature, j1, 0.0, 0.0)
+    }
+
+    /// Exact thermodynamics at `temperature` for couplings (J1, J2, h).
     ///
     /// Weights are accumulated relative to the ground-state energy
     /// (shift by `E_min` before exponentiating), so low temperatures
     /// underflow gracefully to the ground-state manifold instead of
     /// overflowing.
-    pub(crate) fn exact_at(&self, temperature: f64, j1: f64) -> Exact {
+    pub(crate) fn exact_at_couplings(&self, temperature: f64, j1: f64, j2: f64, h: f64) -> Exact {
         let beta = 1.0 / temperature;
-        let n = self.num_sites as f64;
+        let sites = self.num_sites as f64;
+        let energy_of = |s1: i32, s2: i32, m: i32| -> f64 {
+            -j1 * f64::from(s1) - j2 * f64::from(s2) - h * f64::from(m)
+        };
 
         let e_min = self
             .populated()
-            .map(|(s, _, _)| -j1 * f64::from(s))
+            .map(|(s1, s2, m, _)| energy_of(s1, s2, m))
             .fold(f64::INFINITY, f64::min);
 
         // Accumulate moments of d = E - E_min (better conditioned than raw E).
-        let mut z = 0.0;
+        let mut partition = 0.0;
         let mut sum_d = 0.0;
         let mut sum_d2 = 0.0;
         let mut sum_m2 = 0.0;
-        for (s, m, count) in self.populated() {
-            let d = -j1 * f64::from(s) - e_min;
-            let w = count as f64 * (-beta * d).exp();
-            z += w;
-            sum_d += w * d;
-            sum_d2 += w * d * d;
-            sum_m2 += w * f64::from(m) * f64::from(m);
+        for (s1, s2, m, count) in self.populated() {
+            let excess = energy_of(s1, s2, m) - e_min;
+            let weight = count as f64 * (-beta * excess).exp();
+            partition += weight;
+            sum_d += weight * excess;
+            sum_d2 += weight * excess * excess;
+            sum_m2 += weight * f64::from(m) * f64::from(m);
         }
 
-        let mean_d = sum_d / z;
-        let var_e_total = sum_d2 / z - mean_d * mean_d;
+        let mean_d = sum_d / partition;
+        let var_e_total = sum_d2 / partition - mean_d * mean_d;
         Exact {
-            log_z: z.ln() - beta * e_min,
-            energy: (e_min + mean_d) / n,
-            m_squared: (sum_m2 / z) / (n * n),
-            specific_heat: beta * beta * var_e_total / n,
-            energy_variance: var_e_total / (n * n),
+            log_z: partition.ln() - beta * e_min,
+            energy: (e_min + mean_d) / sites,
+            m_squared: (sum_m2 / partition) / (sites * sites),
+            specific_heat: beta * beta * var_e_total / sites,
+            energy_variance: var_e_total / (sites * sites),
         }
+    }
+
+    /// Exact `(E_total, ln g(E))` over the populated energy levels for
+    /// couplings (J1, J2, h), ascending in energy. Dyadic couplings make
+    /// the energies exact floats, so equal levels merge exactly (by value:
+    /// a zero coupling produces both signed zeros).
+    // Exact equality is the point: dyadic energies are exact floats and
+    // the two signed zeros must merge.
+    #[allow(clippy::float_cmp)]
+    pub(crate) fn log_g_by_energy(&self, j1: f64, j2: f64, h: f64) -> Vec<(f64, f64)> {
+        let mut levels: Vec<(f64, u64)> = self
+            .populated()
+            .map(|(s1, s2, m, count)| {
+                (
+                    -j1 * f64::from(s1) - j2 * f64::from(s2) - h * f64::from(m),
+                    count,
+                )
+            })
+            .collect();
+        levels.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut merged: Vec<(f64, u64)> = Vec::new();
+        for (energy, count) in levels {
+            match merged.last_mut() {
+                Some(last) if last.0 == energy => last.1 += count,
+                _ => merged.push((energy, count)),
+            }
+        }
+        merged
+            .into_iter()
+            .map(|(energy, count)| (energy, (count as f64).ln()))
+            .collect()
     }
 }
 
@@ -345,6 +415,49 @@ mod tests {
                 (degeneracy - 2.0).abs() < 1e-9,
                 "J1={j1}: ground-state degeneracy {degeneracy}"
             );
+        }
+    }
+
+    #[test]
+    fn test_exact_j2_and_field_levels_bridge_to_the_energy_observable() {
+        // The (S1, S2, M) enumeration reproduces the production energy for
+        // J1-J2-h couplings on random configurations, and its energy levels
+        // sum to 2^N states.
+        let square = SquareLattice::new(4).unwrap();
+        let mut rng = create_rng(11);
+        for _ in 0..100 {
+            let spins: Vec<i8> = (0..16)
+                .map(|_| if rng.gen::<bool>() { 1 } else { -1 })
+                .collect();
+            for (j1, j2, h) in [(1.0, -0.5, 0.0), (1.0, 0.25, 0.5), (-1.0, -0.5, -0.25)] {
+                let m: i32 = spins.iter().map(|&x| i32::from(x)).sum();
+                let e = (-j1 * f64::from(nn_bond_sum(&spins, &square))
+                    - j2 * f64::from(nnn_bond_sum(&spins, &square))
+                    - h * f64::from(m))
+                    / 16.0;
+                let obs = crate::observables::energy_per_site(&spins, &square, j1, j2, 0.0, h);
+                assert!(
+                    (e - obs).abs() < 1e-12,
+                    "J1={j1} J2={j2} h={h}: {e} vs {obs}"
+                );
+            }
+        }
+        let levels = square4_dos().log_g_by_energy(1.0, -0.5, 0.25);
+        let total: f64 = levels.iter().map(|&(_, lg)| lg.exp()).sum();
+        assert!((total - 65_536.0).abs() < 1e-6, "levels sum to {total}");
+        assert!(levels.windows(2).all(|w| w[0].0 < w[1].0));
+        // Cv from the (J1, J2, h) enumeration is the derivative of <E>.
+        let dt = 1e-4;
+        for temperature in GATE_TEMPERATURES {
+            let ex = square4_dos().exact_at_couplings(temperature, 1.0, -0.5, 0.25);
+            let e_plus = square4_dos()
+                .exact_at_couplings(temperature + dt, 1.0, -0.5, 0.25)
+                .energy;
+            let e_minus = square4_dos()
+                .exact_at_couplings(temperature - dt, 1.0, -0.5, 0.25)
+                .energy;
+            let cv_diff = (e_plus - e_minus) / (2.0 * dt);
+            assert!(((ex.specific_heat - cv_diff) / cv_diff).abs() < 1e-5);
         }
     }
 

@@ -17,6 +17,9 @@ __all__ = [
     "chain_susceptibility_signed",
     "complete_elliptic_k",
     "onsager_energy_per_site",
+    "square_torus_energy_per_site",
+    "square_torus_log_z",
+    "square_torus_specific_heat",
 ]
 
 
@@ -102,3 +105,95 @@ def chain_susceptibility_signed(n: int, temperature: float) -> float:
     t = math.tanh(1.0 / temperature)
     t_n = t**n
     return (1.0 + t) * (1.0 - t_n) / ((1.0 - t) * (1.0 + t_n)) / temperature
+
+
+def _log_2cosh(x: float) -> float:
+    """ln(2 cosh x) without overflow: |x| + ln(1 + exp(-2|x|))."""
+    a = abs(x)
+    return a + math.log1p(math.exp(-2.0 * a))
+
+
+def _log_abs_2sinh(x: float) -> float:
+    """ln|2 sinh x| without overflow: |x| + ln(1 - exp(-2|x|)); -inf at 0."""
+    a = abs(x)
+    if a == 0.0:
+        return -math.inf
+    return a + math.log(-math.expm1(-2.0 * a))
+
+
+def square_torus_log_z(size: int, temperature: float) -> float:
+    """Exact ln Z of the L x L periodic square-lattice Ising model (J = 1).
+
+    Ferdinand & Fisher, Phys. Rev. 185, 832 (1969), eqs. (2.1)-(2.5), the
+    finite-lattice form of Kaufman's solution; with K = beta J, n = m = L:
+
+        Z = (1/2) (2 sinh 2K)^(L^2/2) (Z_1 + Z_2 + Z_3 + Z_4),
+        Z_1 = prod_{r=0}^{L-1} 2 cosh(L gamma_{2r+1} / 2),
+        Z_2 = prod_{r=0}^{L-1} 2 sinh(L gamma_{2r+1} / 2),
+        Z_3 = prod_{r=0}^{L-1} 2 cosh(L gamma_{2r} / 2),
+        Z_4 = prod_{r=0}^{L-1} 2 sinh(L gamma_{2r} / 2),
+        cosh gamma_l = cosh 2K coth 2K - cos(pi l / L)   (l >= 1),
+        gamma_0 = 2K + ln tanh K   (negative below T_c: Z_4 changes sign).
+
+    Evaluated in log space (the products overflow above L ~ 30). The
+    sum is positive because Z_1 >= |Z_2| and Z_3 >= |Z_4| term by term.
+    Checks: L = 4 against a brute-force enumeration of the 65 536 states,
+    and L = 64 against Onsager's energy (``tests/test_analytic.py``).
+    """
+    if size < 2:
+        raise ValueError(f"square_torus_log_z needs L >= 2, got {size}")
+    k = 1.0 / temperature
+    cosh2k, sinh2k = math.cosh(2.0 * k), math.sinh(2.0 * k)
+    coth2k = cosh2k / sinh2k
+
+    def gamma(index: int) -> float:
+        if index == 0:
+            return 2.0 * k + math.log(math.tanh(k))
+        return math.acosh(cosh2k * coth2k - math.cos(math.pi * index / size))
+
+    half = 0.5 * size
+    log_z1 = sum(_log_2cosh(half * gamma(2 * r + 1)) for r in range(size))
+    log_z2 = sum(_log_abs_2sinh(half * gamma(2 * r + 1)) for r in range(size))
+    log_z3 = sum(_log_2cosh(half * gamma(2 * r)) for r in range(size))
+    log_z4 = sum(_log_abs_2sinh(half * gamma(2 * r)) for r in range(size))
+    sign_z4 = -1.0 if gamma(0) < 0.0 else 1.0
+    top = max(log_z1, log_z2, log_z3, log_z4)
+    total = (
+        math.exp(log_z1 - top)
+        + math.exp(log_z2 - top)
+        + math.exp(log_z3 - top)
+        + sign_z4 * math.exp(log_z4 - top)
+    )
+    prefactor = 0.5 * size * size * math.log(2.0 * sinh2k)
+    return -math.log(2.0) + prefactor + top + math.log(total)
+
+
+def square_torus_energy_per_site(size: int, temperature: float) -> float:
+    """Exact energy per site of the L x L torus, -(1/N) d ln Z / d beta.
+
+    Central difference of :func:`square_torus_log_z` in beta with step
+    1e-4 (truncation error ~1e-8 relative, far below any Monte Carlo
+    error bar). Converges to :func:`onsager_energy_per_site` as L grows;
+    at T_c the finite-L value sits ~0.6/L above -sqrt(2).
+    """
+    beta = 1.0 / temperature
+    step = 1e-4
+    upper = square_torus_log_z(size, 1.0 / (beta + step))
+    lower = square_torus_log_z(size, 1.0 / (beta - step))
+    return -(upper - lower) / (2.0 * step) / (size * size)
+
+
+def square_torus_specific_heat(size: int, temperature: float) -> float:
+    """Exact specific heat per site of the L x L torus, beta^2 d^2 ln Z / d beta^2 / N.
+
+    Second central difference in beta with step 1e-3 (truncation ~1e-6
+    relative, rounding ~1e-7); matches the fluctuation form
+    ``N Var(e) / T^2`` of :func:`mcising.statistics.specific_heat`.
+    """
+    beta = 1.0 / temperature
+    step = 1e-3
+    upper = square_torus_log_z(size, 1.0 / (beta + step))
+    centre = square_torus_log_z(size, temperature)
+    lower = square_torus_log_z(size, 1.0 / (beta - step))
+    second = (upper - 2.0 * centre + lower) / (step * step)
+    return beta * beta * second / (size * size)

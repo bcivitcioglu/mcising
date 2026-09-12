@@ -41,6 +41,16 @@ config = SimulationConfig(
 results = Simulation(config).run(show_progress=False)
 assert 3.0 in results.energy
 
+# So does the flat-histogram workflow.
+from mcising import WangLandauConfig, WangLandauSimulation
+
+wl = WangLandauSimulation(
+    WangLandauConfig(
+        lattice=LatticeConfig(size=4), log_f_final=1e-3, production_sweeps=50
+    )
+).run(show_progress=False)
+assert wl.n_samples == 50
+
 # Accessing a plotting export without matplotlib raises the friendly
 # ImportError that names the extra.
 try:
@@ -67,8 +77,7 @@ class TestMatplotlibOptional:
 
     def test_import_mcising_does_not_import_matplotlib(self) -> None:
         code = (
-            "import sys, mcising; "
-            "assert 'matplotlib' not in sys.modules; print('OK')"
+            "import sys, mcising; assert 'matplotlib' not in sys.modules; print('OK')"
         )
         proc = subprocess.run(
             [sys.executable, "-c", code],

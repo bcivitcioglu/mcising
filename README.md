@@ -28,7 +28,7 @@
 
 ---
 
-**mcising** is a Python library for Monte Carlo simulation of Ising spin systems. It supports 5 lattice geometries, J1-J2-J3 frustrated magnetism with external fields, 3 Monte Carlo algorithms, 3 execution modes (including parallel tempering), and adaptive thermalization. The performance-critical core is written in Rust via PyO3.
+**mcising** is a Python library for Monte Carlo simulation of Ising spin systems. It supports 5 lattice geometries, J1-J2-J3 frustrated magnetism with external fields, 4 sampling algorithms (including Wang-Landau with multicanonical production), 3 execution modes (including parallel tempering), and adaptive thermalization. The performance-critical core is written in Rust via PyO3.
 
 ## Why mcising
 
@@ -83,7 +83,8 @@ The two libraries differ in scope more than in speed: mcising has named J2/J3 sh
 ## Features
 
 - **5 lattice geometries** -- square, triangular, honeycomb (2-sublattice), cubic (3D), chain (1D)
-- **3 MC algorithms** -- Metropolis, Wolff cluster, Swendsen-Wang cluster
+- **4 sampling algorithms** -- Metropolis, Wolff cluster, Swendsen-Wang cluster, and Wang-Landau with a multicanonical production run
+- **Free-energy barriers** -- canonical reweighting to any temperature, bimodal energy histograms, barrier and interface-tension estimates, equal-height and equal-weight transition temperatures
 - **3 execution modes** -- sequential cool-down, independent parallel (Rayon), parallel tempering with replica exchange
 - **J1-J2-J3 frustrated magnetism** -- nearest, next-nearest, and third-nearest-neighbor couplings
 - **External magnetic field** -- h coupling, compatible with all lattices

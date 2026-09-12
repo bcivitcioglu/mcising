@@ -42,6 +42,7 @@ def test_stub_declares_the_public_surface() -> None:
         "IsingSimulation.production_sweeps",
         "run_independent_temperatures",
         "run_parallel_tempering",
+        "run_wang_landau",
     } <= names
     assert len(DEFINITIONS) >= 25
 

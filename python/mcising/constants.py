@@ -44,3 +44,16 @@ DEFAULT_ADAPTIVE_TAU_MULTIPLIER: Final[float] = 2.0
 # analyzes for stationarity and tau_int: MSER's boundary verdict needs
 # enough points to be meaningful. A floor, not a target (B9, #20).
 MIN_DIAGNOSTIC_SWEEPS: Final[int] = 64
+
+# Wang-Landau / multicanonical defaults (see mcising.wang_landau). The 1/t
+# schedule makes ln f_final a cost knob rather than an accuracy knob once a
+# production stage follows: 1e-6 leaves the production histogram flat to a
+# fraction of a percent, and the canonical averages come from the production
+# series, not from ln g itself.
+DEFAULT_WL_FLATNESS: Final[float] = 0.8
+DEFAULT_WL_LOG_F_INITIAL: Final[float] = 1.0
+DEFAULT_WL_LOG_F_FINAL: Final[float] = 1e-6
+DEFAULT_WL_CHECK_INTERVAL: Final[int] = 1000
+DEFAULT_WL_PRODUCTION_SWEEPS: Final[int] = 10_000
+DEFAULT_WL_DRIVE_BETA: Final[float] = 1.0
+DEFAULT_WL_DRIVE_MAX_SWEEPS: Final[int] = 10_000

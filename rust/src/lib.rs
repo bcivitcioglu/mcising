@@ -26,6 +26,7 @@ pub mod observables;
 pub mod parallel;
 pub mod rng;
 pub mod simulation;
+pub mod wang_landau;
 
 #[cfg(not(test))]
 use pyo3::prelude::*;
@@ -45,5 +46,6 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<simulation::IsingSimulation>()?;
     m.add_function(wrap_pyfunction!(parallel::run_independent_temperatures, m)?)?;
     m.add_function(wrap_pyfunction!(parallel::run_parallel_tempering, m)?)?;
+    m.add_function(wrap_pyfunction!(wang_landau::run_wang_landau, m)?)?;
     Ok(())
 }

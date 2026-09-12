@@ -116,16 +116,26 @@ impl TempResult {
     /// never from a precomputed count — a cadence bug upstream can therefore
     /// shorten arrays but can no longer cause a reshape panic.
     pub(crate) fn into_pydict(self, py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
-        let n_measurements = self.energies.len();
         let dict = PyDict::new(py);
         dict.set_item("temperature", self.temperature)?;
+        dict.set_item("n_cluster_flips", self.cluster_flips)?;
+        self.write_series(py, &dict)?;
+        Ok(dict)
+    }
+
+    /// Write the measurement series into `dict`: `energies`,
+    /// `magnetizations`, `staggered_magnetizations`, plus `configurations`
+    /// and the `correlation_*` arrays when present. Shared by
+    /// [`TempResult::into_pydict`] and the multicanonical walker record,
+    /// which has no temperature to report.
+    pub(crate) fn write_series(self, py: Python<'_>, dict: &Bound<'_, PyDict>) -> PyResult<()> {
+        let n_measurements = self.energies.len();
         dict.set_item("energies", self.energies.into_pyarray(py))?;
         dict.set_item("magnetizations", self.magnetizations.into_pyarray(py))?;
         let n_components = 1usize << self.shape.len();
         let staggered = numpy::PyArray1::from_vec(py, self.staggered)
             .reshape([n_measurements, n_components])?;
         dict.set_item("staggered_magnetizations", staggered)?;
-        dict.set_item("n_cluster_flips", self.cluster_flips)?;
 
         if let Some(configs) = self.configs {
             let flat = numpy::PyArray1::from_vec(py, configs);
@@ -141,7 +151,7 @@ impl TempResult {
             dict.set_item("correlation_length", corr.lengths.into_pyarray(py))?;
         }
 
-        Ok(dict)
+        Ok(())
     }
 }
 

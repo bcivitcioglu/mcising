@@ -305,9 +305,15 @@ After each phase, verify:
 ## What happened next
 
 The plan above was delivered through v0.21.0 (April 2026) with one exception:
-**Wang-Landau sampling (Phase 5) was never implemented** and remains on the
-post-1.0 list, as does the flat-histogram checkpoint in the verification plan.
-Parallel tempering was built as planned.
+**Wang-Landau sampling (Phase 5) was never implemented** before 1.0 and stayed
+on the post-1.0 list, as did the flat-histogram checkpoint in the
+verification plan. Parallel tempering was built as planned. Wang-Landau
+sampling with a multicanonical production run arrived in the 1.2 line, after
+the first-order-transition campaign on the cubic $J_1$-$J_2$ model showed
+parallel tempering trapped on one side of the barrier; the checkpoint —
+$g(E)$ reproduces the exact canonical averages — is now a test against the
+exact finite-lattice solution (see the
+[Wang-Landau tutorial](../tutorial/wang-landau.md)).
 
 Between August and September 2026 the library went through a second,
 correctness-focused programme before its 1.0.0 release: an exact-enumeration
